@@ -2,8 +2,8 @@
 
 import React, { useState, useRef } from 'react';
 
-// Environment-provided API key for the Canvas environment
-const apiKey = ""; 
+// Use environment variable for your local Next.js/Vercel app, fallback to empty string for Canvas
+const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ""; 
 
 // Define the shape of our extracted seed data
 interface SeedData {
@@ -85,6 +85,13 @@ export default function App() {
     setIsAnalyzing(true);
     setErrorMsg(null);
 
+    // Sanity check before calling API
+    if (!apiKey) {
+      setErrorMsg("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
+      setIsAnalyzing(false);
+      return;
+    }
+
     try {
       const base64Data = await fileToBase64(selectedFile);
       // Fallback MIME type in case the mobile browser doesn't provide one
@@ -162,7 +169,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.1</span>
+            <span className="text-sm font-normal text-stone-500">v1.2</span>
           </h1>
         </header>
 
@@ -298,7 +305,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.1</span>
+              <span className="text-sm font-normal text-emerald-300">v1.2</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
