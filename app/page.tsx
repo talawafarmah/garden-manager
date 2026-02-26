@@ -12,6 +12,7 @@ interface SeedData {
   days_to_maturity?: number;
   species?: string;
   category?: string;
+  notes?: string;
 }
 
 export default function App() {
@@ -101,7 +102,7 @@ export default function App() {
         contents: [{
           role: "user",
           parts: [
-            { text: "Analyze this seed packet. Extract the variety name, vendor/company, days to maturity (number only), botanical species, and general category (e.g., Pepper, Tomato, Flower)." },
+            { text: "Analyze this seed packet. Extract the variety name, vendor/company, days to maturity (number only), botanical species, general category (e.g., Pepper, Tomato, Flower), and any growing notes, descriptions, or instructions." },
             { inlineData: { mimeType: mimeType, data: base64Data } }
           ]
         }],
@@ -117,7 +118,8 @@ export default function App() {
               vendor: { type: "STRING" },
               days_to_maturity: { type: "INTEGER" },
               species: { type: "STRING" },
-              category: { type: "STRING" }
+              category: { type: "STRING" },
+              notes: { type: "STRING" }
             }
           }
         }
@@ -204,7 +206,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.5</span>
+            <span className="text-sm font-normal text-stone-500">v1.6</span>
           </h1>
         </header>
 
@@ -229,12 +231,25 @@ export default function App() {
             // --- VERIFICATION FORM ---
             <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500">
               <div className="bg-stone-800 rounded-2xl p-6 shadow-2xl border border-stone-700">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-emerald-400">Verify Details</h2>
                   <div className="bg-emerald-900/50 p-2 rounded-full text-emerald-400">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                   </div>
                 </div>
+
+                {/* Image Attachment Preview */}
+                {imagePreview && (
+                  <div className="mb-6 rounded-xl overflow-hidden border border-stone-700 h-24 relative">
+                    <img src={imagePreview} alt="Captured Seed Packet" className="object-cover w-full h-full opacity-60" />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
+                        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        Packet Image Attached
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   <div>
@@ -259,13 +274,22 @@ export default function App() {
                     <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
                     <input type="text" defaultValue={analysisResult.species} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 focus:outline-none" />
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes & Instructions</label>
+                    <textarea 
+                      defaultValue={analysisResult.notes} 
+                      rows={4}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none resize-none"
+                      placeholder="e.g. Sow 1/4 inch deep, transplant after last frost..."
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-8 flex gap-3">
                   <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">
                     Back
                   </button>
-                  <button onClick={() => { alert("Ready to save to Supabase!"); cancelScan(); }} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50">
+                  <button onClick={() => { alert("Ready to save data and image to Supabase!"); cancelScan(); }} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50">
                     Save to Inventory
                   </button>
                 </div>
@@ -340,7 +364,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.5</span>
+              <span className="text-sm font-normal text-emerald-300">v1.6</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
