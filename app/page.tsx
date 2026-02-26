@@ -124,55 +124,59 @@ export default function App() {
       };
 
       // Determine which model to use. Canvas uses the internal preview model.
-      // Local deployments get a cascading array of robust public models.
+      // For local deployments, we will AUTO-DISCOVER the models your key has access to!
       const isLocalDeployment = !!process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      const modelsToTry = isLocalDeployment 
-        ? ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"] 
-        : ["gemini-2.5-flash-preview-09-2025"];
+      let modelToUse = "gemini-2.5-flash-preview-09-2025";
 
-      let result;
-      let textResponse;
-      let lastError;
-
-      // Cascading Fallback Loop
-      for (const modelName of modelsToTry) {
+      if (isLocalDeployment) {
         try {
-          console.log(`Attempting scan with model: ${modelName}...`);
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+          console.log("Discovering available models for your API key...");
+          const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          if (!modelsRes.ok) throw new Error("Failed to fetch models list");
           
-          // Lower retries per model so we can fail-fast and try the next one in the array
-          result = await fetchWithRetry(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }, 2);
+          const modelsData = await modelsRes.json();
+          
+          if (modelsData.models) {
+            // Filter for models that can generate content and aren't legacy text-only models
+            const available = modelsData.models
+              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
+              .map((m: any) => m.name.replace('models/', ''));
+            
+            console.log("Your API key has access to:", available);
 
-          textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-          
-          if (textResponse) {
-            console.log(`Success! Data extracted via ${modelName}`);
-            break; // Break out of the loop, we got our data!
+            // Prioritize the best, most cost-effective vision models in order
+            const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+            modelToUse = bestModels.find(m => available.includes(m)) || available[0];
+
+            if (!modelToUse) throw new Error("No compatible Gemini models found for this API key.");
+            console.log("Auto-selected model:", modelToUse);
           }
-        } catch (err: any) {
-          console.warn(`Model ${modelName} failed:`, err.message);
-          lastError = err;
-          // Loop continues to the next model automatically
+        } catch (discoveryErr) {
+          console.warn("Model discovery failed, falling back to basic flash.", discoveryErr);
+          modelToUse = "gemini-1.5-flash"; // Ultimate hardcoded fallback
         }
       }
 
-      // If we exhausted the entire array and still have no textResponse, throw the final error
-      if (!textResponse) {
-        throw lastError || new Error("All AI models failed to respond or are unavailable.");
-      }
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      
+      const result = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 3);
 
-      // Parse the successful response
-      try {
-        // Safely strip any potential markdown formatting the AI might inject
-        const cleanText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsedData = JSON.parse(cleanText);
-        setAnalysisResult(parsedData);
-      } catch (parseError) {
-        throw new Error(`Failed to parse AI response. Raw Output: ${textResponse}`);
+      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (textResponse) {
+        try {
+          // Safely strip any potential markdown formatting the AI might inject
+          const cleanText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+          const parsedData = JSON.parse(cleanText);
+          setAnalysisResult(parsedData);
+        } catch (parseError) {
+          throw new Error(`Failed to parse AI response. Raw Output: ${textResponse}`);
+        }
+      } else {
+        throw new Error("No text returned from AI");
       }
       
     } catch (err: any) {
@@ -200,7 +204,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.4</span>
+            <span className="text-sm font-normal text-stone-500">v1.5</span>
           </h1>
         </header>
 
@@ -336,7 +340,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.4</span>
+              <span className="text-sm font-normal text-emerald-300">v1.5</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
