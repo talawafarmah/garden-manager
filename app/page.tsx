@@ -9,14 +9,14 @@ const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 interface SeedData {
   variety_name?: string;
   vendor?: string;
-  days_to_maturity?: number;
+  days_to_maturity?: number | string;
   species?: string;
   category?: string;
   notes?: string;
 }
 
-// Mock database for the inventory view
-const mockInventory = [
+// Mock database for the inventory view (initial state)
+const initialMockInventory = [
   { id: 'P154', category: 'Pepper', variety_name: 'Yellow Habanero', vendor: 'XYZ Seeds Inc.', days_to_maturity: 90, species: 'Capsicum chinense' },
   { id: 'T089', category: 'Tomato', variety_name: 'Cherokee Purple', vendor: 'Baker Creek', days_to_maturity: 80, species: 'Solanum lycopersicum' },
   { id: 'B012', category: 'Brassica', variety_name: 'Dinosaur Kale', vendor: 'Johnny\'s Seeds', days_to_maturity: 60, species: 'Brassica oleracea' },
@@ -31,6 +31,9 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   
+  // App Data State
+  const [inventory, setInventory] = useState(initialMockInventory);
+
   // AI States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<SeedData | null>(null);
@@ -55,6 +58,31 @@ export default function App() {
     setSelectedFile(null);
     setAnalysisResult(null);
     setErrorMsg(null);
+  };
+
+  const handleSaveToInventory = () => {
+    if (analysisResult) {
+      // Generate a mock ID (e.g. 'P' for Pepper + random number)
+      const prefix = analysisResult.category ? analysisResult.category.charAt(0).toUpperCase() : 'U';
+      const mockId = `${prefix}${Math.floor(Math.random() * 1000)}`;
+
+      const newSeed = {
+        id: mockId,
+        category: analysisResult.category || 'Uncategorized',
+        variety_name: analysisResult.variety_name || 'Unknown Variety',
+        vendor: analysisResult.vendor || 'Unknown Vendor',
+        days_to_maturity: Number(analysisResult.days_to_maturity) || 0,
+        species: analysisResult.species || 'Unknown Species',
+        notes: analysisResult.notes || ''
+      };
+
+      // Add the new seed to the top of our inventory state
+      setInventory([newSeed, ...inventory]);
+      
+      // Notify the user and reset scanner
+      alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
+      cancelScan();
+    }
   };
 
   // Convert File to Base64 (stripping the data:image/... prefix for the API)
@@ -203,7 +231,7 @@ export default function App() {
 
   // --- INVENTORY VIEW ---
   if (isViewingInventory) {
-    const filteredInventory = mockInventory.filter(seed => 
+    const filteredInventory = inventory.filter(seed => 
       seed.variety_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       seed.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
       seed.id.toLowerCase().includes(searchQuery.toLowerCase())
@@ -223,7 +251,7 @@ export default function App() {
             </button>
             <div className="flex-1">
               <h1 className="text-xl font-bold">Seed Vault</h1>
-              <p className="text-xs text-emerald-200">{mockInventory.length} varieties saved</p>
+              <p className="text-xs text-emerald-200">{inventory.length} varieties saved</p>
             </div>
           </div>
         </header>
@@ -305,7 +333,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.7</span>
+            <span className="text-sm font-normal text-stone-500">v1.8</span>
           </h1>
         </header>
 
@@ -353,30 +381,56 @@ export default function App() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
-                    <input type="text" defaultValue={analysisResult.category} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                    <input 
+                      type="text" 
+                      value={analysisResult.category || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, category: e.target.value })}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
-                    <input type="text" defaultValue={analysisResult.variety_name} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 focus:outline-none" />
+                    <input 
+                      type="text" 
+                      value={analysisResult.variety_name || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 focus:outline-none" 
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
-                      <input type="text" defaultValue={analysisResult.vendor} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                      <input 
+                        type="text" 
+                        value={analysisResult.vendor || ''} 
+                        onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })}
+                        className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" 
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
-                      <input type="number" defaultValue={analysisResult.days_to_maturity} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                      <input 
+                        type="number" 
+                        value={analysisResult.days_to_maturity || ''} 
+                        onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })}
+                        className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" 
+                      />
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
-                    <input type="text" defaultValue={analysisResult.species} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 focus:outline-none" />
+                    <input 
+                      type="text" 
+                      value={analysisResult.species || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 focus:outline-none" 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes & Instructions</label>
                     <textarea 
-                      defaultValue={analysisResult.notes} 
+                      value={analysisResult.notes || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })}
                       rows={4}
                       className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none resize-none"
                       placeholder="e.g. Sow 1/4 inch deep, transplant after last frost..."
@@ -388,7 +442,7 @@ export default function App() {
                   <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">
                     Back
                   </button>
-                  <button onClick={() => { alert("Ready to save data and image to Supabase!"); cancelScan(); }} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50">
+                  <button onClick={handleSaveToInventory} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50">
                     Save to Inventory
                   </button>
                 </div>
@@ -463,7 +517,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.7</span>
+              <span className="text-sm font-normal text-emerald-300">v1.8</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
