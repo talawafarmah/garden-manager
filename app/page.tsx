@@ -19,6 +19,17 @@ interface SeedData {
   species?: string;
   category?: string;
   notes?: string;
+  
+  // New Botanical Attributes
+  cold_stratification?: boolean;
+  stratification_days?: number | string;
+  light_required?: boolean;
+  germination_days?: string;
+  seed_depth?: string;
+  plant_spacing?: string;
+  row_spacing?: string;
+  sunlight?: string;
+  lifecycle?: string;
 }
 
 interface InventorySeed {
@@ -31,6 +42,18 @@ interface InventorySeed {
   notes: string;
   images: string[];
   primaryImageIndex: number;
+  
+  // New Botanical Attributes
+  cold_stratification: boolean;
+  stratification_days: number | string;
+  light_required: boolean;
+  germination_days: string;
+  seed_depth: string;
+  plant_spacing: string;
+  row_spacing: string;
+  out_of_stock: boolean; // Quick toggle flag
+  sunlight: string;
+  lifecycle: string;
 }
 
 interface SeedCategory {
@@ -117,8 +140,6 @@ export default function App() {
     let maxNum = 0;
     if (!error && data) {
       data.forEach(row => {
-        // Matches the prefix and captures the base digits (ignores things like -1, -2)
-        // e.g. "P15-2" -> captures "15"
         const match = row.id.match(new RegExp(`^${prefix}(\\d+)`, 'i'));
         if (match) {
           const num = parseInt(match[1], 10);
@@ -127,6 +148,27 @@ export default function App() {
       });
     }
     return `${prefix.toUpperCase()}${maxNum + 1}`;
+  };
+
+  // --- QUICK TOGGLE LOGIC ---
+  const toggleOutOfStock = async (seed: InventorySeed, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening detail view
+    const newStatus = !seed.out_of_stock;
+    
+    // Optimistic UI Update
+    setInventory(inventory.map(s => s.id === seed.id ? { ...s, out_of_stock: newStatus } : s));
+
+    // Update DB
+    const { error } = await supabase
+      .from('seed_inventory')
+      .update({ out_of_stock: newStatus })
+      .eq('id', seed.id);
+
+    if (error) {
+      alert("Failed to update stock status: " + error.message);
+      // Revert on error
+      setInventory(inventory.map(s => s.id === seed.id ? { ...s, out_of_stock: !newStatus } : s));
+    }
   };
 
   // --- SCANNER LOGIC ---
@@ -156,22 +198,16 @@ export default function App() {
       let finalCatName = analysisResult.category || 'Uncategorized';
       let finalPrefix = 'U';
 
-      // If adding a new category, save it to the DB first
       if (showNewCatForm && newCatName.trim() !== '') {
         finalCatName = newCatName.trim();
         finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
-        
-        // Save new category
         await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
-        // Update local category state
         setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
       } else {
-        // Find existing prefix
         const found = categories.find(c => c.name === finalCatName);
         if (found) finalPrefix = found.prefix;
       }
 
-      // Generate the sequential ID
       const newId = await generateNextId(finalPrefix);
 
       const newSeed: InventorySeed = {
@@ -183,7 +219,18 @@ export default function App() {
         species: analysisResult.species || 'Unknown Species',
         notes: analysisResult.notes || '',
         images: imagePreview ? [imagePreview] : [],
-        primaryImageIndex: 0
+        primaryImageIndex: 0,
+        
+        cold_stratification: analysisResult.cold_stratification || false,
+        stratification_days: analysisResult.stratification_days || 0,
+        light_required: analysisResult.light_required || false,
+        germination_days: analysisResult.germination_days || '',
+        seed_depth: analysisResult.seed_depth || '',
+        plant_spacing: analysisResult.plant_spacing || '',
+        row_spacing: analysisResult.row_spacing || '',
+        out_of_stock: false,
+        sunlight: analysisResult.sunlight || '',
+        lifecycle: analysisResult.lifecycle || ''
       };
 
       const { error } = await supabase.from('seed_inventory').insert([newSeed]);
@@ -241,7 +288,7 @@ export default function App() {
         contents: [{
           role: "user",
           parts: [
-            { text: "Analyze this seed packet. Extract variety name, vendor/company, days to maturity (number only), botanical species, general category (e.g., Pepper, Tomato, Flower), and any growing notes." },
+            { text: "Analyze this seed packet. Extract variety name, vendor, days to maturity (number only), botanical species, general category (e.g., Pepper, Tomato), seed depth, plant spacing, row spacing, days to germination, sunlight requirements (e.g., Full Sun), life cycle (Annual/Perennial), whether it requires cold stratification (boolean), whether it requires light to germinate (boolean), and any growing notes." },
             { inlineData: { mimeType: mimeType, data: base64Data } }
           ]
         }],
@@ -256,7 +303,16 @@ export default function App() {
               days_to_maturity: { type: "INTEGER" },
               species: { type: "STRING" },
               category: { type: "STRING" },
-              notes: { type: "STRING" }
+              notes: { type: "STRING" },
+              seed_depth: { type: "STRING" },
+              plant_spacing: { type: "STRING" },
+              row_spacing: { type: "STRING" },
+              germination_days: { type: "STRING" },
+              sunlight: { type: "STRING" },
+              lifecycle: { type: "STRING" },
+              cold_stratification: { type: "BOOLEAN" },
+              stratification_days: { type: "INTEGER" },
+              light_required: { type: "BOOLEAN" }
             }
           }
         }
@@ -283,7 +339,6 @@ export default function App() {
       if (textResponse) {
         const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
         
-        // Smart Category Detection
         const aiCat = parsedData.category;
         if (aiCat) {
           const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
@@ -333,7 +388,6 @@ export default function App() {
     if (!editFormData) return;
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
 
-    // Validate Duplicate Shortcode
     if (editFormData.id !== selectedSeed?.id) {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) {
@@ -344,7 +398,6 @@ export default function App() {
 
     let finalCatName = editFormData.category;
 
-    // Save new category if they added one during edit
     if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
       finalCatName = newCatName.trim();
       const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
@@ -356,8 +409,6 @@ export default function App() {
     }
 
     const payload = { ...editFormData, category: finalCatName };
-
-    // Update Supabase
     const { error } = await supabase.from('seed_inventory').update(payload).eq('id', selectedSeed?.id);
 
     if (error) {
@@ -384,7 +435,6 @@ export default function App() {
     }
   };
 
-
   // ==========================================
   // VIEW ROUTING
   // ==========================================
@@ -397,7 +447,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.11</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet</h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -408,92 +458,141 @@ export default function App() {
           )}
 
           {analysisResult ? (
-            <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10">
-              <div className="bg-stone-800 rounded-2xl p-6 shadow-2xl border border-stone-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-emerald-400">Verify Details</h2>
+            <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
+              {/* IMAGE PREVIEW HEADER */}
+              {imagePreview && (
+                <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
+                  <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
+                      <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      Packet Image Attached
+                    </span>
+                  </div>
                 </div>
+              )}
+
+              {/* BASIC DETAILS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Basic Details</h3>
                 
-                {imagePreview && (
-                  <div className="mb-6 rounded-xl overflow-hidden border border-stone-700 h-24 relative">
-                    <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
-                        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                        Packet Image Attached
-                      </span>
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
+                  <select 
+                    value={analysisResult.category || ''} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__NEW__') {
+                        setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
+                      } else setShowNewCatForm(false);
+                      setAnalysisResult({ ...analysisResult, category: val });
+                    }}
+                    className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none appearance-none"
+                  >
+                    <option value="" disabled>Select a category...</option>
+                    {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    <option value="__NEW__" className="font-bold text-emerald-400">+ Add New Category</option>
+                  </select>
+                </div>
+
+                {showNewCatForm && (
+                  <div className="p-4 bg-stone-900/50 border border-emerald-900 rounded-xl space-y-3 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Category Name</label>
+                      <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Prefix Code (1-2 letters)</label>
+                      <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase outline-none" />
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  {/* Category Dropdown */}
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
-                    <select 
-                      value={analysisResult.category || ''} 
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '__NEW__') {
-                          setShowNewCatForm(true);
-                          setNewCatName("");
-                          setNewCatPrefix("");
-                        } else {
-                          setShowNewCatForm(false);
-                        }
-                        setAnalysisResult({ ...analysisResult, category: val });
-                      }}
-                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none appearance-none"
-                    >
-                      <option value="" disabled>Select a category...</option>
-                      {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                      <option value="__NEW__" className="font-bold text-emerald-400">+ Add New Category</option>
-                    </select>
-                  </div>
-
-                  {/* New Category Dynamic Fields */}
-                  {showNewCatForm && (
-                    <div className="p-4 bg-stone-900/50 border border-emerald-900 rounded-xl space-y-3 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                      <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">Create Category</h4>
-                      <div>
-                        <label className="block text-[10px] font-medium text-stone-400 mb-1">Category Name</label>
-                        <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 focus:border-emerald-500 outline-none" placeholder="e.g. Cucumber" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-medium text-stone-400 mb-1">Prefix Code (1-2 letters)</label>
-                        <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase focus:border-emerald-500 outline-none" placeholder="e.g. CU" />
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
-                    <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
-                      <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
-                      <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
-                    </div>
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
+                  <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 outline-none" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
-                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 outline-none" />
+                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 italic focus:border-emerald-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes & Instructions</label>
-                    <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none resize-none" />
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
+                    <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Life Cycle</label>
+                    <input type="text" value={analysisResult.lifecycle || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, lifecycle: e.target.value })} placeholder="Annual, Perennial..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Sunlight</label>
+                    <input type="text" value={analysisResult.sunlight || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, sunlight: e.target.value })} placeholder="Full Sun..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
                   </div>
                 </div>
-                <div className="mt-8 flex gap-3">
-                  <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-                  <button onClick={handleSaveScannedToInventory} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
+              </div>
+
+              {/* PLANTING SPECS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Planting Specs</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Seed Depth</label>
+                    <input type="text" value={analysisResult.seed_depth || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, seed_depth: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Plant Spacing</label>
+                    <input type="text" value={analysisResult.plant_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, plant_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Row Spacing</label>
+                    <input type="text" value={analysisResult.row_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, row_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
+                    <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
                 </div>
+              </div>
+
+              {/* GERMINATION NEEDS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Germination Needs</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Germination</label>
+                    <input type="text" value={analysisResult.germination_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, germination_days: e.target.value })} placeholder="e.g. 7-14 days" className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
+                    <input type="checkbox" checked={analysisResult.light_required || false} onChange={(e) => setAnalysisResult({ ...analysisResult, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
+                    <label className="text-xs text-stone-200">Needs Light</label>
+                  </div>
+                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
+                    <input type="checkbox" checked={analysisResult.cold_stratification || false} onChange={(e) => setAnalysisResult({ ...analysisResult, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
+                    <label className="text-xs text-stone-200">Needs Cold Strat.</label>
+                  </div>
+                  {analysisResult.cold_stratification && (
+                    <div className="col-span-2 mt-2">
+                      <label className="block text-xs font-medium text-stone-400 mb-1">Stratification Days</label>
+                      <input type="number" value={analysisResult.stratification_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value })} placeholder="Days in fridge..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* NOTES */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes</label>
+                  <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none resize-none" />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
+                <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
               </div>
             </div>
           ) : imagePreview ? (
@@ -543,34 +642,34 @@ export default function App() {
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
               </div>
-              <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors">
+              <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
                 Save
               </button>
             </header>
 
-            <div className="max-w-md mx-auto p-4 space-y-6">
+            <div className="max-w-md mx-auto p-4 space-y-5">
               {/* Image Manager */}
-              <section className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-stone-800">Photos</h3>
-                  <button onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-medium flex items-center gap-1 hover:text-emerald-500">
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-stone-800">Photos</h3>
+                  <button onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     Add Photo
                   </button>
                   <input type="file" accept="image/*" capture="environment" ref={editPhotoInputRef} className="hidden" onChange={handleEditPhotoCapture} />
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-3">
                   {(!editFormData.images || editFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
                   {(editFormData.images || []).map((img, idx) => (
-                    <div key={idx} className={`relative aspect-square rounded-lg overflow-hidden border-2 ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
+                    <div key={idx} className={`relative aspect-square rounded-xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
                       <img src={img} alt="Seed" className="w-full h-full object-cover" />
-                      <div className="absolute top-1 right-1 flex gap-1">
-                         <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1 rounded-full ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white' : 'bg-stone-900/50 text-stone-200 hover:bg-stone-900/80'}`}>
-                           <svg className="w-3 h-3" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                      <div className="absolute top-1 right-1 flex flex-col gap-1">
+                         <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-stone-100 hover:bg-stone-900/60'}`}>
+                           <svg className="w-3.5 h-3.5" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                          </button>
-                         <button onClick={() => handleRemoveImage(idx)} className="p-1 rounded-full bg-red-500/80 text-white hover:bg-red-500">
-                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                         <button onClick={() => handleRemoveImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
+                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                          </button>
                       </div>
                     </div>
@@ -578,78 +677,126 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Data Form */}
-              <section className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
-                  <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
-                </div>
-
-                {/* Category Dropdown (Edit Mode) */}
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
-                  <select 
-                    value={editFormData.category} 
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__NEW__') {
-                        setShowNewCatForm(true);
-                        setNewCatName("");
-                        setNewCatPrefix("");
-                      } else {
-                        setShowNewCatForm(false);
-                      }
-                      setEditFormData({ ...editFormData, category: val });
-                    }}
-                    className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none"
-                  >
-                    <option value="" disabled>Select a category...</option>
-                    {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category</option>
-                  </select>
-                </div>
-
-                {/* Add New Category Dynamic Fields */}
-                {showNewCatForm && (
-                  <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-3 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                    <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-2">Create Category</h4>
-                    <div>
-                      <label className="block text-[10px] font-medium text-stone-500 mb-1">Category Name</label>
-                      <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-white border border-stone-300 rounded-md p-2 text-sm text-stone-800 focus:border-emerald-500 outline-none" placeholder="e.g. Cucumber" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-medium text-stone-500 mb-1">Prefix Code (1-2 letters)</label>
-                      <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-stone-300 rounded-md p-2 text-sm text-stone-800 font-mono uppercase focus:border-emerald-500 outline-none" placeholder="e.g. CU" />
-                    </div>
+              {/* Data Forms grouped into cards */}
+              
+              {/* Basics */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Basic Info</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
+                    <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
                   </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
-                  <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
+                    <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
+                    <select 
+                      value={editFormData.category} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__NEW__') {
+                          setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
+                        } else setShowNewCatForm(false);
+                        setEditFormData({ ...editFormData, category: val });
+                      }}
+                      className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none"
+                    >
+                      <option value="" disabled>Select...</option>
+                      {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                      <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category</option>
+                    </select>
+                  </div>
+                  
+                  {showNewCatForm && (
+                    <div className="col-span-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-medium text-emerald-800 mb-1">New Cat Name</label>
+                        <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-emerald-800 mb-1">Prefix (1-2 char)</label>
+                        <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm uppercase outline-none" />
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label>
+                    <input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
+                    <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Life Cycle</label>
+                    <input type="text" value={editFormData.lifecycle} onChange={(e) => setEditFormData({ ...editFormData, lifecycle: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
                 </div>
+              </section>
+
+              {/* Specs */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Planting Specs</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1">Days to Maturity</label>
                     <input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
-                    <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Sunlight</label>
+                    <input type="text" value={editFormData.sunlight} onChange={(e) => setEditFormData({ ...editFormData, sunlight: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label>
-                  <input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Growing Notes & Instructions</label>
-                  <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Plant Spacing</label>
+                    <input type="text" value={editFormData.plant_spacing} onChange={(e) => setEditFormData({ ...editFormData, plant_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Row Spacing</label>
+                    <input type="text" value={editFormData.row_spacing} onChange={(e) => setEditFormData({ ...editFormData, row_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Seed Depth</label>
+                    <input type="text" value={editFormData.seed_depth} onChange={(e) => setEditFormData({ ...editFormData, seed_depth: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
                 </div>
               </section>
 
-              <button onClick={handleDeleteSeed} className="w-full py-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+              {/* Germination Needs */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Germination Needs</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Days to Germination</label>
+                    <input type="text" value={editFormData.germination_days} onChange={(e) => setEditFormData({ ...editFormData, germination_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
+                    <input type="checkbox" checked={editFormData.light_required} onChange={(e) => setEditFormData({ ...editFormData, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                    <label className="text-sm font-medium text-stone-700">Needs Light</label>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
+                    <input type="checkbox" checked={editFormData.cold_stratification} onChange={(e) => setEditFormData({ ...editFormData, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                    <label className="text-sm font-medium text-stone-700">Cold Strat.</label>
+                  </div>
+                  {editFormData.cold_stratification && (
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-stone-500 mb-1">Stratification Days</label>
+                      <input type="number" value={editFormData.stratification_days} onChange={(e) => setEditFormData({ ...editFormData, stratification_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Notes */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+                <label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label>
+                <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" />
+              </section>
+
+              <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 Delete Seed Permanently
               </button>
@@ -691,7 +838,12 @@ export default function App() {
                 </div>
               )}
               <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/80 to-transparent p-4 pt-12">
-                <div className="inline-block bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm mb-1">{selectedSeed.id}</div>
+                <div className="flex gap-2 mb-1">
+                  <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">{selectedSeed.id}</div>
+                  {selectedSeed.out_of_stock && (
+                    <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">OUT OF STOCK</div>
+                  )}
+                </div>
                 <h2 className="text-2xl font-bold text-white leading-tight">{selectedSeed.variety_name}</h2>
                 <p className="text-emerald-300 text-sm font-medium">{selectedSeed.category} <span className="text-stone-300 font-normal italic">({selectedSeed.species})</span></p>
               </div>
@@ -708,16 +860,66 @@ export default function App() {
               </div>
             )}
 
-            {/* Data Sheet */}
-            <div className="p-4 space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-1">Source</div>
-                  <div className="text-stone-800 font-medium">{selectedSeed.vendor}</div>
+            {/* Data Sheets */}
+            <div className="p-4 space-y-4">
+              
+              {/* Quick Info Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Maturity</div>
+                  <div className="text-stone-800 font-bold">{selectedSeed.days_to_maturity} Days</div>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-xs font-semibold uppercase tracking-wider mb-1">Maturity</div>
-                  <div className="text-stone-800 font-medium">{selectedSeed.days_to_maturity} Days</div>
+                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Sunlight</div>
+                  <div className="text-stone-800 font-bold truncate">{selectedSeed.sunlight || '--'}</div>
+                </div>
+                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Life Cycle</div>
+                  <div className="text-stone-800 font-bold truncate">{selectedSeed.lifecycle || '--'}</div>
+                </div>
+                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Vendor</div>
+                  <div className="text-stone-800 font-bold truncate">{selectedSeed.vendor || '--'}</div>
+                </div>
+              </div>
+
+              {/* Planting & Germination Specs */}
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
+                <h3 className="text-sm font-bold text-stone-800 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+                  Planting Requirements
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between border-b border-stone-50 pb-2">
+                    <span className="text-stone-500">Seed Depth</span>
+                    <span className="font-medium text-stone-800">{selectedSeed.seed_depth || '--'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-stone-50 pb-2">
+                    <span className="text-stone-500">Plant Spacing</span>
+                    <span className="font-medium text-stone-800">{selectedSeed.plant_spacing || '--'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-stone-50 pb-2">
+                    <span className="text-stone-500">Row Spacing</span>
+                    <span className="font-medium text-stone-800">{selectedSeed.row_spacing || '--'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-stone-50 pb-2">
+                    <span className="text-stone-500">Germination Time</span>
+                    <span className="font-medium text-stone-800">{selectedSeed.germination_days || '--'}</span>
+                  </div>
+                  
+                  {/* Tags for specific needs */}
+                  {(selectedSeed.light_required || selectedSeed.cold_stratification) && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {selectedSeed.light_required && (
+                        <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded">Needs Light to Germinate</span>
+                      )}
+                      {selectedSeed.cold_stratification && (
+                        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
+                          Cold Stratification ({selectedSeed.stratification_days} days)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -737,7 +939,6 @@ export default function App() {
     }
 
     // 2. LIST VIEW
-    // Filter logic
     const filteredInventory = inventory.filter(seed => {
       const matchesSearch = seed.variety_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             seed.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -794,7 +995,7 @@ export default function App() {
                 onClick={() => setActiveFilter(cat.name)}
                 className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat.name ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}
               >
-                {cat.name}s
+                {cat.name}
               </button>
             ))}
           </div>
@@ -808,41 +1009,57 @@ export default function App() {
             ) : filteredInventory.length > 0 ? (
               filteredInventory.map(seed => {
                 const thumb = seed.images && seed.images.length > 0 ? seed.images[seed.primaryImageIndex || 0] : null;
+                const isOutOfStock = seed.out_of_stock;
+
                 return (
                   <div 
                     key={seed.id} 
                     onClick={() => setSelectedSeed(seed)}
-                    className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm flex items-start gap-4 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer"
+                    className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}
                   >
-                    {/* Thumbnail Image */}
-                    <div className="w-16 h-16 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200">
-                      {thumb ? (
-                        <img src={thumb} alt={seed.variety_name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-stone-300">
-                          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <div className="flex items-start gap-4">
+                      {/* Thumbnail Image */}
+                      <div className={`w-16 h-16 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 ${isOutOfStock ? 'grayscale' : ''}`}>
+                        {thumb ? (
+                          <img src={thumb} alt={seed.variety_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-stone-300">
+                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0 py-1">
+                        <div className="flex justify-between items-start mb-0.5">
+                          <h3 className={`font-bold text-base leading-tight truncate pr-2 ${isOutOfStock ? 'text-stone-500 line-through decoration-stone-300' : 'text-stone-800'}`}>{seed.variety_name}</h3>
+                          <div className="bg-stone-100 text-stone-600 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-stone-200 shadow-inner whitespace-nowrap">
+                            {seed.id}
+                          </div>
                         </div>
-                      )}
+                        <div className="text-xs text-emerald-600 font-semibold mb-2 truncate">{seed.category} <span className="text-stone-400 font-normal italic">({seed.species})</span></div>
+                        
+                        <div className="flex justify-between items-center text-[11px]">
+                          {/* New Attribute Display: Plant Spacing visible on card */}
+                          <span className="font-medium text-stone-600 flex items-center gap-1 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200">
+                            <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                            {seed.plant_spacing || '--'}
+                          </span>
+                          
+                          <span className="font-bold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded flex-shrink-0 border border-stone-200">
+                            {seed.days_to_maturity} DTM
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     
-                    <div className="flex-1 min-w-0 py-1">
-                      <div className="flex justify-between items-start mb-0.5">
-                        <h3 className="font-bold text-stone-800 text-base leading-tight truncate pr-2">{seed.variety_name}</h3>
-                        <div className="bg-stone-100 text-stone-600 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-stone-200 shadow-inner whitespace-nowrap">
-                          {seed.id}
-                        </div>
-                      </div>
-                      <div className="text-xs text-emerald-600 font-semibold mb-1.5 truncate">{seed.category} <span className="text-stone-400 font-normal italic">({seed.species})</span></div>
-                      
-                      <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-stone-500 flex items-center gap-1 truncate max-w-[60%]">
-                          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                          <span className="truncate">{seed.vendor}</span>
-                        </span>
-                        <span className="font-medium text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                          {seed.days_to_maturity} DTM
-                        </span>
-                      </div>
+                    {/* Quick Action Footer */}
+                    <div className="flex justify-end border-t border-stone-100 pt-2">
+                      <button 
+                        onClick={(e) => toggleOutOfStock(seed, e)}
+                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border ${isOutOfStock ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100 hover:text-stone-800'}`}
+                      >
+                        {isOutOfStock ? 'Mark In Stock' : 'Mark Out of Stock'}
+                      </button>
                     </div>
                   </div>
                 );
@@ -870,7 +1087,6 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.11</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
