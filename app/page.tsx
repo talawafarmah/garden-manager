@@ -14,7 +14,7 @@ interface SeedData {
   category?: string;
 }
 
-export default function Home() {
+export default function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -65,9 +65,13 @@ export default function Home() {
     for (let i = 0; i < retries; i++) {
       try {
         const res = await fetch(url, options);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        if (!res.ok) {
+          // Attempt to extract the actual API error message instead of a generic failure
+          const errText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errText.substring(0, 150)}...`);
+        }
         return await res.json();
-      } catch (e) {
+      } catch (e: any) {
         if (i === retries - 1) throw e;
         await new Promise(r => setTimeout(r, delay));
         delay *= 2;
@@ -83,13 +87,15 @@ export default function Home() {
 
     try {
       const base64Data = await fileToBase64(selectedFile);
+      // Fallback MIME type in case the mobile browser doesn't provide one
+      const mimeType = selectedFile.type || "image/jpeg";
       
       const payload = {
         contents: [{
           role: "user",
           parts: [
             { text: "Analyze this seed packet. Extract the variety name, vendor/company, days to maturity (number only), botanical species, and general category (e.g., Pepper, Tomato, Flower)." },
-            { inlineData: { mimeType: selectedFile.type, data: base64Data } }
+            { inlineData: { mimeType: mimeType, data: base64Data } }
           ]
         }],
         systemInstruction: {
@@ -120,14 +126,21 @@ export default function Home() {
 
       const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
       if (textResponse) {
-        const parsedData = JSON.parse(textResponse);
-        setAnalysisResult(parsedData);
+        try {
+          // Safely strip any potential markdown formatting the AI might inject
+          const cleanText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+          const parsedData = JSON.parse(cleanText);
+          setAnalysisResult(parsedData);
+        } catch (parseError) {
+          throw new Error(`Failed to parse AI response. Raw Output: ${textResponse}`);
+        }
       } else {
         throw new Error("No text returned from AI");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setErrorMsg("Failed to analyze image. Please check connection and try again.");
+      // We now display the exact error message to the user for easier debugging
+      setErrorMsg(`Error: ${err.message || "Unknown error occurred"}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -147,7 +160,10 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold">Scan Seed Packet</h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">
+            Scan Seed Packet
+            <span className="text-sm font-normal text-stone-500">v1.1</span>
+          </h1>
         </header>
 
         {/* Scanner Body */}
@@ -162,7 +178,7 @@ export default function Home() {
           />
 
           {errorMsg && (
-            <div className="w-full max-w-sm bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-sm">
+            <div className="w-full max-w-sm bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-xs font-mono break-words">
               {errorMsg}
             </div>
           )}
@@ -223,7 +239,7 @@ export default function Home() {
                   className={`object-cover w-full h-full transition-opacity duration-300 ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`}
                 />
                 {isAnalyzing && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400 bg-stone-900/40">
                     <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -280,7 +296,10 @@ export default function Home() {
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Garden Manager</h1>
+            <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
+              Garden Manager
+              <span className="text-sm font-normal text-emerald-300">v1.1</span>
+            </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
           <svg className="w-8 h-8 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
