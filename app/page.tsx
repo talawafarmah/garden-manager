@@ -123,33 +123,61 @@ export default function App() {
         }
       };
 
-      // Determine which model to use. Canvas uses the internal preview model, local deployments use the public 1.5-flash model.
+      // Determine which model to use. Canvas uses the internal preview model.
+      // Local deployments get a cascading array of robust public models.
       const isLocalDeployment = !!process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      const modelName = isLocalDeployment ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025";
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-      
-      const result = await fetchWithRetry(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const modelsToTry = isLocalDeployment 
+        ? ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"] 
+        : ["gemini-2.5-flash-preview-09-2025"];
 
-      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (textResponse) {
+      let result;
+      let textResponse;
+      let lastError;
+
+      // Cascading Fallback Loop
+      for (const modelName of modelsToTry) {
         try {
-          // Safely strip any potential markdown formatting the AI might inject
-          const cleanText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-          const parsedData = JSON.parse(cleanText);
-          setAnalysisResult(parsedData);
-        } catch (parseError) {
-          throw new Error(`Failed to parse AI response. Raw Output: ${textResponse}`);
+          console.log(`Attempting scan with model: ${modelName}...`);
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+          
+          // Lower retries per model so we can fail-fast and try the next one in the array
+          result = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }, 2);
+
+          textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+          
+          if (textResponse) {
+            console.log(`Success! Data extracted via ${modelName}`);
+            break; // Break out of the loop, we got our data!
+          }
+        } catch (err: any) {
+          console.warn(`Model ${modelName} failed:`, err.message);
+          lastError = err;
+          // Loop continues to the next model automatically
         }
-      } else {
-        throw new Error("No text returned from AI");
       }
+
+      // If we exhausted the entire array and still have no textResponse, throw the final error
+      if (!textResponse) {
+        throw lastError || new Error("All AI models failed to respond or are unavailable.");
+      }
+
+      // Parse the successful response
+      try {
+        // Safely strip any potential markdown formatting the AI might inject
+        const cleanText = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsedData = JSON.parse(cleanText);
+        setAnalysisResult(parsedData);
+      } catch (parseError) {
+        throw new Error(`Failed to parse AI response. Raw Output: ${textResponse}`);
+      }
+      
     } catch (err: any) {
       console.error(err);
-      // We now display the exact error message to the user for easier debugging
+      // We display the exact error message to the user for easier debugging
       setErrorMsg(`Error: ${err.message || "Unknown error occurred"}`);
     } finally {
       setIsAnalyzing(false);
@@ -172,7 +200,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.3</span>
+            <span className="text-sm font-normal text-stone-500">v1.4</span>
           </h1>
         </header>
 
@@ -308,7 +336,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.3</span>
+              <span className="text-sm font-normal text-emerald-300">v1.4</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
