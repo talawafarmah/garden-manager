@@ -123,7 +123,10 @@ export default function App() {
         }
       };
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      // Determine which model to use. Canvas uses the internal preview model, local deployments use the public 1.5-flash model.
+      const isLocalDeployment = !!process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      const modelName = isLocalDeployment ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       
       const result = await fetchWithRetry(url, {
         method: 'POST',
@@ -169,7 +172,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.2</span>
+            <span className="text-sm font-normal text-stone-500">v1.3</span>
           </h1>
         </header>
 
@@ -305,7 +308,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.2</span>
+              <span className="text-sm font-normal text-emerald-300">v1.3</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
