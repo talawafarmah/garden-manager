@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
-// This uses the environment variables you set in Vercel and .env.local
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -12,7 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Use environment variable for your local Next.js/Vercel app
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ""; 
 
-// Define the shape of our extracted AI seed data
+// Define data shapes
 interface SeedData {
   variety_name?: string;
   vendor?: string;
@@ -22,7 +21,6 @@ interface SeedData {
   notes?: string;
 }
 
-// Interface matching our Supabase 'seed_inventory' table
 interface InventorySeed {
   id: string;
   category: string;
@@ -35,10 +33,20 @@ interface InventorySeed {
   primaryImageIndex: number;
 }
 
+interface SeedCategory {
+  name: string;
+  prefix: string;
+}
+
 export default function App() {
   // Navigation States
   const [isScanning, setIsScanning] = useState(false);
   const [isViewingInventory, setIsViewingInventory] = useState(false);
+  
+  // App Data State
+  const [inventory, setInventory] = useState<InventorySeed[]>([]);
+  const [categories, setCategories] = useState<SeedCategory[]>([]);
+  const [isLoadingDB, setIsLoadingDB] = useState(false);
   
   // Scanner States
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -48,9 +56,12 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Inventory & Detail States (NO MORE MOCK DATA)
-  const [inventory, setInventory] = useState<InventorySeed[]>([]);
-  const [isLoadingDB, setIsLoadingDB] = useState(false);
+  // New Category Form States
+  const [showNewCatForm, setShowNewCatForm] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatPrefix, setNewCatPrefix] = useState("");
+
+  // Inventory & Detail States
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedSeed, setSelectedSeed] = useState<InventorySeed | null>(null);
@@ -62,14 +73,27 @@ export default function App() {
 
   // --- DATABASE FETCHING LOGIC ---
   useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
     if (isViewingInventory) {
       fetchInventory();
     }
   }, [isViewingInventory]);
 
+  const fetchCategories = async () => {
+    const { data, error } = await supabase
+      .from('seed_categories')
+      .select('*')
+      .order('name');
+    if (!error && data) {
+      setCategories(data);
+    }
+  };
+
   const fetchInventory = async () => {
     setIsLoadingDB(true);
-    // Fetch all seeds from Supabase, ordered by newest first
     const { data, error } = await supabase
       .from('seed_inventory')
       .select('*')
@@ -77,11 +101,32 @@ export default function App() {
 
     if (error) {
       console.error("Error fetching inventory:", error);
-      alert("Failed to load inventory from database.");
     } else if (data) {
       setInventory(data);
     }
     setIsLoadingDB(false);
+  };
+
+  // --- ID GENERATION LOGIC ---
+  const generateNextId = async (prefix: string) => {
+    const { data, error } = await supabase
+      .from('seed_inventory')
+      .select('id')
+      .ilike('id', `${prefix}%`);
+    
+    let maxNum = 0;
+    if (!error && data) {
+      data.forEach(row => {
+        // Matches the prefix and captures the base digits (ignores things like -1, -2)
+        // e.g. "P15-2" -> captures "15"
+        const match = row.id.match(new RegExp(`^${prefix}(\\d+)`, 'i'));
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+    }
+    return `${prefix.toUpperCase()}${maxNum + 1}`;
   };
 
   // --- SCANNER LOGIC ---
@@ -93,6 +138,7 @@ export default function App() {
       setSelectedFile(file);
       setAnalysisResult(null);
       setErrorMsg(null);
+      setShowNewCatForm(false);
     }
   };
 
@@ -102,34 +148,51 @@ export default function App() {
     setSelectedFile(null);
     setAnalysisResult(null);
     setErrorMsg(null);
+    setShowNewCatForm(false);
   };
 
   const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
-      const prefix = analysisResult.category ? analysisResult.category.charAt(0).toUpperCase() : 'U';
-      const newId = `${prefix}${Math.floor(Math.random() * 10000)}`; // Simple ID generation
+      let finalCatName = analysisResult.category || 'Uncategorized';
+      let finalPrefix = 'U';
+
+      // If adding a new category, save it to the DB first
+      if (showNewCatForm && newCatName.trim() !== '') {
+        finalCatName = newCatName.trim();
+        finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
+        
+        // Save new category
+        await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
+        // Update local category state
+        setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
+      } else {
+        // Find existing prefix
+        const found = categories.find(c => c.name === finalCatName);
+        if (found) finalPrefix = found.prefix;
+      }
+
+      // Generate the sequential ID
+      const newId = await generateNextId(finalPrefix);
 
       const newSeed: InventorySeed = {
         id: newId,
-        category: analysisResult.category || 'Uncategorized',
+        category: finalCatName,
         variety_name: analysisResult.variety_name || 'Unknown Variety',
         vendor: analysisResult.vendor || 'Unknown Vendor',
         days_to_maturity: Number(analysisResult.days_to_maturity) || 0,
         species: analysisResult.species || 'Unknown Species',
         notes: analysisResult.notes || '',
-        images: imagePreview ? [imagePreview] : [], // For MVP, saving the base64/blob URL. Ideally, this hooks to Supabase Storage later.
+        images: imagePreview ? [imagePreview] : [],
         primaryImageIndex: 0
       };
 
-      // 1. Save to Supabase DB
       const { error } = await supabase.from('seed_inventory').insert([newSeed]);
 
       if (error) {
         alert("Failed to save to database: " + error.message);
       } else {
-        // 2. Update local UI state
         setInventory([newSeed, ...inventory]);
-        alert(`Success! ${newSeed.variety_name} added to database as ${newSeed.id}`);
+        alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
         cancelScan();
       }
     }
@@ -199,24 +262,18 @@ export default function App() {
         }
       };
 
-      const isLocalDeployment = !!process.env.NEXT_PUBLIC_GEMINI_API_KEY;
       let modelToUse = "gemini-2.5-flash-preview-09-2025";
-
-      if (isLocalDeployment) {
+      if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
         try {
           const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-          if (!modelsRes.ok) throw new Error("Failed to fetch models list");
           const modelsData = await modelsRes.json();
           if (modelsData.models) {
             const available = modelsData.models
               .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
               .map((m: any) => m.name.replace('models/', ''));
-            const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
-            modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
+            modelToUse = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"].find(m => available.includes(m)) || modelToUse;
           }
-        } catch (discoveryErr) {
-          modelToUse = "gemini-1.5-flash";
-        }
+        } catch (e) { modelToUse = "gemini-1.5-flash"; }
       }
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
@@ -224,7 +281,23 @@ export default function App() {
 
       const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
       if (textResponse) {
-        setAnalysisResult(JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim()));
+        const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+        
+        // Smart Category Detection
+        const aiCat = parsedData.category;
+        if (aiCat) {
+          const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
+          if (matched) {
+            parsedData.category = matched.name;
+            setShowNewCatForm(false);
+          } else {
+            parsedData.category = '__NEW__';
+            setShowNewCatForm(true);
+            setNewCatName(aiCat);
+            setNewCatPrefix(aiCat.substring(0, 2).toUpperCase());
+          }
+        }
+        setAnalysisResult(parsedData);
       } else {
         throw new Error("No text returned from AI");
       }
@@ -242,7 +315,7 @@ export default function App() {
       const url = URL.createObjectURL(file);
       setEditFormData({
         ...editFormData,
-        images: [...editFormData.images, url]
+        images: [...(editFormData.images || []), url]
       });
     }
   };
@@ -250,14 +323,9 @@ export default function App() {
   const handleRemoveImage = (indexToRemove: number) => {
     if (!editFormData) return;
     const newImages = editFormData.images.filter((_, idx) => idx !== indexToRemove);
-    let newPrimary = editFormData.primaryImageIndex;
-    
-    if (indexToRemove === editFormData.primaryImageIndex) {
-      newPrimary = 0; 
-    } else if (indexToRemove < editFormData.primaryImageIndex) {
-      newPrimary -= 1;
-    }
-
+    let newPrimary = editFormData.primaryImageIndex || 0;
+    if (indexToRemove === editFormData.primaryImageIndex) newPrimary = 0; 
+    else if (indexToRemove < (editFormData.primaryImageIndex || 0)) newPrimary -= 1;
     setEditFormData({ ...editFormData, images: newImages, primaryImageIndex: newPrimary });
   };
 
@@ -265,6 +333,7 @@ export default function App() {
     if (!editFormData) return;
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
 
+    // Validate Duplicate Shortcode
     if (editFormData.id !== selectedSeed?.id) {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) {
@@ -273,36 +342,41 @@ export default function App() {
       }
     }
 
-    // 1. Update in Supabase
-    const { error } = await supabase
-      .from('seed_inventory')
-      .update(editFormData)
-      .eq('id', selectedSeed?.id); // Match the original ID in case they changed it
+    let finalCatName = editFormData.category;
+
+    // Save new category if they added one during edit
+    if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
+      finalCatName = newCatName.trim();
+      const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
+      await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
+      setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
+    } else if (editFormData.category === '__NEW__') {
+      alert("Please provide a name for the new category.");
+      return;
+    }
+
+    const payload = { ...editFormData, category: finalCatName };
+
+    // Update Supabase
+    const { error } = await supabase.from('seed_inventory').update(payload).eq('id', selectedSeed?.id);
 
     if (error) {
       alert("Failed to update database: " + error.message);
     } else {
-      // 2. Update local UI
-      setInventory(inventory.map(s => s.id === selectedSeed?.id ? editFormData : s));
-      setSelectedSeed(editFormData);
+      setInventory(inventory.map(s => s.id === selectedSeed?.id ? payload : s));
+      setSelectedSeed(payload);
       setIsEditingSeed(false);
+      setShowNewCatForm(false);
     }
   };
 
   const handleDeleteSeed = async () => {
     if (!selectedSeed) return;
-    if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id}) from the database?`)) {
-      
-      // 1. Delete from Supabase
-      const { error } = await supabase
-        .from('seed_inventory')
-        .delete()
-        .eq('id', selectedSeed.id);
-
+    if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id})?`)) {
+      const { error } = await supabase.from('seed_inventory').delete().eq('id', selectedSeed.id);
       if (error) {
         alert("Failed to delete from database: " + error.message);
       } else {
-        // 2. Update local UI
         setInventory(inventory.filter(s => s.id !== selectedSeed.id));
         setSelectedSeed(null);
         setIsEditingSeed(false);
@@ -323,7 +397,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.10</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.11</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -339,6 +413,7 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-emerald-400">Verify Details</h2>
                 </div>
+                
                 {imagePreview && (
                   <div className="mb-6 rounded-xl overflow-hidden border border-stone-700 h-24 relative">
                     <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
@@ -350,11 +425,48 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
                 <div className="space-y-4">
+                  {/* Category Dropdown */}
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
-                    <input type="text" value={analysisResult.category || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, category: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
+                    <select 
+                      value={analysisResult.category || ''} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__NEW__') {
+                          setShowNewCatForm(true);
+                          setNewCatName("");
+                          setNewCatPrefix("");
+                        } else {
+                          setShowNewCatForm(false);
+                        }
+                        setAnalysisResult({ ...analysisResult, category: val });
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none appearance-none"
+                    >
+                      <option value="" disabled>Select a category...</option>
+                      {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                      <option value="__NEW__" className="font-bold text-emerald-400">+ Add New Category</option>
+                    </select>
                   </div>
+
+                  {/* New Category Dynamic Fields */}
+                  {showNewCatForm && (
+                    <div className="p-4 bg-stone-900/50 border border-emerald-900 rounded-xl space-y-3 relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                      <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">Create Category</h4>
+                      <div>
+                        <label className="block text-[10px] font-medium text-stone-400 mb-1">Category Name</label>
+                        <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 focus:border-emerald-500 outline-none" placeholder="e.g. Cucumber" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-stone-400 mb-1">Prefix Code (1-2 letters)</label>
+                        <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase focus:border-emerald-500 outline-none" placeholder="e.g. CU" />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
                     <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 outline-none" />
@@ -368,6 +480,10 @@ export default function App() {
                       <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
                       <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
+                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 outline-none" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes & Instructions</label>
@@ -418,12 +534,11 @@ export default function App() {
     // 1. DETAIL VIEW & EDIT VIEW
     if (selectedSeed) {
       if (isEditingSeed && editFormData) {
-        // --- EDIT SEED FORM ---
         return (
           <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
             <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
               <div className="flex items-center gap-3">
-                <button onClick={() => { setIsEditingSeed(false); setEditFormData(null); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+                <button onClick={() => { setIsEditingSeed(false); setEditFormData(null); setShowNewCatForm(false); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
@@ -446,13 +561,13 @@ export default function App() {
                 </div>
                 
                 <div className="grid grid-cols-3 gap-2">
-                  {editFormData.images.length === 0 && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
-                  {editFormData.images.map((img, idx) => (
-                    <div key={idx} className={`relative aspect-square rounded-lg overflow-hidden border-2 ${idx === editFormData.primaryImageIndex ? 'border-emerald-500' : 'border-stone-200'}`}>
+                  {(!editFormData.images || editFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
+                  {(editFormData.images || []).map((img, idx) => (
+                    <div key={idx} className={`relative aspect-square rounded-lg overflow-hidden border-2 ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
                       <img src={img} alt="Seed" className="w-full h-full object-cover" />
                       <div className="absolute top-1 right-1 flex gap-1">
-                         <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1 rounded-full ${idx === editFormData.primaryImageIndex ? 'bg-emerald-500 text-white' : 'bg-stone-900/50 text-stone-200 hover:bg-stone-900/80'}`}>
-                           <svg className="w-3 h-3" fill={idx === editFormData.primaryImageIndex ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                         <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1 rounded-full ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white' : 'bg-stone-900/50 text-stone-200 hover:bg-stone-900/80'}`}>
+                           <svg className="w-3 h-3" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                          </button>
                          <button onClick={() => handleRemoveImage(idx)} className="p-1 rounded-full bg-red-500/80 text-white hover:bg-red-500">
                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -467,25 +582,62 @@ export default function App() {
               <section className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
-                  <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500" />
+                  <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
                 </div>
+
+                {/* Category Dropdown (Edit Mode) */}
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
+                  <select 
+                    value={editFormData.category} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__NEW__') {
+                        setShowNewCatForm(true);
+                        setNewCatName("");
+                        setNewCatPrefix("");
+                      } else {
+                        setShowNewCatForm(false);
+                      }
+                      setEditFormData({ ...editFormData, category: val });
+                    }}
+                    className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none"
+                  >
+                    <option value="" disabled>Select a category...</option>
+                    {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category</option>
+                  </select>
+                </div>
+
+                {/* Add New Category Dynamic Fields */}
+                {showNewCatForm && (
+                  <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-3 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                    <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-2">Create Category</h4>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-500 mb-1">Category Name</label>
+                      <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-white border border-stone-300 rounded-md p-2 text-sm text-stone-800 focus:border-emerald-500 outline-none" placeholder="e.g. Cucumber" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-500 mb-1">Prefix Code (1-2 letters)</label>
+                      <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-stone-300 rounded-md p-2 text-sm text-stone-800 font-mono uppercase focus:border-emerald-500 outline-none" placeholder="e.g. CU" />
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
                   <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
-                    <input type="text" value={editFormData.category} onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
                     <label className="block text-xs font-medium text-stone-500 mb-1">Days to Maturity</label>
                     <input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
-                  <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
+                    <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label>
@@ -507,7 +659,7 @@ export default function App() {
       }
 
       // --- DETAIL VIEW ---
-      const primaryImg = selectedSeed.images[selectedSeed.primaryImageIndex] || null;
+      const primaryImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[selectedSeed.primaryImageIndex || 0] : null;
       
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
@@ -546,10 +698,10 @@ export default function App() {
             </div>
 
             {/* Other Images Strip */}
-            {selectedSeed.images.length > 1 && (
+            {(selectedSeed.images && selectedSeed.images.length > 1) && (
               <div className="p-4 bg-white border-b border-stone-200 flex gap-2 overflow-x-auto scrollbar-hide">
                 {selectedSeed.images.map((img, idx) => (
-                  <div key={idx} className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 ${idx === selectedSeed.primaryImageIndex ? 'border-emerald-500 opacity-100' : 'border-transparent opacity-60'}`}>
+                  <div key={idx} className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 ${idx === (selectedSeed.primaryImageIndex || 0) ? 'border-emerald-500 opacity-100' : 'border-transparent opacity-60'}`}>
                     <img src={img} className="w-full h-full object-cover" alt="Thumbnail" />
                   </div>
                 ))}
@@ -585,14 +737,11 @@ export default function App() {
     }
 
     // 2. LIST VIEW
-    // Derive available categories for filter chips dynamically from inventory
-    const categories = Array.from(new Set(inventory.map(s => s.category))).filter(Boolean);
-    
     // Filter logic
     const filteredInventory = inventory.filter(seed => {
-      const matchesSearch = seed.variety_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            seed.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            seed.id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = seed.variety_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            seed.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            seed.id?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesFilter = activeFilter === "All" || seed.category === activeFilter;
       return matchesSearch && matchesFilter;
     });
@@ -641,11 +790,11 @@ export default function App() {
             </button>
             {categories.map(cat => (
               <button 
-                key={cat}
-                onClick={() => setActiveFilter(cat)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}
+                key={cat.name}
+                onClick={() => setActiveFilter(cat.name)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat.name ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}
               >
-                {cat}s
+                {cat.name}s
               </button>
             ))}
           </div>
@@ -721,7 +870,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.10</span>
+              <span className="text-sm font-normal text-emerald-300">v1.11</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
