@@ -15,10 +15,21 @@ interface SeedData {
   notes?: string;
 }
 
+// Mock database for the inventory view
+const mockInventory = [
+  { id: 'P154', category: 'Pepper', variety_name: 'Yellow Habanero', vendor: 'XYZ Seeds Inc.', days_to_maturity: 90, species: 'Capsicum chinense' },
+  { id: 'T089', category: 'Tomato', variety_name: 'Cherokee Purple', vendor: 'Baker Creek', days_to_maturity: 80, species: 'Solanum lycopersicum' },
+  { id: 'B012', category: 'Brassica', variety_name: 'Dinosaur Kale', vendor: 'Johnny\'s Seeds', days_to_maturity: 60, species: 'Brassica oleracea' },
+  { id: 'P102-1', category: 'Pepper', variety_name: 'Red Habanero (Saved)', vendor: 'Homegrown (F1)', days_to_maturity: 95, species: 'Capsicum chinense' },
+  { id: 'F004', category: 'Flower', variety_name: 'Marigold (French)', vendor: 'Botanical Interests', days_to_maturity: 45, species: 'Tagetes patula' },
+];
+
 export default function App() {
   const [isScanning, setIsScanning] = useState(false);
+  const [isViewingInventory, setIsViewingInventory] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // AI States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -190,6 +201,94 @@ export default function App() {
     }
   };
 
+  // --- INVENTORY VIEW ---
+  if (isViewingInventory) {
+    const filteredInventory = mockInventory.filter(seed => 
+      seed.variety_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      seed.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      seed.id.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsViewingInventory(false)}
+              className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold">Seed Vault</h1>
+              <p className="text-xs text-emerald-200">{mockInventory.length} varieties saved</p>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-md mx-auto p-4 space-y-4">
+          {/* Search Bar */}
+          <div className="relative">
+            <input 
+              type="text" 
+              placeholder="Search by name, category, or code..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all" 
+            />
+            <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          {/* Filter Chips */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            <button className="px-4 py-1.5 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium whitespace-nowrap">All</button>
+            <button className="px-4 py-1.5 bg-white border border-stone-200 text-stone-600 rounded-full text-sm font-medium whitespace-nowrap hover:bg-stone-50">Peppers</button>
+            <button className="px-4 py-1.5 bg-white border border-stone-200 text-stone-600 rounded-full text-sm font-medium whitespace-nowrap hover:bg-stone-50">Tomatoes</button>
+            <button className="px-4 py-1.5 bg-white border border-stone-200 text-stone-600 rounded-full text-sm font-medium whitespace-nowrap hover:bg-stone-50">Flowers</button>
+          </div>
+
+          {/* Seed List */}
+          <div className="space-y-3">
+            {filteredInventory.length > 0 ? (
+              filteredInventory.map(seed => (
+                <div key={seed.id} className="bg-white p-4 rounded-xl border border-stone-100 shadow-sm flex items-start gap-4 hover:border-emerald-300 transition-colors active:scale-95 cursor-pointer">
+                  {/* Identification Code Badge */}
+                  <div className="bg-stone-100 text-stone-600 font-mono text-xs font-bold px-2 py-1.5 rounded border border-stone-200 mt-1 shadow-inner">
+                    {seed.id}
+                  </div>
+                  
+                  <div className="flex-1">
+                    <h3 className="font-bold text-stone-800 text-lg leading-tight">{seed.variety_name}</h3>
+                    <div className="text-xs text-emerald-600 font-semibold mb-2">{seed.category} <span className="text-stone-400 font-normal italic">({seed.species})</span></div>
+                    
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-stone-500 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                        {seed.vendor}
+                      </span>
+                      <span className="font-medium text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md">
+                        {seed.days_to_maturity} DTM
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-10 text-stone-500">
+                <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p>No seeds found matching "{searchQuery}"</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   // --- SCANNER VIEW ---
   if (isScanning) {
     return (
@@ -206,7 +305,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             Scan Seed Packet
-            <span className="text-sm font-normal text-stone-500">v1.6</span>
+            <span className="text-sm font-normal text-stone-500">v1.7</span>
           </h1>
         </header>
 
@@ -364,7 +463,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.6</span>
+              <span className="text-sm font-normal text-emerald-300">v1.7</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -409,7 +508,10 @@ export default function App() {
               <span className="text-sm font-medium">Manual Entry</span>
             </button>
 
-            <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95">
+            <button 
+              onClick={() => setIsViewingInventory(true)}
+              className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95"
+            >
               <div className="bg-amber-100 p-3 rounded-full mb-2 text-amber-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
