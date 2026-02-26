@@ -2,29 +2,135 @@
 
 import React, { useState, useRef } from 'react';
 
+// Environment-provided API key for the Canvas environment
+const apiKey = ""; 
+
+// Define the shape of our extracted seed data
+interface SeedData {
+  variety_name?: string;
+  vendor?: string;
+  days_to_maturity?: number;
+  species?: string;
+  category?: string;
+}
+
 export default function Home() {
-  // State to toggle between the dashboard and the scanner view
   const [isScanning, setIsScanning] = useState(false);
-  // State to hold the temporary local URL of the captured image
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
-  // Reference to the hidden file input
+  // AI States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<SeedData | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle the image selection/capture
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Create a temporary local URL to preview the image before uploading
       const url = URL.createObjectURL(file);
       setImagePreview(url);
+      setSelectedFile(file);
+      setAnalysisResult(null);
+      setErrorMsg(null);
     }
   };
 
-  // Reset the scanner view
   const cancelScan = () => {
     setIsScanning(false);
     setImagePreview(null);
+    setSelectedFile(null);
+    setAnalysisResult(null);
+    setErrorMsg(null);
+  };
+
+  // Convert File to Base64 (stripping the data:image/... prefix for the API)
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64Data = result.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  // Exponential backoff fetcher for spotty garden Wi-Fi
+  const fetchWithRetry = async (url: string, options: RequestInit, retries = 5) => {
+    let delay = 1000;
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch(url, options);
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return await res.json();
+      } catch (e) {
+        if (i === retries - 1) throw e;
+        await new Promise(r => setTimeout(r, delay));
+        delay *= 2;
+      }
+    }
+  };
+
+  const analyzeImage = async () => {
+    if (!selectedFile) return;
+    
+    setIsAnalyzing(true);
+    setErrorMsg(null);
+
+    try {
+      const base64Data = await fileToBase64(selectedFile);
+      
+      const payload = {
+        contents: [{
+          role: "user",
+          parts: [
+            { text: "Analyze this seed packet. Extract the variety name, vendor/company, days to maturity (number only), botanical species, and general category (e.g., Pepper, Tomato, Flower)." },
+            { inlineData: { mimeType: selectedFile.type, data: base64Data } }
+          ]
+        }],
+        systemInstruction: {
+          parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets into structured JSON." }]
+        },
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              variety_name: { type: "STRING" },
+              vendor: { type: "STRING" },
+              days_to_maturity: { type: "INTEGER" },
+              species: { type: "STRING" },
+              category: { type: "STRING" }
+            }
+          }
+        }
+      };
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      
+      const result = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (textResponse) {
+        const parsedData = JSON.parse(textResponse);
+        setAnalysisResult(parsedData);
+      } else {
+        throw new Error("No text returned from AI");
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Failed to analyze image. Please check connection and try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   // --- SCANNER VIEW ---
@@ -45,8 +151,7 @@ export default function Home() {
         </header>
 
         {/* Scanner Body */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          {/* Hidden File Input utilizing mobile native camera */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
           <input
             type="file"
             accept="image/*"
@@ -56,36 +161,100 @@ export default function Home() {
             onChange={handleImageCapture}
           />
 
-          {imagePreview ? (
-            // Image Preview & Actions
+          {errorMsg && (
+            <div className="w-full max-w-sm bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-sm">
+              {errorMsg}
+            </div>
+          )}
+
+          {analysisResult ? (
+            // --- VERIFICATION FORM ---
+            <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-stone-800 rounded-2xl p-6 shadow-2xl border border-stone-700">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-bold text-emerald-400">Verify Details</h2>
+                  <div className="bg-emerald-900/50 p-2 rounded-full text-emerald-400">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
+                    <input type="text" defaultValue={analysisResult.category} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
+                    <input type="text" defaultValue={analysisResult.variety_name} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
+                      <input type="text" defaultValue={analysisResult.vendor} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
+                      <input type="number" defaultValue={analysisResult.days_to_maturity} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 focus:outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
+                    <input type="text" defaultValue={analysisResult.species} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 italic focus:border-emerald-500 focus:outline-none" />
+                  </div>
+                </div>
+
+                <div className="mt-8 flex gap-3">
+                  <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">
+                    Back
+                  </button>
+                  <button onClick={() => { alert("Ready to save to Supabase!"); cancelScan(); }} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50">
+                    Save to Inventory
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : imagePreview ? (
+            // --- IMAGE PREVIEW & ACTIONS ---
             <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
-              <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl">
+              <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl relative">
                 <img 
                   src={imagePreview} 
                   alt="Captured Seed Packet" 
-                  className="object-cover w-full h-full"
+                  className={`object-cover w-full h-full transition-opacity duration-300 ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`}
                 />
+                {isAnalyzing && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400">
+                    <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span className="font-bold text-lg drop-shadow-md">Extracting Data...</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-4 w-full max-w-sm">
                 <button 
                   onClick={() => fileInputRef.current?.click()} 
-                  className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 transition-colors border border-stone-700"
+                  disabled={isAnalyzing}
+                  className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 transition-colors border border-stone-700 disabled:opacity-50"
                 >
                   Retake
                 </button>
                 <button 
-                  className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2"
+                  onClick={analyzeImage}
+                  disabled={isAnalyzing}
+                  className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  Analyze
+                  {isAnalyzing ? "Processing..." : "Analyze"}
                 </button>
               </div>
             </div>
           ) : (
-            // Prompt to open camera
+            // --- PROMPT TO OPEN CAMERA ---
             <button 
               onClick={() => fileInputRef.current?.click()} 
               className="flex flex-col items-center justify-center w-full max-w-sm aspect-[3/4] border-2 border-dashed border-stone-600 rounded-3xl bg-stone-800/50 text-stone-400 hover:text-emerald-400 hover:border-emerald-500 hover:bg-stone-800 transition-all active:scale-95"
@@ -108,29 +277,22 @@ export default function Home() {
   // --- DASHBOARD VIEW ---
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-      {/* Header Section */}
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Garden Manager</h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
-          {/* Simple Leaf Icon */}
           <svg className="w-8 h-8 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
           </svg>
         </div>
       </header>
 
-      {/* Main Content Container - Mobile Constrained */}
       <div className="max-w-md mx-auto p-4 mt-4 space-y-6">
-        
-        {/* Quick Actions */}
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Add to Inventory</h2>
           <div className="grid grid-cols-2 gap-4">
-            
-            {/* Scan Seed Packet Button - NOW WIRED UP */}
             <button 
               onClick={() => setIsScanning(true)}
               className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95"
@@ -144,7 +306,6 @@ export default function Home() {
               <span className="text-sm font-medium">Scan Packet</span>
             </button>
 
-            {/* Import from URL Button */}
             <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-blue-100 p-3 rounded-full mb-2 text-blue-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -154,7 +315,6 @@ export default function Home() {
               <span className="text-sm font-medium">Import URL</span>
             </button>
 
-            {/* Manual Entry Button */}
             <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-purple-100 p-3 rounded-full mb-2 text-purple-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -164,7 +324,6 @@ export default function Home() {
               <span className="text-sm font-medium">Manual Entry</span>
             </button>
 
-            {/* Inventory Button */}
             <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-amber-100 p-3 rounded-full mb-2 text-amber-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -176,7 +335,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Upcoming Tasks / Alerts */}
         <section>
           <div className="flex justify-between items-center mb-3 px-1">
             <h2 className="text-lg font-semibold text-stone-800">Season Insights</h2>
