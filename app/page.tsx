@@ -448,7 +448,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.12</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.13</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -1088,6 +1088,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
+              <span className="text-sm font-normal text-emerald-300">v1.13</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
