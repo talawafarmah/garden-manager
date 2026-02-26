@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
-// Use environment variable for your local Next.js/Vercel app, fallback to empty string for Canvas
+// Initialize Supabase Client
+// This uses the environment variables you set in Vercel and .env.local
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Use environment variable for your local Next.js/Vercel app
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ""; 
 
 // Define the shape of our extracted AI seed data
@@ -15,7 +22,7 @@ interface SeedData {
   notes?: string;
 }
 
-// Extended interface for our actual inventory items
+// Interface matching our Supabase 'seed_inventory' table
 interface InventorySeed {
   id: string;
   category: string;
@@ -27,19 +34,6 @@ interface InventorySeed {
   images: string[];
   primaryImageIndex: number;
 }
-
-// Generate simple SVG placeholders for mock data
-const generateMockImg = (color: string, text: string) => 
-  `data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Crect fill='${encodeURIComponent(color)}' width='400' height='400'/%3E%3Ctext fill='%23ffffff' font-family='sans-serif' font-size='40' font-weight='bold' x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle'%3E${text}%3C/text%3E%3C/svg%3E`;
-
-// Mock database for the inventory view (initial state)
-const initialMockInventory: InventorySeed[] = [
-  { id: 'P154', category: 'Pepper', variety_name: 'Yellow Habanero', vendor: 'XYZ Seeds Inc.', days_to_maturity: 90, species: 'Capsicum chinense', notes: 'Start indoors 8 weeks before last frost. Needs bottom heat to germinate.', images: [generateMockImg('#F59E0B', 'Habanero')], primaryImageIndex: 0 },
-  { id: 'T089', category: 'Tomato', variety_name: 'Cherokee Purple', vendor: 'Baker Creek', days_to_maturity: 80, species: 'Solanum lycopersicum', notes: 'Indeterminate. Prune suckers for better airflow.', images: [generateMockImg('#9333EA', 'Tomato')], primaryImageIndex: 0 },
-  { id: 'B012', category: 'Brassica', variety_name: 'Dinosaur Kale', vendor: 'Johnny\'s Seeds', days_to_maturity: 60, species: 'Brassica oleracea', notes: 'Frost tolerant. Can harvest leaves continuously.', images: [generateMockImg('#059669', 'Kale')], primaryImageIndex: 0 },
-  { id: 'P102-1', category: 'Pepper', variety_name: 'Red Habanero (Saved)', vendor: 'Homegrown (F1)', days_to_maturity: 95, species: 'Capsicum chinense', notes: 'Saved from the best producing plant last season.', images: [generateMockImg('#DC2626', 'Saved Pepper')], primaryImageIndex: 0 },
-  { id: 'F004', category: 'Flower', variety_name: 'Marigold (French)', vendor: 'Botanical Interests', days_to_maturity: 45, species: 'Tagetes patula', notes: 'Excellent companion plant for tomatoes. Deters nematodes.', images: [generateMockImg('#FBBF24', 'Marigold')], primaryImageIndex: 0 },
-];
 
 export default function App() {
   // Navigation States
@@ -54,8 +48,9 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Inventory & Detail States
-  const [inventory, setInventory] = useState<InventorySeed[]>(initialMockInventory);
+  // Inventory & Detail States (NO MORE MOCK DATA)
+  const [inventory, setInventory] = useState<InventorySeed[]>([]);
+  const [isLoadingDB, setIsLoadingDB] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedSeed, setSelectedSeed] = useState<InventorySeed | null>(null);
@@ -64,6 +59,30 @@ export default function App() {
   const [isEditingSeed, setIsEditingSeed] = useState(false);
   const [editFormData, setEditFormData] = useState<InventorySeed | null>(null);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  // --- DATABASE FETCHING LOGIC ---
+  useEffect(() => {
+    if (isViewingInventory) {
+      fetchInventory();
+    }
+  }, [isViewingInventory]);
+
+  const fetchInventory = async () => {
+    setIsLoadingDB(true);
+    // Fetch all seeds from Supabase, ordered by newest first
+    const { data, error } = await supabase
+      .from('seed_inventory')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Error fetching inventory:", error);
+      alert("Failed to load inventory from database.");
+    } else if (data) {
+      setInventory(data);
+    }
+    setIsLoadingDB(false);
+  };
 
   // --- SCANNER LOGIC ---
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,26 +104,34 @@ export default function App() {
     setErrorMsg(null);
   };
 
-  const handleSaveScannedToInventory = () => {
+  const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
       const prefix = analysisResult.category ? analysisResult.category.charAt(0).toUpperCase() : 'U';
-      const mockId = `${prefix}${Math.floor(Math.random() * 1000)}`;
+      const newId = `${prefix}${Math.floor(Math.random() * 10000)}`; // Simple ID generation
 
       const newSeed: InventorySeed = {
-        id: mockId,
+        id: newId,
         category: analysisResult.category || 'Uncategorized',
         variety_name: analysisResult.variety_name || 'Unknown Variety',
         vendor: analysisResult.vendor || 'Unknown Vendor',
         days_to_maturity: Number(analysisResult.days_to_maturity) || 0,
         species: analysisResult.species || 'Unknown Species',
         notes: analysisResult.notes || '',
-        images: imagePreview ? [imagePreview] : [], // Save the captured image!
+        images: imagePreview ? [imagePreview] : [], // For MVP, saving the base64/blob URL. Ideally, this hooks to Supabase Storage later.
         primaryImageIndex: 0
       };
 
-      setInventory([newSeed, ...inventory]);
-      alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
-      cancelScan();
+      // 1. Save to Supabase DB
+      const { error } = await supabase.from('seed_inventory').insert([newSeed]);
+
+      if (error) {
+        alert("Failed to save to database: " + error.message);
+      } else {
+        // 2. Update local UI state
+        setInventory([newSeed, ...inventory]);
+        alert(`Success! ${newSeed.variety_name} added to database as ${newSeed.id}`);
+        cancelScan();
+      }
     }
   };
 
@@ -225,9 +252,8 @@ export default function App() {
     const newImages = editFormData.images.filter((_, idx) => idx !== indexToRemove);
     let newPrimary = editFormData.primaryImageIndex;
     
-    // Adjust primary index if we delete the primary, or a picture before it
     if (indexToRemove === editFormData.primaryImageIndex) {
-      newPrimary = 0; // fallback to first image
+      newPrimary = 0; 
     } else if (indexToRemove < editFormData.primaryImageIndex) {
       newPrimary -= 1;
     }
@@ -235,11 +261,10 @@ export default function App() {
     setEditFormData({ ...editFormData, images: newImages, primaryImageIndex: newPrimary });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editFormData) return;
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
 
-    // Validation: Check for duplicate ID (ignoring itself)
     if (editFormData.id !== selectedSeed?.id) {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) {
@@ -248,18 +273,40 @@ export default function App() {
       }
     }
 
-    // Save
-    setInventory(inventory.map(s => s.id === selectedSeed?.id ? editFormData : s));
-    setSelectedSeed(editFormData);
-    setIsEditingSeed(false);
+    // 1. Update in Supabase
+    const { error } = await supabase
+      .from('seed_inventory')
+      .update(editFormData)
+      .eq('id', selectedSeed?.id); // Match the original ID in case they changed it
+
+    if (error) {
+      alert("Failed to update database: " + error.message);
+    } else {
+      // 2. Update local UI
+      setInventory(inventory.map(s => s.id === selectedSeed?.id ? editFormData : s));
+      setSelectedSeed(editFormData);
+      setIsEditingSeed(false);
+    }
   };
 
-  const handleDeleteSeed = () => {
+  const handleDeleteSeed = async () => {
     if (!selectedSeed) return;
-    if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id})?`)) {
-      setInventory(inventory.filter(s => s.id !== selectedSeed.id));
-      setSelectedSeed(null);
-      setIsEditingSeed(false);
+    if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id}) from the database?`)) {
+      
+      // 1. Delete from Supabase
+      const { error } = await supabase
+        .from('seed_inventory')
+        .delete()
+        .eq('id', selectedSeed.id);
+
+      if (error) {
+        alert("Failed to delete from database: " + error.message);
+      } else {
+        // 2. Update local UI
+        setInventory(inventory.filter(s => s.id !== selectedSeed.id));
+        setSelectedSeed(null);
+        setIsEditingSeed(false);
+      }
     }
   };
 
@@ -276,7 +323,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.9</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.10</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -329,7 +376,7 @@ export default function App() {
                 </div>
                 <div className="mt-8 flex gap-3">
                   <button onClick={() => setAnalysisResult(null)} className="flex-1 py-3 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-                  <button onClick={handleSaveScannedToInventory} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Inventory</button>
+                  <button onClick={handleSaveScannedToInventory} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
                 </div>
               </div>
             </div>
@@ -605,9 +652,13 @@ export default function App() {
 
           {/* Seed List */}
           <div className="space-y-3">
-            {filteredInventory.length > 0 ? (
+            {isLoadingDB ? (
+              <div className="flex justify-center items-center py-10 text-emerald-600">
+                <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              </div>
+            ) : filteredInventory.length > 0 ? (
               filteredInventory.map(seed => {
-                const thumb = seed.images[seed.primaryImageIndex];
+                const thumb = seed.images && seed.images.length > 0 ? seed.images[seed.primaryImageIndex || 0] : null;
                 return (
                   <div 
                     key={seed.id} 
@@ -670,7 +721,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.9</span>
+              <span className="text-sm font-normal text-emerald-300">v1.10</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
