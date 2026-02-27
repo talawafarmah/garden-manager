@@ -13,6 +13,7 @@ export default function Dashboard({ navigateTo }: Props) {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
+              <span className="text-sm font-normal text-emerald-300">v2.0</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>

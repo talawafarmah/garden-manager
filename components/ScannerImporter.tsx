@@ -177,6 +177,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
         </button>
         <h1 className="text-xl font-bold flex items-baseline gap-2">
           {isScanMode ? 'Scan Seed Packet' : 'Import from URL'}
+          <span className="text-sm font-normal text-stone-500">v2.0</span>
         </h1>
       </header>
 
