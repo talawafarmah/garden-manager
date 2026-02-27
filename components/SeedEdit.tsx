@@ -1,31 +1,35 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory } from '../types';
 import { fetchWithRetry, getBestModel } from '../lib/utils';
 
-// Helper function to dynamically downscale large images into tiny thumbnails
-const generateThumbnail = (base64Str: string): Promise<string> => {
+// Universal Resizer: Downscales huge files to an optimal size/quality to save bucket space
+const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
   return new Promise((resolve) => {
-    if (!base64Str) return resolve("");
+    if (!source) return resolve("");
+    
     const img = new Image();
+    img.crossOrigin = "anonymous"; // Required to prevent tainted canvas when reading signed URLs
+    
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const MAX_SIZE = 150; 
       let width = img.width;
       let height = img.height;
+      
       if (width > height) {
-        if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+        if (width > maxSize) { height *= maxSize / width; width = maxSize; }
       } else {
-        if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+        if (height > maxSize) { width *= maxSize / height; height = maxSize; }
       }
+      
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.6)); 
+      resolve(canvas.toDataURL('image/jpeg', quality)); 
     };
     img.onerror = () => resolve("");
-    img.src = base64Str.startsWith('data:') ? base64Str : `data:image/jpeg;base64,${base64Str}`;
+    img.src = source.startsWith('data:') || source.startsWith('http') ? source : `data:image/jpeg;base64,${source}`;
   });
 };
 
@@ -34,8 +38,33 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const [showNewCatForm, setShowNewCatForm] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatPrefix, setNewCatPrefix] = useState("");
+  
   const [isAutoFilling, setIsAutoFilling] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Stores temporary signed URLs for viewing private bucket images in the UI
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-generate secure signed URLs for any storage paths
+  useEffect(() => {
+    const loadUrls = async () => {
+      const newUrls: Record<string, string> = { ...signedUrls };
+      let changed = false;
+
+      for (const img of (editFormData.images || [])) {
+        if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
+          const { data } = await supabase.storage.from('vault_media').createSignedUrl(img, 3600); // 1-hour expiry
+          if (data) {
+            newUrls[img] = data.signedUrl;
+            changed = true;
+          }
+        }
+      }
+      if (changed) setSignedUrls(newUrls);
+    };
+    loadUrls();
+  }, [editFormData.images]);
 
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,19 +103,67 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       alert("Please provide a name for the new category."); return;
     }
 
-    let newThumbnail = editFormData.thumbnail || "";
-    if (editFormData.images && editFormData.images.length > 0) {
-      const primaryIdx = editFormData.primaryImageIndex || 0;
-      newThumbnail = await generateThumbnail(editFormData.images[primaryIdx]);
-    }
+    setIsSaving(true);
+    try {
+      const uploadedImagePaths = [];
+      // Obfuscate the folder name using Base64 encoding of the Seed ID
+      const folderName = btoa(editFormData.id).replace(/=/g, ''); 
 
-    const payload = { ...editFormData, category: finalCatName, thumbnail: newThumbnail };
-    const { error } = await supabase.from('seed_inventory').update(payload).eq('id', seed.id);
+      for (const img of (editFormData.images || [])) {
+        if (img.startsWith('data:image')) {
+          // 1. Resize large image to max 1600px to save storage space
+          const optimizedBase64 = await resizeImage(img, 1600, 0.8);
+          const res = await fetch(optimizedBase64);
+          const blob = await res.blob();
+          
+          // 2. Generate obfuscated UUID filename
+          const fileName = `${crypto.randomUUID()}.jpg`;
+          const filePath = `${folderName}/${fileName}`;
+          
+          // 3. Upload to private Supabase bucket
+          const { error: uploadErr } = await supabase.storage.from('vault_media').upload(filePath, blob, { contentType: 'image/jpeg' });
+          if (uploadErr) throw new Error("Upload failed: " + uploadErr.message);
+          
+          uploadedImagePaths.push(filePath);
+        } else {
+          // It's already a secure path from a previous save
+          uploadedImagePaths.push(img);
+        }
+      }
 
-    if (error) alert("Failed to update database: " + error.message);
-    else {
-      // Update global inventory if needed, but VaultList fetches its own now
+      // Handle the ultra-fast inline thumbnail for the List View
+      let newThumbnail = editFormData.thumbnail || "";
+      if (uploadedImagePaths.length > 0) {
+        const primaryIdx = editFormData.primaryImageIndex || 0;
+        const primaryImgSource = editFormData.images[primaryIdx];
+        
+        // Use the base64 or the dynamically fetched signed URL to generate the thumbnail
+        let sourceToResize = primaryImgSource;
+        if (!primaryImgSource.startsWith('data:image') && !primaryImgSource.startsWith('http')) {
+           sourceToResize = signedUrls[primaryImgSource]; 
+        }
+        
+        if (sourceToResize) {
+           newThumbnail = await resizeImage(sourceToResize, 150, 0.6);
+        }
+      }
+
+      const payload = { 
+        ...editFormData, 
+        category: finalCatName, 
+        images: uploadedImagePaths, 
+        thumbnail: newThumbnail 
+      };
+      
+      const { error } = await supabase.from('seed_inventory').update(payload).eq('id', seed.id);
+      if (error) throw new Error("Failed to update database: " + error.message);
+      
       navigateTo('seed_detail', payload); 
+      
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -156,7 +233,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           <button onClick={() => handleGoBack('seed_detail')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
           <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
         </div>
-        <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">Save</button>
+        <button onClick={handleSaveEdit} disabled={isSaving} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50">
+          {isSaving ? "Saving..." : "Save"}
+        </button>
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-5">
@@ -164,7 +243,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         {/* MAGIC AUTO-FILL BUTTON */}
         <button 
           onClick={handleAutoFill}
-          disabled={isAutoFilling}
+          disabled={isAutoFilling || isSaving}
           className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
         >
           {isAutoFilling ? (
@@ -188,15 +267,22 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </div>
           <div className="grid grid-cols-3 gap-3">
             {(!editFormData.images || editFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
-            {(editFormData.images || []).map((img: string, idx: number) => (
-              <div key={idx} className={`relative aspect-square rounded-xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
-                <img src={img} alt="Seed" className="w-full h-full object-cover" />
-                <div className="absolute top-1 right-1 flex flex-col gap-1">
-                   <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-stone-100 hover:bg-stone-900/60'}`}><svg className="w-3.5 h-3.5" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg></button>
-                   <button onClick={() => handleRemoveImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            {(editFormData.images || []).map((img: string, idx: number) => {
+              // Resolve display source: raw base64, URL, or secure signed URL
+              const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
+
+              return (
+                <div key={idx} className={`relative aspect-square rounded-xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200 bg-stone-100'}`}>
+                  {displaySrc && <img src={displaySrc} alt="Seed" className="w-full h-full object-cover" />}
+                  {!displaySrc && <div className="absolute inset-0 flex items-center justify-center"><svg className="w-5 h-5 text-stone-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>}
+                  
+                  <div className="absolute top-1 right-1 flex flex-col gap-1">
+                     <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-stone-100 hover:bg-stone-900/60'}`}><svg className="w-3.5 h-3.5" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg></button>
+                     <button onClick={() => handleRemoveImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -255,7 +341,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           <div><label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label><textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" /></div>
         </section>
 
-        <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Delete Seed Permanently</button>
+        <button onClick={handleDeleteSeed} disabled={isSaving} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Delete Seed Permanently</button>
       </div>
     </main>
   );

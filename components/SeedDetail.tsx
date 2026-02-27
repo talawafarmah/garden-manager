@@ -7,7 +7,11 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
   const [isLoading, setIsLoading] = useState(!seed.images);
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  
+  // Stores temporary signed URLs for viewing private bucket images in the UI
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
+  // 1. Fetch full details if they weren't passed down
   useEffect(() => {
     const fetchFullDetails = async () => {
       if (!seed.images) {
@@ -23,6 +27,30 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
     fetchFullDetails();
   }, [seed.id, seed.images]);
 
+  // 2. Resolve Signed URLs for private bucket images
+  useEffect(() => {
+    const loadUrls = async () => {
+      if (!fullSeed || !fullSeed.images) return;
+      
+      const newUrls: Record<string, string> = { ...signedUrls };
+      let changed = false;
+
+      for (const img of fullSeed.images) {
+        // If it's NOT a base64 string and NOT a standard http link, it must be a bucket path
+        if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
+          const { data } = await supabase.storage.from('vault_media').createSignedUrl(img, 3600); // 1 hour expiry
+          if (data) {
+            newUrls[img] = data.signedUrl;
+            changed = true;
+          }
+        }
+      }
+      if (changed) setSignedUrls(newUrls);
+    };
+    
+    loadUrls();
+  }, [fullSeed]);
+
   if (isLoading || !fullSeed) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center">
@@ -34,7 +62,10 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
     );
   }
 
-  const displayImg = (fullSeed.images && fullSeed.images.length > 0) ? fullSeed.images[viewingImageIndex] : null;
+  // Determine the correct source for the main display image
+  const rawMainImg = (fullSeed.images && fullSeed.images.length > 0) ? fullSeed.images[viewingImageIndex] : null;
+  const displayImg = rawMainImg ? (rawMainImg.startsWith('data:image') || rawMainImg.startsWith('http') ? rawMainImg : signedUrls[rawMainImg]) : null;
+  
   const seedHistory = trays.filter((t: SeedlingTray) => t.contents.some(c => c.seed_id === fullSeed.id));
 
   return (
@@ -61,6 +92,8 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
         <div className="w-full aspect-[4/3] bg-stone-200 relative">
           {displayImg ? (
             <img src={displayImg} alt={fullSeed.variety_name} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setFullScreenImage(displayImg)} />
+          ) : rawMainImg ? (
+            <div className="w-full h-full flex items-center justify-center"><svg className="w-8 h-8 text-stone-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-stone-400"><svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span>No primary image</span></div>
           )}
@@ -76,11 +109,18 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
 
         {(fullSeed.images && fullSeed.images.length > 1) && (
           <div className="p-4 bg-white border-b border-stone-200 flex gap-2 overflow-x-auto scrollbar-hide">
-            {fullSeed.images.map((img: string, idx: number) => (
-              <div key={idx} onClick={() => setViewingImageIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 cursor-pointer transition-all ${idx === viewingImageIndex ? 'border-emerald-500 opacity-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-                <img src={img} className="w-full h-full object-cover" alt="Thumbnail" />
-              </div>
-            ))}
+            {fullSeed.images.map((img: string, idx: number) => {
+               const thumbSrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
+               return (
+                 <div key={idx} onClick={() => setViewingImageIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 cursor-pointer transition-all ${idx === viewingImageIndex ? 'border-emerald-500 opacity-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'} bg-stone-100 relative`}>
+                   {thumbSrc ? (
+                     <img src={thumbSrc} className="w-full h-full object-cover" alt="Thumbnail" />
+                   ) : (
+                     <div className="absolute inset-0 flex items-center justify-center"><svg className="w-4 h-4 text-stone-300 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                   )}
+                 </div>
+               );
+            })}
           </div>
         )}
 
