@@ -54,7 +54,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [allowAiImage, setAllowAiImage] = useState(true); // NEW: Toggle for Imagen API usage
   
   // Stores temporary signed URLs for viewing private bucket images in the UI
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -168,10 +167,27 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
 
-      const payload = { 
-        ...editFormData, 
+      // Explicitly construct the payload to prevent schema cache errors from unexpected AI keys
+      const payload: Partial<InventorySeed> = { 
+        id: editFormData.id,
         category: finalCatName, 
+        variety_name: editFormData.variety_name,
+        vendor: editFormData.vendor,
+        days_to_maturity: editFormData.days_to_maturity,
+        species: editFormData.species,
+        notes: editFormData.notes,
         images: uploadedImagePaths, 
+        primaryImageIndex: editFormData.primaryImageIndex,
+        companion_plants: editFormData.companion_plants,
+        cold_stratification: editFormData.cold_stratification,
+        stratification_days: editFormData.stratification_days,
+        light_required: editFormData.light_required,
+        germination_days: editFormData.germination_days,
+        seed_depth: editFormData.seed_depth,
+        plant_spacing: editFormData.plant_spacing,
+        row_spacing: editFormData.row_spacing,
+        sunlight: editFormData.sunlight,
+        lifecycle: editFormData.lifecycle,
         thumbnail: newThumbnail 
       };
       
@@ -212,7 +228,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Vendor: ${editFormData.vendor || 'unknown'}, Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web specifically for a direct image file URL (ending in .jpg or .png) of this plant variety. Prioritize searching the official website of the vendor (${editFormData.vendor || 'the seed company'}) for the product image and specific botanical details. If not found there, fallback to Wikipedia or Wikimedia Commons upload links. Put the direct raw image URL in the "image_url" field. DO NOT put a webpage URL. If you cannot find a direct image file, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Vendor: ${editFormData.vendor || 'unknown'}, Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown).\n\nIMAGE SEARCH INSTRUCTIONS:\nUse the Google Search tool to find a direct image file URL (.jpg, .png, .webp). To find the best image, search exactly for: "images of the ${editFormData.variety_name} ${editFormData.category} sold by ${editFormData.vendor || 'seed vendors'}". Extract the direct raw image URL and put it in the "image_url" field. DO NOT put an HTML webpage URL. If you cannot find a direct image file, set it to null:\n{"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -251,22 +267,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             }
         }
       }
-
-      // ONLY Fallback to Imagen if: no external image found, less than 2 images exist, AND the user enabled it
-      const currentImages = editFormData.images || [];
-      if (!fetchedExternalImage && currentImages.length < 2 && allowAiImage) {
-         const imgUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
-         const imgPayload = {
-             instances: { prompt: `A highly detailed, realistic macro photograph of a ${editFormData.variety_name} ${editFormData.category} plant or crop, growing naturally in a lush garden. Natural sunlight, high resolution, no text, no people.` },
-             parameters: { sampleCount: 1 }
-         };
-         
-         const imgResult = await fetchWithRetry(imgUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imgPayload) }, 2);
-         if (imgResult.predictions?.[0]?.bytesBase64Encoded) {
-            const base64Img = `data:image/png;base64,${imgResult.predictions[0].bytesBase64Encoded}`;
-            setEditFormData(prev => ({ ...prev, images: [...(prev.images || []), base64Img] }));
-         }
-      }
       
     } catch (e: any) { alert("Auto-fill failed: " + e.message); } 
     finally { setIsAutoFilling(false); }
@@ -286,7 +286,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       <div className="max-w-md mx-auto p-4 space-y-5">
         
-        {/* MAGIC AUTO-FILL BUTTON & TOGGLE */}
+        {/* MAGIC AUTO-FILL BUTTON */}
         <div className="space-y-3">
           <button 
             onClick={handleAutoFill}
@@ -305,19 +305,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               </>
             )}
           </button>
-          
-          <div className="flex items-center justify-center gap-2">
-            <input 
-              type="checkbox" 
-              id="allowAiImg" 
-              checked={allowAiImage} 
-              onChange={(e) => setAllowAiImage(e.target.checked)} 
-              className="w-4 h-4 accent-indigo-600 rounded cursor-pointer" 
-            />
-            <label htmlFor="allowAiImg" className="text-xs font-medium text-stone-500 cursor-pointer">
-              Use AI to generate an image if one is not found
-            </label>
-          </div>
         </div>
 
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
