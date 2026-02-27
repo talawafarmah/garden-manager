@@ -175,8 +175,13 @@ export default function App() {
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setImagePreview(url);
+      // Convert to Base64 Data URL so it persists in the database
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      
       setSelectedFile(file);
       setAnalysisResult(null);
       setErrorMsg(null);
@@ -318,11 +323,29 @@ export default function App() {
         }
       };
 
-      let modelToUse = "gemini-1.5-flash"; // Default to the robust, high-limit 1.5-flash model
+      let modelToUse = "gemini-2.5-flash-preview-09-2025";
       
-      // We are deliberately forcing 1.5-flash to avoid the strict 20 RPD limits of 2.5-flash and 1.5-pro on the free tier.
-      // This ensures a smooth user experience for scanning many packets.
-      
+      // Auto-discover models to bypass 404 errors on deprecated aliases
+      if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+        try {
+          const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          const modelsData = await modelsRes.json();
+          if (modelsData.models) {
+            // Find all valid vision/generation models the key has access to
+            const available = modelsData.models
+              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
+              .map((m: any) => m.name.replace('models/', ''));
+            
+            // Prioritize reliable models in order, falling back to whatever is available
+            const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro-latest"];
+            modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
+            console.log("Auto-discovered and selected model:", modelToUse);
+          }
+        } catch (e) {
+             console.error("Model discovery failed, attempting to proceed.", e);
+        }
+      }
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
 
@@ -358,11 +381,15 @@ export default function App() {
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && editFormData) {
-      const url = URL.createObjectURL(file);
-      setEditFormData({
-        ...editFormData,
-        images: [...(editFormData.images || []), url]
-      });
+      // Convert to Base64 Data URL so it persists in the database
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditFormData({
+          ...editFormData,
+          images: [...(editFormData.images || []), reader.result as string]
+        });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -438,7 +465,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.15</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.16</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -1078,7 +1105,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.15</span>
+              <span className="text-sm font-normal text-emerald-300">v1.16</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
