@@ -100,7 +100,7 @@ export default function App() {
   const [categories, setCategories] = useState<SeedCategory[]>([]);
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // NEW: Global saving state
+  const [isSaving, setIsSaving] = useState(false); 
   
   // Add/Scanner States
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -140,15 +140,12 @@ export default function App() {
 
   // --- DATABASE FETCHING LOGIC ---
   useEffect(() => {
-    // Aggressively override the document title on client load
     document.title = "Talawa Farmah | Garden Manager";
     fetchCategories();
-    // Fetch initially just in case session is ready
     fetchInventory();
     fetchTrays();
   }, []);
 
-  // Guarantee a fresh fetch when views are opened in case the initial load fired too early for Supabase
   useEffect(() => {
     if (isViewingInventory) {
       fetchInventory();
@@ -158,7 +155,7 @@ export default function App() {
   useEffect(() => {
     if (isViewingTrays) {
       fetchTrays();
-      fetchInventory(); // Trays also need inventory data to map varieties
+      fetchInventory(); 
     }
   }, [isViewingTrays]);
 
@@ -169,10 +166,11 @@ export default function App() {
 
   const fetchInventory = async () => {
     setIsLoadingDB(true);
-    const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false });
+    // Added .limit(50) to prevent statement timeouts on huge base64 payloads
+    const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false }).limit(50);
     if (error) {
       console.error("Error fetching inventory:", error);
-      alert("Error fetching inventory. Did you add the new 'companion_plants' column to your database? " + error.message);
+      alert("Error fetching inventory. Database query timed out. Try clearing massive old test records. " + error.message);
     } else if (data) {
       const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
       setInventory(sanitizedData);
@@ -181,12 +179,11 @@ export default function App() {
   };
 
   const fetchTrays = async () => {
-    const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
+    // Added .limit(50) to prevent statement timeouts
+    const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false }).limit(50);
     if (error) {
        console.error("Error fetching trays:", error);
-       alert("Error fetching trays. Did you run the SQL to add the latest columns (first_germination_date, etc)? " + error.message);
     } else if (data) {
-       // Ensure new fields exist gracefully for older records
        const safeTrays = data.map(t => ({ 
          ...t, 
          contents: t.contents || [], 
@@ -201,6 +198,35 @@ export default function App() {
        setTrays(safeTrays);
     }
   };
+
+  // --- IMAGE COMPRESSION LOGIC (Prevents DB Timeouts) ---
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; // Resize to max 800px width
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compress to 70% quality JPEG
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
 
   // --- ID GENERATION LOGIC ---
   const generateNextId = async (prefix: string) => {
@@ -231,12 +257,11 @@ export default function App() {
   };
 
   // --- SCANNER / IMPORT LOGIC ---
-  const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result as string);
-      reader.readAsDataURL(file);
+      const compressedDataUrl = await compressImage(file);
+      setImagePreview(compressedDataUrl);
       setSelectedFile(file);
       setAnalysisResult(null);
       setErrorMsg(null);
@@ -328,15 +353,6 @@ export default function App() {
     }
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve((reader.result as string).split(',')[1]);
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
   const fetchWithRetry = async (url: string, options: RequestInit, retries = 5) => {
     let delay = 1000;
     for (let i = 0; i < retries; i++) {
@@ -422,7 +438,7 @@ export default function App() {
   };
 
   const analyzeImage = async () => {
-    if (!selectedFile) return;
+    if (!imagePreview) return; // Use compressed preview string
     setIsAnalyzing(true);
     setErrorMsg(null);
     if (!apiKey) {
@@ -430,8 +446,8 @@ export default function App() {
       setIsAnalyzing(false); return;
     }
     try {
-      const base64Data = await fileToBase64(selectedFile);
-      const mimeType = selectedFile.type || "image/jpeg";
+      const base64Data = imagePreview.split(',')[1];
+      const mimeType = imagePreview.split(';')[0].split(':')[1];
       const payload = {
         contents: [{
           role: "user",
@@ -517,14 +533,11 @@ export default function App() {
   };
 
   // --- EDIT SEED LOGIC ---
-  const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && editFormData) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditFormData({ ...editFormData, images: [...(editFormData.images || []), reader.result as string] });
-      };
-      reader.readAsDataURL(file);
+      const compressedDataUrl = await compressImage(file);
+      setEditFormData({ ...editFormData, images: [...(editFormData.images || []), compressedDataUrl] });
     }
   };
 
@@ -610,14 +623,11 @@ export default function App() {
      setIsEditingTray(true);
   };
 
-  const handleTrayPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTrayPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && trayFormData) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), reader.result as string] });
-      };
-      reader.readAsDataURL(file);
+      const compressedDataUrl = await compressImage(file);
+      setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), compressedDataUrl] });
     }
   };
 
@@ -722,7 +732,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.31</span>
+            <span className="text-sm font-normal text-stone-500">v1.32</span>
           </h1>
         </header>
 
@@ -2000,7 +2010,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.31</span>
+              <span className="text-sm font-normal text-emerald-300">v1.32</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
