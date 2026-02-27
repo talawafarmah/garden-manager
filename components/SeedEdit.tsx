@@ -54,6 +54,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [allowAiImage, setAllowAiImage] = useState(true); // NEW: Toggle for Imagen API usage
   
   // Stores temporary signed URLs for viewing private bucket images in the UI
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -211,7 +212,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web for a direct, high-quality public image URL (jpg/png) of this specific plant variety and put it in the "image_url" field. If you cannot find a direct link, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web specifically for a direct image file URL (ending in .jpg or .png) of this plant variety. The best sources are Wikipedia or Wikimedia Commons upload links. Put the direct raw image URL in the "image_url" field. DO NOT put a webpage URL. If you cannot find a direct image file, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -229,14 +230,16 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           ...prev, ...restData, id: prev.id, images: prev.images, primaryImageIndex: prev.primaryImageIndex
         }));
 
-        // Try to load the found image URL from the web
-        if (image_url && image_url.startsWith('http')) {
+        // Try to load the found image URL from the web to verify it isn't a dead link or HTML page
+        if (image_url && image_url.startsWith('http') && (image_url.includes('.jpg') || image_url.includes('.png') || image_url.includes('.jpeg'))) {
             try {
                await new Promise((resolve, reject) => {
                    const img = new Image();
-                   img.onload = () => resolve(true);
-                   img.onerror = () => reject(new Error("Image load failed"));
-                   // Proxy it to ensure it's not a blocked resource
+                   // Set a strict 5 second timeout so it doesn't hang forever
+                   const timer = setTimeout(() => reject(new Error("Timeout")), 5000);
+                   img.onload = () => { clearTimeout(timer); resolve(true); };
+                   img.onerror = () => { clearTimeout(timer); reject(new Error("Image load failed")); };
+                   // Proxy it to ensure it's not a CORS blocked resource for the UI
                    img.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(image_url)}`;
                });
                
@@ -244,14 +247,14 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                setEditFormData(prev => ({ ...prev, images: [...(prev.images || []), image_url] }));
                fetchedExternalImage = true;
             } catch (e) {
-               console.warn("Failed to load external image found by AI, falling back to Imagen.");
+               console.warn("Failed to load external image found by AI. It may have been a dead link or a webpage.");
             }
         }
       }
 
-      // ONLY Fallback to Imagen if we couldn't find an existing image online AND we have less than 2 images
+      // ONLY Fallback to Imagen if: no external image found, less than 2 images exist, AND the user enabled it
       const currentImages = editFormData.images || [];
-      if (!fetchedExternalImage && currentImages.length < 2) {
+      if (!fetchedExternalImage && currentImages.length < 2 && allowAiImage) {
          const imgUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
          const imgPayload = {
              instances: { prompt: `A highly detailed, realistic macro photograph of a ${editFormData.variety_name} ${editFormData.category} plant or crop, growing naturally in a lush garden. Natural sunlight, high resolution, no text, no people.` },
@@ -283,24 +286,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       <div className="max-w-md mx-auto p-4 space-y-5">
         
-        {/* MAGIC AUTO-FILL BUTTON */}
-        <button 
-          onClick={handleAutoFill}
-          disabled={isAutoFilling || isSaving}
-          className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
-        >
-          {isAutoFilling ? (
-            <>
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-              Gathering Data & Images...
-            </>
-          ) : (
-            <>
-              <svg className="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              ✨ Auto-Fill Missing Data (AI)
-            </>
-          )}
-        </button>
+        {/* MAGIC AUTO-FILL BUTTON & TOGGLE */}
+        <div className="space-y-3">
+          <button 
+            onClick={handleAutoFill}
+            disabled={isAutoFilling || isSaving}
+            className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
+          >
+            {isAutoFilling ? (
+              <>
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Gathering Data...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                ✨ Auto-Fill Missing Data (AI)
+              </>
+            )}
+          </button>
+          
+          <div className="flex items-center justify-center gap-2">
+            <input 
+              type="checkbox" 
+              id="allowAiImg" 
+              checked={allowAiImage} 
+              onChange={(e) => setAllowAiImage(e.target.checked)} 
+              className="w-4 h-4 accent-indigo-600 rounded cursor-pointer" 
+            />
+            <label htmlFor="allowAiImg" className="text-xs font-medium text-stone-500 cursor-pointer">
+              Use Imagen fallback if no web photo is found
+            </label>
+          </div>
+        </div>
 
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
