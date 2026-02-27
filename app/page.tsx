@@ -537,7 +537,7 @@ export default function App() {
 
   // --- TRAY LOGIC ---
   const handleCreateNewTray = () => {
-     setTrayFormData({
+     const newTray: SeedlingTray = {
        name: `Tray ${trays.length + 1}`,
        tray_type: "72-Cell Flat",
        sown_date: new Date().toISOString().split('T')[0],
@@ -545,7 +545,9 @@ export default function App() {
        notes: "",
        images: [],
        contents: []
-     });
+     };
+     setTrayFormData(newTray);
+     setSelectedTray(newTray); // Setting this triggers the UI to switch to the edit view
      setIsEditingTray(true);
   };
 
@@ -1582,7 +1584,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.26</span>
+              <span className="text-sm font-normal text-emerald-300">v1.27</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
