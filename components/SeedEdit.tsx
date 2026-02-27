@@ -212,7 +212,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web specifically for a direct image file URL (ending in .jpg or .png) of this plant variety. The best sources are Wikipedia or Wikimedia Commons upload links. Put the direct raw image URL in the "image_url" field. DO NOT put a webpage URL. If you cannot find a direct image file, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Vendor: ${editFormData.vendor || 'unknown'}, Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web specifically for a direct image file URL (ending in .jpg or .png) of this plant variety. Prioritize searching the official website of the vendor (${editFormData.vendor || 'the seed company'}) for the product image and specific botanical details. If not found there, fallback to Wikipedia or Wikimedia Commons upload links. Put the direct raw image URL in the "image_url" field. DO NOT put a webpage URL. If you cannot find a direct image file, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -231,7 +231,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }));
 
         // Try to load the found image URL from the web to verify it isn't a dead link or HTML page
-        if (image_url && image_url.startsWith('http') && (image_url.includes('.jpg') || image_url.includes('.png') || image_url.includes('.jpeg'))) {
+        if (image_url && image_url.startsWith('http') && (image_url.includes('.jpg') || image_url.includes('.png') || image_url.includes('.jpeg') || image_url.includes('.webp'))) {
             try {
                await new Promise((resolve, reject) => {
                    const img = new Image();
@@ -315,7 +315,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               className="w-4 h-4 accent-indigo-600 rounded cursor-pointer" 
             />
             <label htmlFor="allowAiImg" className="text-xs font-medium text-stone-500 cursor-pointer">
-              Use Imagen fallback if no web photo is found
+              Use AI to generate an image if one is not found
             </label>
           </div>
         </div>
