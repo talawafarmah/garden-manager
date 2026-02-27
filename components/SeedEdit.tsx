@@ -80,18 +80,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(editFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact. Ensure companion_plants is an array. Return the complete updated JSON.` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(editFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes (no \`\`\`json). The JSON must exactly match this structure (use null or defaults if unknown): {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false}` }]
         }],
-        tools: [{ google_search: {} }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              variety_name: { type: "STRING" }, vendor: { type: "STRING" }, days_to_maturity: { type: "INTEGER" }, species: { type: "STRING" }, category: { type: "STRING" }, notes: { type: "STRING" }, companion_plants: { type: "ARRAY", items: { type: "STRING" } }, seed_depth: { type: "STRING" }, plant_spacing: { type: "STRING" }, row_spacing: { type: "STRING" }, germination_days: { type: "STRING" }, sunlight: { type: "STRING" }, lifecycle: { type: "STRING" }, cold_stratification: { type: "BOOLEAN" }, stratification_days: { type: "INTEGER" }, light_required: { type: "BOOLEAN" }
-            }
-          }
-        }
+        tools: [{ google_search: {} }]
       };
 
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
