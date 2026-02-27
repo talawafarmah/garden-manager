@@ -323,7 +323,7 @@ export default function App() {
         }
       };
 
-      let modelToUse = "gemini-2.5-flash-preview-09-2025";
+      let modelToUse = "gemini-2.0-flash"; // Defaulting to 2.0-flash for testing prioritization
       
       // Auto-discover models to bypass 404 errors on deprecated aliases
       if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
@@ -336,8 +336,8 @@ export default function App() {
               .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
               .map((m: any) => m.name.replace('models/', ''));
             
-            // Prioritize reliable models in order, falling back to whatever is available
-            const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro-latest"];
+            // Prioritize gemini-2.0-flash, falling back to 1.5-flash or whatever is available
+            const bestModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest"];
             modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
             console.log("Auto-discovered and selected model:", modelToUse);
           }
@@ -465,7 +465,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.16</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.17</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -1105,7 +1105,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.16</span>
+              <span className="text-sm font-normal text-emerald-300">v1.17</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
