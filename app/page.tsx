@@ -61,7 +61,7 @@ interface SeedCategory {
   prefix: string;
 }
 
-// NEW: Tray Tracking Interfaces
+// Tray Tracking Interfaces
 interface TraySeedRecord {
   seed_id: string; 
   variety_name: string; 
@@ -76,7 +76,13 @@ interface SeedlingTray {
   name: string; 
   tray_type: string; 
   sown_date: string; 
+  first_germination_date?: string; 
+  first_planted_date?: string;     
   heat_mat: boolean;
+  humidity_dome: boolean;          
+  grow_light: boolean;             
+  potting_mix?: string;            
+  location?: string;               
   notes: string;
   images: string[];
   contents: TraySeedRecord[];
@@ -133,9 +139,9 @@ export default function App() {
 
   // --- DATABASE FETCHING LOGIC ---
   useEffect(() => {
+    // Aggressively override the document title on client load
     document.title = "Talawa Farmah | Garden Manager";
     fetchCategories();
-    // Fetch inventory and trays globally so we can cross-reference them
     fetchInventory();
     fetchTrays();
   }, []);
@@ -158,8 +164,18 @@ export default function App() {
   const fetchTrays = async () => {
     const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
     if (!error && data) {
-       // Ensure contents exists
-       const safeTrays = data.map(t => ({ ...t, contents: t.contents || [], images: t.images || [] }));
+       // Ensure new fields exist gracefully for older records
+       const safeTrays = data.map(t => ({ 
+         ...t, 
+         contents: t.contents || [], 
+         images: t.images || [],
+         humidity_dome: t.humidity_dome || false,
+         grow_light: t.grow_light || false,
+         first_germination_date: t.first_germination_date || '',
+         first_planted_date: t.first_planted_date || '',
+         potting_mix: t.potting_mix || '',
+         location: t.location || ''
+       }));
        setTrays(safeTrays);
     }
   };
@@ -541,7 +557,13 @@ export default function App() {
        name: `Tray ${trays.length + 1}`,
        tray_type: "72-Cell Flat",
        sown_date: new Date().toISOString().split('T')[0],
+       first_germination_date: "",
+       first_planted_date: "",
        heat_mat: false,
+       humidity_dome: false,
+       grow_light: false,
+       potting_mix: "Standard Seed Starting Mix",
+       location: "Indoors",
        notes: "",
        images: [],
        contents: []
@@ -624,7 +646,6 @@ export default function App() {
     if (!trayFormData) return;
     const newContents = [...trayFormData.contents];
     
-    // Auto-fill variety name when seed ID is selected
     if (field === 'seed_id') {
        const matchedSeed = inventory.find(s => s.id === value);
        newContents[index] = { ...newContents[index], seed_id: value, variety_name: matchedSeed ? matchedSeed.variety_name : "Unknown" };
@@ -654,6 +675,7 @@ export default function App() {
       if (isEditingTray && trayFormData) {
         return (
           <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+            <title>Talawa Farmah | Garden Manager</title>
             <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
               <div className="flex items-center gap-3">
                 <button onClick={() => { setIsEditingTray(false); if(!selectedTray.id) setSelectedTray(null); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
@@ -675,23 +697,63 @@ export default function App() {
                     <label className="block text-xs font-medium text-stone-500 mb-1">Tray Name / Label <span className="text-red-400">*</span></label>
                     <input type="text" value={trayFormData.name} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
                  </div>
+                 
                  <div className="grid grid-cols-2 gap-4">
                    <div>
                       <label className="block text-xs font-medium text-stone-500 mb-1">Sown Date</label>
                       <input type="date" value={trayFormData.sown_date} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
                    </div>
                    <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">1st Germination</label>
+                      <input type="date" value={trayFormData.first_germination_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_germination_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">1st Planted Date</label>
+                      <input type="date" value={trayFormData.first_planted_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_planted_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
+                   <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">Location</label>
+                      <input type="text" placeholder="Indoors, Greenhouse..." value={trayFormData.location || ''} onChange={(e) => setTrayFormData({ ...trayFormData, location: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
                       <label className="block text-xs font-medium text-stone-500 mb-1">Tray Type</label>
                       <input type="text" placeholder="e.g., 72-cell" value={trayFormData.tray_type} onChange={(e) => setTrayFormData({ ...trayFormData, tray_type: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
                    </div>
+                   <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">Potting Mix</label>
+                      <input type="text" placeholder="e.g., Pro-Mix" value={trayFormData.potting_mix || ''} onChange={(e) => setTrayFormData({ ...trayFormData, potting_mix: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
                  </div>
-                 <div className="flex items-center gap-2 p-3 bg-amber-50/50 rounded-xl border border-amber-200/50">
-                    <input type="checkbox" id="heatmat" checked={trayFormData.heat_mat} onChange={(e) => setTrayFormData({ ...trayFormData, heat_mat: e.target.checked })} className="w-5 h-5 accent-amber-500 rounded" />
-                    <label htmlFor="heatmat" className="text-sm font-bold text-amber-800 cursor-pointer">Using a Heat Mat?</label>
+
+                 {/* Environment Toggles */}
+                 <div className="grid grid-cols-1 gap-2 pt-2">
+                   <label className="block text-xs font-medium text-stone-500 mb-1">Environment Setup</label>
+                   
+                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                      <input type="checkbox" id="heatmat" checked={trayFormData.heat_mat} onChange={(e) => setTrayFormData({ ...trayFormData, heat_mat: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                      <label htmlFor="heatmat" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Heat Mat</label>
+                   </div>
+                   
+                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                      <input type="checkbox" id="humdome" checked={trayFormData.humidity_dome} onChange={(e) => setTrayFormData({ ...trayFormData, humidity_dome: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                      <label htmlFor="humdome" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Humidity Dome</label>
+                   </div>
+                   
+                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                      <input type="checkbox" id="growlight" checked={trayFormData.grow_light} onChange={(e) => setTrayFormData({ ...trayFormData, grow_light: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                      <label htmlFor="growlight" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Grow Lights</label>
+                   </div>
                  </div>
-                 <div>
+
+                 <div className="pt-2">
                     <label className="block text-xs font-medium text-stone-500 mb-1">Tray Notes</label>
-                    <textarea value={trayFormData.notes} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={3} placeholder="Location, light setup, etc." className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
+                    <textarea value={trayFormData.notes} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={3} placeholder="Fertilizer schedule, pest issues, etc." className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
                  </div>
               </section>
 
@@ -794,6 +856,7 @@ export default function App() {
 
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+          <title>Talawa Farmah | Garden Manager</title>
           <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button onClick={() => setSelectedTray(null)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
@@ -812,20 +875,50 @@ export default function App() {
 
           <div className="max-w-md mx-auto p-4 space-y-5">
              <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                <div className="flex justify-between items-start mb-2">
+                <div className="flex justify-between items-start mb-3">
                    <h2 className="text-2xl font-bold text-stone-800 leading-tight">{selectedTray.name}</h2>
-                   {selectedTray.heat_mat && (
-                     <span className="bg-amber-100 text-amber-800 p-1.5 rounded-lg" title="Heat Mat Used">
-                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
-                     </span>
-                   )}
+                   <div className="flex gap-1.5">
+                     {selectedTray.heat_mat && (
+                       <span className="bg-amber-100 text-amber-800 p-1.5 rounded-lg flex items-center justify-center" title="Heat Mat Used">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                       </span>
+                     )}
+                     {selectedTray.humidity_dome && (
+                       <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg flex items-center justify-center" title="Humidity Dome Used">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h18M5 15v4a2 2 0 002 2h10a2 2 0 002-2v-4M12 15V3m0 0l-4 4m4-4l4 4" /></svg>
+                       </span>
+                     )}
+                     {selectedTray.grow_light && (
+                       <span className="bg-yellow-100 text-yellow-800 p-1.5 rounded-lg flex items-center justify-center" title="Grow Light Used">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                       </span>
+                     )}
+                   </div>
                 </div>
+                
                 <div className="flex flex-wrap gap-2 mb-4">
-                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">Sown: {selectedTray.sown_date}</span>
+                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.location || 'Unknown Location'}</span>
                   <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.tray_type || 'Unknown flat'}</span>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                {/* Timeline Grid */}
+                <div className="grid grid-cols-3 gap-2 mb-4 bg-stone-50 rounded-xl p-3 border border-stone-200">
+                   <div className="text-center">
+                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sown</div>
+                     <div className="text-sm font-bold text-stone-800">{selectedTray.sown_date || '--'}</div>
+                   </div>
+                   <div className="text-center border-l border-stone-200">
+                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">1st Sprout</div>
+                     <div className="text-sm font-bold text-stone-800">{selectedTray.first_germination_date || '--'}</div>
+                   </div>
+                   <div className="text-center border-l border-stone-200">
+                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Planted</div>
+                     <div className="text-sm font-bold text-stone-800">{selectedTray.first_planted_date || '--'}</div>
+                   </div>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100 mb-4">
                    <div className="text-center">
                      <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sown</div>
                      <div className="text-xl font-black text-emerald-900">{totalSown}</div>
@@ -840,8 +933,15 @@ export default function App() {
                    </div>
                 </div>
 
+                {selectedTray.potting_mix && (
+                   <div className="mb-4">
+                     <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">Potting Mix</div>
+                     <div className="text-sm text-stone-800 font-medium">{selectedTray.potting_mix}</div>
+                   </div>
+                )}
+
                 {selectedTray.notes && (
-                  <p className="mt-4 text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{selectedTray.notes}</p>
+                  <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{selectedTray.notes}</p>
                 )}
              </div>
 
@@ -895,6 +995,7 @@ export default function App() {
     // TRAY LIST VIEW
     return (
       <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <title>Talawa Farmah | Garden Manager</title>
         <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
@@ -937,7 +1038,7 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-stone-800 text-base truncate leading-tight">{tray.name}</h3>
-                    <div className="text-xs text-stone-500 mt-1 mb-2 truncate">Sown: {tray.sown_date} • {tray.tray_type}</div>
+                    <div className="text-xs text-stone-500 mt-1 mb-2 truncate">Sown: {tray.sown_date} • {tray.location || tray.tray_type}</div>
                     <div className="flex gap-2">
                        <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">
                          {tray.contents.length} Varieties
@@ -970,6 +1071,7 @@ export default function App() {
       if (isEditingSeed && editFormData) {
         return (
           <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+            <title>Talawa Farmah | Garden Manager</title>
             <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
               <div className="flex items-center gap-3">
                 <button onClick={() => { setIsEditingSeed(false); setEditFormData(null); setShowNewCatForm(false); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
@@ -1152,6 +1254,7 @@ export default function App() {
 
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+          <title>Talawa Farmah | Garden Manager</title>
           
           {/* Full Screen Image Modal */}
           {fullScreenImage && (
@@ -1364,7 +1467,7 @@ export default function App() {
 
     return (
       <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-        
+        <title>Talawa Farmah | Garden Manager</title>
         {/* COMPANION PLANT MODAL */}
         {companionModalSeed && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -1579,12 +1682,13 @@ export default function App() {
   // --- DASHBOARD VIEW ---
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+      <title>Talawa Farmah | Garden Manager</title>
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.27</span>
+              <span className="text-sm font-normal text-emerald-300">v1.28</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -1600,7 +1704,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-4">
             <button onClick={() => setIsScanning(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-emerald-100 p-3 rounded-full mb-2 text-emerald-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               </div>
               <span className="text-sm font-medium">Scan Packet</span>
             </button>
