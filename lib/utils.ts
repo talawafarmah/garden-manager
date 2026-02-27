@@ -27,7 +27,7 @@ export const fetchWithRetry = async (url: string, options: RequestInit, retries 
 };
 
 export const getBestModel = async () => {
-  let modelToUse = "gemini-2.5-flash-lite"; 
+  let modelToUse = "gemini-2.0-flash"; // Update the fallback default
   if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
     try {
       const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -36,7 +36,11 @@ export const getBestModel = async () => {
         const available = modelsData.models
           .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
           .map((m: any) => m.name.replace('models/', ''));
-        const bestModels = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        
+        // --- UPDATE THIS ARRAY ---
+        const bestModels = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+        // -------------------------
+
         modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
       }
     } catch (e) {

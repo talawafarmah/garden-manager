@@ -26,10 +26,23 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality)); 
+      try {
+        resolve(canvas.toDataURL('image/jpeg', quality)); 
+      } catch (e) {
+        resolve(""); // Tainted canvas fallback
+      }
     };
     img.onerror = () => resolve("");
-    img.src = source.startsWith('data:') || source.startsWith('http') ? source : `data:image/jpeg;base64,${source}`;
+    
+    // If it's a random internet URL, proxy it to grab the bytes securely without CORS blocking the canvas
+    let finalSrc = source;
+    if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('allorigins')) {
+       finalSrc = `https://api.allorigins.win/raw?url=${encodeURIComponent(source)}`;
+    } else if (!source.startsWith('http') && !source.startsWith('data:')) {
+       finalSrc = `data:image/jpeg;base64,${source}`;
+    }
+    
+    img.src = finalSrc;
   });
 };
 
@@ -110,21 +123,27 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const folderName = btoa(editFormData.id).replace(/=/g, ''); 
 
       for (const img of (editFormData.images || [])) {
-        if (img.startsWith('data:image')) {
-          // 1. Resize large image to max 1600px to save storage space
+        if (img.startsWith('data:image') || img.startsWith('http')) {
+          // 1. Resize large image, base64, or external web link to max 1600px
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
-          const res = await fetch(optimizedBase64);
-          const blob = await res.blob();
           
-          // 2. Generate obfuscated UUID filename
-          const fileName = `${crypto.randomUUID()}.jpg`;
-          const filePath = `${folderName}/${fileName}`;
-          
-          // 3. Upload to private Supabase bucket
-          const { error: uploadErr } = await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
-          if (uploadErr) throw new Error("Upload failed: " + uploadErr.message);
-          
-          uploadedImagePaths.push(filePath);
+          if (optimizedBase64) {
+             const res = await fetch(optimizedBase64);
+             const blob = await res.blob();
+             
+             // 2. Generate obfuscated UUID filename
+             const fileName = `${crypto.randomUUID()}.jpg`;
+             const filePath = `${folderName}/${fileName}`;
+             
+             // 3. Upload to private Supabase bucket
+             const { error: uploadErr } = await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
+             if (uploadErr) throw new Error("Upload failed: " + uploadErr.message);
+             
+             uploadedImagePaths.push(filePath);
+          } else {
+             // Fallback if cross-origin completely blocked the canvas optimization
+             uploadedImagePaths.push(img);
+          }
         } else {
           // It's already a secure path from a previous save
           uploadedImagePaths.push(img);
@@ -137,7 +156,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         const primaryIdx = editFormData.primaryImageIndex || 0;
         const primaryImgSource = editFormData.images[primaryIdx];
         
-        // Use the base64 or the dynamically fetched signed URL to generate the thumbnail
+        // Use the base64, web url, or dynamically fetched signed URL to generate the thumbnail
         let sourceToResize = primaryImgSource;
         if (!primaryImgSource.startsWith('data:image') && !primaryImgSource.startsWith('http')) {
            sourceToResize = signedUrls[primaryImgSource]; 
@@ -192,7 +211,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes (no \`\`\`json). The JSON must exactly match this structure (use null or defaults if unknown): {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). Additionally, search the web for a direct, high-quality public image URL (jpg/png) of this specific plant variety and put it in the "image_url" field. If you cannot find a direct link, set it to null: {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -200,15 +219,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
       const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
       
+      let fetchedExternalImage = false;
+
       if (textResponse) {
         const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+        const { image_url, ...restData } = parsedData; // Separate out the temporary image_url field
+        
         setEditFormData(prev => ({
-          ...prev, ...parsedData, id: prev.id, images: prev.images, primaryImageIndex: prev.primaryImageIndex
+          ...prev, ...restData, id: prev.id, images: prev.images, primaryImageIndex: prev.primaryImageIndex
         }));
+
+        // Try to load the found image URL from the web
+        if (image_url && image_url.startsWith('http')) {
+            try {
+               await new Promise((resolve, reject) => {
+                   const img = new Image();
+                   img.onload = () => resolve(true);
+                   img.onerror = () => reject(new Error("Image load failed"));
+                   // Proxy it to ensure it's not a blocked resource
+                   img.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(image_url)}`;
+               });
+               
+               // It successfully loaded! Attach it to the form
+               setEditFormData(prev => ({ ...prev, images: [...(prev.images || []), image_url] }));
+               fetchedExternalImage = true;
+            } catch (e) {
+               console.warn("Failed to load external image found by AI, falling back to Imagen.");
+            }
+        }
       }
 
+      // ONLY Fallback to Imagen if we couldn't find an existing image online AND we have less than 2 images
       const currentImages = editFormData.images || [];
-      if (currentImages.length < 2) {
+      if (!fetchedExternalImage && currentImages.length < 2) {
          const imgUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
          const imgPayload = {
              instances: { prompt: `A highly detailed, realistic macro photograph of a ${editFormData.variety_name} ${editFormData.category} plant or crop, growing naturally in a lush garden. Natural sunlight, high resolution, no text, no people.` },
