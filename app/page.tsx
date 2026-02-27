@@ -100,7 +100,6 @@ export default function App() {
   const [categories, setCategories] = useState<SeedCategory[]>([]);
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); 
   
   // Add/Scanner States
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -166,11 +165,9 @@ export default function App() {
 
   const fetchInventory = async () => {
     setIsLoadingDB(true);
-    // Added .limit(50) to prevent statement timeouts on huge base64 payloads
-    const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false });
     if (error) {
       console.error("Error fetching inventory:", error);
-      alert("Error fetching inventory. Database query timed out. Try clearing massive old test records. " + error.message);
     } else if (data) {
       const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
       setInventory(sanitizedData);
@@ -179,8 +176,7 @@ export default function App() {
   };
 
   const fetchTrays = async () => {
-    // Added .limit(50) to prevent statement timeouts
-    const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false }).limit(50);
+    const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
     if (error) {
        console.error("Error fetching trays:", error);
     } else if (data) {
@@ -198,35 +194,6 @@ export default function App() {
        setTrays(safeTrays);
     }
   };
-
-  // --- IMAGE COMPRESSION LOGIC (Prevents DB Timeouts) ---
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800; // Resize to max 800px width
-          let width = img.width;
-          let height = img.height;
-          if (width > MAX_WIDTH) {
-            height = Math.round((height * MAX_WIDTH) / width);
-            width = MAX_WIDTH;
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compress to 70% quality JPEG
-        };
-        img.src = event.target?.result as string;
-      };
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
 
   // --- ID GENERATION LOGIC ---
   const generateNextId = async (prefix: string) => {
@@ -257,11 +224,12 @@ export default function App() {
   };
 
   // --- SCANNER / IMPORT LOGIC ---
-  const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const compressedDataUrl = await compressImage(file);
-      setImagePreview(compressedDataUrl);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
       setSelectedFile(file);
       setAnalysisResult(null);
       setErrorMsg(null);
@@ -282,7 +250,6 @@ export default function App() {
 
   const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
-      setIsSaving(true);
       const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
       const vendor = analysisResult.vendor?.trim() || 'Unknown Vendor';
 
@@ -294,10 +261,7 @@ export default function App() {
 
       if (!checkError && duplicates && duplicates.length > 0) {
         const isConfirmed = confirm(`⚠️ Duplicate Detected!\n\nIt looks like you already have '${variety}' from '${vendor}' in your inventory. Do you want to add it again anyway?`);
-        if (!isConfirmed) {
-          setIsSaving(false);
-          return; 
-        }
+        if (!isConfirmed) return; 
       }
 
       let finalCatName = analysisResult.category || 'Uncategorized';
@@ -340,8 +304,6 @@ export default function App() {
       };
 
       const { error } = await supabase.from('seed_inventory').insert([newSeed]);
-      
-      setIsSaving(false);
 
       if (error) {
         alert("Failed to save to database: " + error.message);
@@ -351,6 +313,15 @@ export default function App() {
         cancelAdd();
       }
     }
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = (error) => reject(error);
+    });
   };
 
   const fetchWithRetry = async (url: string, options: RequestInit, retries = 5) => {
@@ -438,7 +409,7 @@ export default function App() {
   };
 
   const analyzeImage = async () => {
-    if (!imagePreview) return; // Use compressed preview string
+    if (!selectedFile) return;
     setIsAnalyzing(true);
     setErrorMsg(null);
     if (!apiKey) {
@@ -446,8 +417,8 @@ export default function App() {
       setIsAnalyzing(false); return;
     }
     try {
-      const base64Data = imagePreview.split(',')[1];
-      const mimeType = imagePreview.split(';')[0].split(':')[1];
+      const base64Data = await fileToBase64(selectedFile);
+      const mimeType = selectedFile.type || "image/jpeg";
       const payload = {
         contents: [{
           role: "user",
@@ -533,11 +504,14 @@ export default function App() {
   };
 
   // --- EDIT SEED LOGIC ---
-  const handleEditPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && editFormData) {
-      const compressedDataUrl = await compressImage(file);
-      setEditFormData({ ...editFormData, images: [...(editFormData.images || []), compressedDataUrl] });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditFormData({ ...editFormData, images: [...(editFormData.images || []), reader.result as string] });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -557,8 +531,6 @@ export default function App() {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) { alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`); return; }
     }
-    
-    setIsSaving(true);
     let finalCatName = editFormData.category;
     if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
       finalCatName = newCatName.trim();
@@ -566,14 +538,10 @@ export default function App() {
       await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
       setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
     } else if (editFormData.category === '__NEW__') {
-      alert("Please provide a name for the new category.");
-      setIsSaving(false);
-      return;
+      alert("Please provide a name for the new category."); return;
     }
     const payload = { ...editFormData, category: finalCatName };
     const { error } = await supabase.from('seed_inventory').update(payload).eq('id', selectedSeed?.id);
-
-    setIsSaving(false);
 
     if (error) alert("Failed to update database: " + error.message);
     else {
@@ -588,10 +556,7 @@ export default function App() {
   const handleDeleteSeed = async () => {
     if (!selectedSeed) return;
     if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id})?`)) {
-      setIsSaving(true);
       const { error } = await supabase.from('seed_inventory').delete().eq('id', selectedSeed.id);
-      setIsSaving(false);
-      
       if (error) alert("Failed to delete from database: " + error.message);
       else {
         setInventory(inventory.filter(s => s.id !== selectedSeed.id));
@@ -623,11 +588,14 @@ export default function App() {
      setIsEditingTray(true);
   };
 
-  const handleTrayPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTrayPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && trayFormData) {
-      const compressedDataUrl = await compressImage(file);
-      setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), compressedDataUrl] });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), reader.result as string] });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -641,7 +609,6 @@ export default function App() {
     if (!trayFormData) return;
     if (!trayFormData.name.trim()) { alert("Tray name is required."); return; }
 
-    setIsSaving(true);
     const isNew = !trayFormData.id;
     let error;
     let savedTray = { ...trayFormData };
@@ -654,8 +621,6 @@ export default function App() {
       const { error: updateErr } = await supabase.from('seedling_trays').update(trayFormData).eq('id', trayFormData.id);
       error = updateErr;
     }
-
-    setIsSaving(false);
 
     if (error) {
       alert("Failed to save tray: " + error.message);
@@ -671,10 +636,7 @@ export default function App() {
   const handleDeleteTray = async () => {
     if (!selectedTray?.id) return;
     if (confirm(`Are you sure you want to delete ${selectedTray.name}?`)) {
-      setIsSaving(true);
       const { error } = await supabase.from('seedling_trays').delete().eq('id', selectedTray.id);
-      setIsSaving(false);
-      
       if (error) alert("Failed to delete tray.");
       else {
         setTrays(trays.filter(t => t.id !== selectedTray.id));
@@ -732,7 +694,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.32</span>
+            <span className="text-sm font-normal text-stone-500">v1.29</span>
           </h1>
         </header>
 
@@ -890,13 +852,7 @@ export default function App() {
 
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-                <button 
-                  onClick={handleSaveScannedToInventory} 
-                  disabled={isSaving}
-                  className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  {isSaving ? 'Saving...' : 'Save to Database'}
-                </button>
+                <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 transition-all">Save to Database</button>
               </div>
             </div>
             
@@ -915,8 +871,8 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex gap-4 w-full max-w-sm">
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50 disabled:cursor-not-allowed">Retake</button>
-                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
+                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                       {isAnalyzing ? "Processing..." : "Analyze"}
                     </button>
@@ -960,7 +916,7 @@ export default function App() {
                 <button
                    onClick={analyzeUrl}
                    disabled={isAnalyzing || !importUrl.trim()}
-                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   Extract Data
@@ -989,12 +945,8 @@ export default function App() {
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
               </div>
-              <button 
-                onClick={handleSaveTray} 
-                disabled={isSaving}
-                className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSaving ? 'Saving...' : 'Save'}
+              <button onClick={handleSaveTray} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
+                Save
               </button>
             </header>
 
@@ -1149,11 +1101,7 @@ export default function App() {
               </section>
 
               {trayFormData.id && (
-                <button 
-                  onClick={handleDeleteTray} 
-                  disabled={isSaving}
-                  className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                <button onClick={handleDeleteTray} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   Delete Tray
                 </button>
@@ -1393,12 +1341,8 @@ export default function App() {
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
               </div>
-              <button 
-                onClick={handleSaveEdit} 
-                disabled={isSaving}
-                className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSaving ? 'Saving...' : 'Save'}
+              <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
+                Save
               </button>
             </header>
 
@@ -1555,13 +1499,9 @@ export default function App() {
                 </div>
               </section>
 
-              <button 
-                onClick={handleDeleteSeed} 
-                disabled={isSaving}
-                className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                {isSaving ? 'Deleting...' : 'Delete Seed Permanently'}
+                Delete Seed Permanently
               </button>
             </div>
           </main>
@@ -2010,7 +1950,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.32</span>
+              <span className="text-sm font-normal text-emerald-300">v1.29</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
