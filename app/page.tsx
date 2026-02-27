@@ -325,7 +325,7 @@ export default function App() {
         }
       };
 
-      let modelToUse = "gemini-2.0-flash"; // Defaulting back to 2.0-flash
+      let modelToUse = "gemini-2-flash"; // Defaulting back to 2.0-flash
       
       // Auto-discover models to bypass 404 errors on deprecated aliases
       if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
@@ -338,8 +338,8 @@ export default function App() {
               .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
               .map((m: any) => m.name.replace('models/', ''));
             
-            // Prioritize gemini-2.0-flash, falling back to 2.5-flash or 1.5-flash
-            const bestModels = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+            // Prioritize gemini-2-flash, falling back to 2.5-flash or 1.5-flash
+            const bestModels = ["gemini-2-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
             modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
             console.log("Auto-discovered and selected model:", modelToUse);
           }
