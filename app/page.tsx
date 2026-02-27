@@ -88,12 +88,11 @@ interface SeedlingTray {
   contents: TraySeedRecord[];
 }
 
+type AppView = 'dashboard' | 'scanner' | 'importer' | 'vault' | 'seed_detail' | 'seed_edit' | 'trays' | 'tray_detail' | 'tray_edit';
+
 export default function App() {
-  // Navigation States
-  const [isScanning, setIsScanning] = useState(false);
-  const [isImportingUrl, setIsImportingUrl] = useState(false);
-  const [isViewingInventory, setIsViewingInventory] = useState(false);
-  const [isViewingTrays, setIsViewingTrays] = useState(false);
+  // --- ROUTING STATE ---
+  const [activeView, setActiveView] = useState<AppView>('dashboard');
   
   // App Data State
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -124,7 +123,6 @@ export default function App() {
   
   // Tray States
   const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
-  const [isEditingTray, setIsEditingTray] = useState(false);
   const [trayFormData, setTrayFormData] = useState<SeedlingTray | null>(null);
   const trayPhotoInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,9 +131,77 @@ export default function App() {
   const [companionInStockOnly, setCompanionInStockOnly] = useState(false);
 
   // Edit States
-  const [isEditingSeed, setIsEditingSeed] = useState(false);
   const [editFormData, setEditFormData] = useState<InventorySeed | null>(null);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  // --- NATIVE ROUTER LOGIC ---
+  const applyRoute = (view: AppView, payload: any = null) => {
+    setActiveView(view);
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+
+    if (view === 'dashboard') {
+        setSelectedSeed(null); setSelectedTray(null);
+        setAnalysisResult(null); setImagePreview(null);
+    }
+    if (view === 'vault') setSelectedSeed(null);
+    if (view === 'seed_detail' && payload) {
+        setSelectedSeed(payload); setViewingImageIndex(payload.primaryImageIndex || 0);
+    }
+    if (view === 'seed_edit' && payload) setEditFormData(payload);
+    if (view === 'trays') setSelectedTray(null);
+    if (view === 'tray_detail' && payload) setSelectedTray(payload);
+    if (view === 'tray_edit' && payload) setTrayFormData(payload);
+    if (view === 'scanner' || view === 'importer') {
+        setImagePreview(null); setAnalysisResult(null); setImportUrl('');
+    }
+  };
+
+  const navigateTo = (view: AppView, payload: any = null) => {
+    if (typeof window !== 'undefined') {
+        window.history.pushState({ view, payload }, '', `#${view}`);
+    }
+    applyRoute(view, payload);
+  };
+
+  const handleGoBack = (fallbackView: AppView) => {
+     if (typeof window !== 'undefined') {
+         if (window.history.length > 2) {
+             window.history.back();
+         } else {
+             navigateTo(fallbackView);
+         }
+     } else {
+         applyRoute(fallbackView);
+     }
+  };
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+        if (e.state && e.state.view) {
+            applyRoute(e.state.view, e.state.payload);
+        } else {
+            const hash = window.location.hash.replace('#', '') as AppView;
+            if (['vault', 'trays', 'scanner', 'importer'].includes(hash)) {
+                applyRoute(hash);
+            } else {
+                applyRoute('dashboard');
+            }
+        }
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initial Load
+    const initialHash = window.location.hash.replace('#', '') as AppView;
+    if (initialHash && ['vault', 'trays'].includes(initialHash)) {
+         window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
+         applyRoute(initialHash);
+    } else {
+         window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // --- DATABASE FETCHING LOGIC ---
   useEffect(() => {
@@ -145,18 +211,11 @@ export default function App() {
     fetchTrays();
   }, []);
 
+  // Ensure fresh data when navigating to lists
   useEffect(() => {
-    if (isViewingInventory) {
-      fetchInventory();
-    }
-  }, [isViewingInventory]);
-
-  useEffect(() => {
-    if (isViewingTrays) {
-      fetchTrays();
-      fetchInventory(); 
-    }
-  }, [isViewingTrays]);
+    if (activeView === 'vault') fetchInventory();
+    if (activeView === 'trays') { fetchTrays(); fetchInventory(); }
+  }, [activeView]);
 
   const fetchCategories = async () => {
     const { data, error } = await supabase.from('seed_categories').select('*').order('name');
@@ -237,17 +296,6 @@ export default function App() {
     }
   };
 
-  const cancelAdd = () => {
-    setIsScanning(false);
-    setIsImportingUrl(false);
-    setImagePreview(null);
-    setSelectedFile(null);
-    setImportUrl("");
-    setAnalysisResult(null);
-    setErrorMsg(null);
-    setShowNewCatForm(false);
-  };
-
   const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
       const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
@@ -310,7 +358,7 @@ export default function App() {
       } else {
         setInventory([newSeed, ...inventory]);
         alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
-        cancelAdd();
+        navigateTo('vault');
       }
     }
   };
@@ -546,9 +594,8 @@ export default function App() {
     if (error) alert("Failed to update database: " + error.message);
     else {
       setInventory(inventory.map(s => s.id === selectedSeed?.id ? payload : s));
-      setSelectedSeed(payload);
-      setViewingImageIndex(payload.primaryImageIndex || 0);
-      setIsEditingSeed(false);
+      // Explicitly set the updated payload to the detail view and return to it
+      navigateTo('seed_detail', payload); 
       setShowNewCatForm(false);
     }
   };
@@ -560,8 +607,7 @@ export default function App() {
       if (error) alert("Failed to delete from database: " + error.message);
       else {
         setInventory(inventory.filter(s => s.id !== selectedSeed.id));
-        setSelectedSeed(null);
-        setIsEditingSeed(false);
+        navigateTo('vault');
       }
     }
   };
@@ -583,9 +629,7 @@ export default function App() {
        images: [],
        contents: []
      };
-     setTrayFormData(newTray);
-     setSelectedTray(newTray); // Setting this triggers the UI to switch to the edit view
-     setIsEditingTray(true);
+     navigateTo('tray_edit', newTray);
   };
 
   const handleTrayPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -628,8 +672,7 @@ export default function App() {
       if (isNew) setTrays([savedTray, ...trays]);
       else setTrays(trays.map(t => t.id === savedTray.id ? savedTray : t));
       
-      setSelectedTray(savedTray);
-      setIsEditingTray(false);
+      navigateTo('tray_detail', savedTray);
     }
   };
 
@@ -640,8 +683,7 @@ export default function App() {
       if (error) alert("Failed to delete tray.");
       else {
         setTrays(trays.filter(t => t.id !== selectedTray.id));
-        setSelectedTray(null);
-        setIsEditingTray(false);
+        navigateTo('trays');
       }
     }
   };
@@ -679,22 +721,22 @@ export default function App() {
 
 
   // ==========================================
-  // VIEW ROUTING
+  // VIEW ROUTING & RENDERING
   // ==========================================
 
   // --- ADD SEED VIEW (Scanner & URL Import) ---
-  if (isScanning || isImportingUrl) {
-    const isScanMode = isScanning;
+  if (activeView === 'scanner' || activeView === 'importer') {
+    const isScanMode = activeView === 'scanner';
     
     return (
       <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col">
         <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950">
-          <button onClick={cancelAdd} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.29</span>
+            <span className="text-sm font-normal text-stone-500">v1.30</span>
           </h1>
         </header>
 
@@ -708,7 +750,7 @@ export default function App() {
 
           {analysisResult ? (
             <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
-              {/* IMAGE PREVIEW HEADER (Shows for both Scanner and successful URL Scrape) */}
+              {/* IMAGE PREVIEW HEADER */}
               {imagePreview && (
                 <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
                   <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
@@ -721,7 +763,7 @@ export default function App() {
                 </div>
               )}
               
-              {!imagePreview && isImportingUrl && (
+              {!imagePreview && !isScanMode && (
                  <div className="bg-blue-900/40 text-blue-300 p-3 rounded-xl border border-blue-800 text-xs flex items-center gap-2">
                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                    Data extracted from URL successfully. You can attach photos later via the Edit page.
@@ -929,796 +971,395 @@ export default function App() {
     );
   }
 
-  // --- TRAYS VIEW ---
-  if (isViewingTrays) {
-    
-    // TRAY EDIT/DETAIL VIEW
-    if (selectedTray) {
-      if (isEditingTray && trayFormData) {
-        return (
-          <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-            <title>Talawa Farmah | Garden Manager</title>
-            <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
-              <div className="flex items-center gap-3">
-                <button onClick={() => { setIsEditingTray(false); if(!selectedTray.id) setSelectedTray(null); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-                <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
-              </div>
-              <button onClick={handleSaveTray} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
-                Save
-              </button>
-            </header>
-
-            <div className="max-w-md mx-auto p-4 space-y-5">
-              
-              {/* Basic Tray Info */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
-                 <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Tray Details</h3>
-                 <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Tray Name / Label <span className="text-red-400">*</span></label>
-                    <input type="text" value={trayFormData.name} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
-                 </div>
-                 
-                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">Sown Date</label>
-                      <input type="date" value={trayFormData.sown_date} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">1st Germination</label>
-                      <input type="date" value={trayFormData.first_germination_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_germination_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">1st Planted Date</label>
-                      <input type="date" value={trayFormData.first_planted_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_planted_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">Location</label>
-                      <input type="text" placeholder="Indoors, Greenhouse..." value={trayFormData.location || ''} onChange={(e) => setTrayFormData({ ...trayFormData, location: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">Tray Type</label>
-                      <input type="text" placeholder="e.g., 72-cell" value={trayFormData.tray_type} onChange={(e) => setTrayFormData({ ...trayFormData, tray_type: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                   <div>
-                      <label className="block text-xs font-medium text-stone-500 mb-1">Potting Mix</label>
-                      <input type="text" placeholder="e.g., Pro-Mix" value={trayFormData.potting_mix || ''} onChange={(e) => setTrayFormData({ ...trayFormData, potting_mix: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                   </div>
-                 </div>
-
-                 {/* Environment Toggles */}
-                 <div className="grid grid-cols-1 gap-2 pt-2">
-                   <label className="block text-xs font-medium text-stone-500 mb-1">Environment Setup</label>
-                   
-                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
-                      <input type="checkbox" id="heatmat" checked={trayFormData.heat_mat} onChange={(e) => setTrayFormData({ ...trayFormData, heat_mat: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
-                      <label htmlFor="heatmat" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Heat Mat</label>
-                   </div>
-                   
-                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
-                      <input type="checkbox" id="humdome" checked={trayFormData.humidity_dome} onChange={(e) => setTrayFormData({ ...trayFormData, humidity_dome: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
-                      <label htmlFor="humdome" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Humidity Dome</label>
-                   </div>
-                   
-                   <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
-                      <input type="checkbox" id="growlight" checked={trayFormData.grow_light} onChange={(e) => setTrayFormData({ ...trayFormData, grow_light: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
-                      <label htmlFor="growlight" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Grow Lights</label>
-                   </div>
-                 </div>
-
-                 <div className="pt-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Tray Notes</label>
-                    <textarea value={trayFormData.notes} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={3} placeholder="Fertilizer schedule, pest issues, etc." className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
-                 </div>
-              </section>
-
-              {/* Seed Contents Manager */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-stone-800">Seeds Sown in Tray</h3>
-                 </div>
-
-                 <div className="space-y-4 mb-4">
-                    {trayFormData.contents.map((record, idx) => (
-                       <div key={idx} className="bg-stone-50 p-3 rounded-xl border border-stone-200 relative">
-                          <button onClick={() => handleRemoveTraySeed(idx)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1 rounded-full border border-red-200 hover:bg-red-200">
-                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                          </button>
-                          
-                          <div className="mb-3">
-                            <label className="block text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Select Seed</label>
-                            <select 
-                              value={record.seed_id} 
-                              onChange={(e) => handleUpdateTraySeed(idx, 'seed_id', e.target.value)}
-                              className="w-full bg-white border border-stone-300 rounded-lg p-2 text-stone-800 outline-none focus:border-emerald-500 font-medium"
-                            >
-                              <option value="" disabled>Choose from Vault...</option>
-                              {inventory.map(s => <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>)}
-                            </select>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2 bg-white p-2 rounded-lg border border-stone-200">
-                            <div>
-                              <label className="block text-[10px] text-stone-500 text-center mb-1">Sown</label>
-                              <input type="number" min="0" value={record.sown_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'sown_count', parseInt(e.target.value)||0)} className="w-full text-center bg-stone-50 border border-stone-200 rounded p-1.5 font-bold outline-none focus:border-emerald-500" />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-emerald-600 font-bold text-center mb-1">Sprouted</label>
-                              <input type="number" min="0" value={record.germinated_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'germinated_count', parseInt(e.target.value)||0)} className="w-full text-center bg-emerald-50 border border-emerald-200 rounded p-1.5 font-bold text-emerald-800 outline-none focus:border-emerald-500" />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-blue-600 font-bold text-center mb-1">Planted</label>
-                              <input type="number" min="0" value={record.planted_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'planted_count', parseInt(e.target.value)||0)} className="w-full text-center bg-blue-50 border border-blue-200 rounded p-1.5 font-bold text-blue-800 outline-none focus:border-blue-500" />
-                            </div>
-                          </div>
-                       </div>
-                    ))}
-                    
-                    {trayFormData.contents.length === 0 && (
-                      <div className="text-center py-4 text-stone-400 text-sm border-2 border-dashed border-stone-200 rounded-xl">
-                        No seeds added to this tray yet.
-                      </div>
-                    )}
-                 </div>
-
-                 <button onClick={handleAddSeedToTray} className="w-full py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    Add Seed Variety to Tray
-                 </button>
-              </section>
-
-              {/* Photos */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-stone-800">Tray Progress Photos</h3>
-                  <button onClick={() => trayPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    Add Photo
-                  </button>
-                  <input type="file" accept="image/*" capture="environment" ref={trayPhotoInputRef} className="hidden" onChange={handleTrayPhotoCapture} />
-                </div>
-                
-                <div className="grid grid-cols-3 gap-3">
-                  {(!trayFormData.images || trayFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No progress photos.</p>}
-                  {(trayFormData.images || []).map((img, idx) => (
-                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
-                      <img src={img} alt="Tray" className="w-full h-full object-cover" />
-                      <div className="absolute top-1 right-1 flex flex-col gap-1">
-                         <button onClick={() => handleRemoveTrayImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
-                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                         </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {trayFormData.id && (
-                <button onClick={handleDeleteTray} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  Delete Tray
-                </button>
-              )}
-            </div>
-          </main>
-        );
-      }
-
-      // TRAY READ-ONLY DETAIL VIEW
-      const totalSown = selectedTray.contents.reduce((sum, item) => sum + (item.sown_count || 0), 0);
-      const totalGerminated = selectedTray.contents.reduce((sum, item) => sum + (item.germinated_count || 0), 0);
-      const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
-
-      return (
-        <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-          <title>Talawa Farmah | Garden Manager</title>
-          <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button onClick={() => setSelectedTray(null)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <h1 className="text-xl font-bold truncate">Tray Details</h1>
-            </div>
-            <button 
-              onClick={() => { setTrayFormData(selectedTray); setIsEditingTray(true); }}
-              className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-              <span className="text-sm font-medium">Edit / Update</span>
-            </button>
-          </header>
-
-          <div className="max-w-md mx-auto p-4 space-y-5">
-             <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                <div className="flex justify-between items-start mb-3">
-                   <h2 className="text-2xl font-bold text-stone-800 leading-tight">{selectedTray.name}</h2>
-                   <div className="flex gap-1.5">
-                     {selectedTray.heat_mat && (
-                       <span className="bg-amber-100 text-amber-800 p-1.5 rounded-lg flex items-center justify-center" title="Heat Mat Used">
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
-                       </span>
-                     )}
-                     {selectedTray.humidity_dome && (
-                       <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg flex items-center justify-center" title="Humidity Dome Used">
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h18M5 15v4a2 2 0 002 2h10a2 2 0 002-2v-4M12 15V3m0 0l-4 4m4-4l4 4" /></svg>
-                       </span>
-                     )}
-                     {selectedTray.grow_light && (
-                       <span className="bg-yellow-100 text-yellow-800 p-1.5 rounded-lg flex items-center justify-center" title="Grow Light Used">
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                       </span>
-                     )}
-                   </div>
-                </div>
-                
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.location || 'Unknown Location'}</span>
-                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.tray_type || 'Unknown flat'}</span>
-                </div>
-                
-                {/* Timeline Grid */}
-                <div className="grid grid-cols-3 gap-2 mb-4 bg-stone-50 rounded-xl p-3 border border-stone-200">
-                   <div className="text-center">
-                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sown</div>
-                     <div className="text-sm font-bold text-stone-800">{selectedTray.sown_date || '--'}</div>
-                   </div>
-                   <div className="text-center border-l border-stone-200">
-                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">1st Sprout</div>
-                     <div className="text-sm font-bold text-stone-800">{selectedTray.first_germination_date || '--'}</div>
-                   </div>
-                   <div className="text-center border-l border-stone-200">
-                     <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Planted</div>
-                     <div className="text-sm font-bold text-stone-800">{selectedTray.first_planted_date || '--'}</div>
-                   </div>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100 mb-4">
-                   <div className="text-center">
-                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sown</div>
-                     <div className="text-xl font-black text-emerald-900">{totalSown}</div>
-                   </div>
-                   <div className="text-center border-l border-emerald-200">
-                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sprouted</div>
-                     <div className="text-xl font-black text-emerald-900">{totalGerminated}</div>
-                   </div>
-                   <div className="text-center border-l border-emerald-200">
-                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Rate</div>
-                     <div className="text-xl font-black text-emerald-900">{germRate}%</div>
-                   </div>
-                </div>
-
-                {selectedTray.potting_mix && (
-                   <div className="mb-4">
-                     <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">Potting Mix</div>
-                     <div className="text-sm text-stone-800 font-medium">{selectedTray.potting_mix}</div>
-                   </div>
-                )}
-
-                {selectedTray.notes && (
-                  <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{selectedTray.notes}</p>
-                )}
-             </div>
-
-             <h3 className="font-bold text-stone-800 px-1">Contents</h3>
-             <div className="space-y-3">
-               {selectedTray.contents.map((seed, idx) => (
-                 <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
-                   <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-2">
-                     <div>
-                       <h4 className="font-bold text-stone-800">{seed.variety_name}</h4>
-                       <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200">{seed.seed_id}</span>
-                     </div>
-                     <div className="text-right">
-                       <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
-                         {seed.sown_count > 0 ? Math.round((seed.germinated_count / seed.sown_count) * 100) : 0}% Germ
-                       </span>
-                     </div>
-                   </div>
-                   <div className="flex justify-between text-sm">
-                     <div className="flex items-center gap-1.5 text-stone-600">
-                        <div className="w-2 h-2 rounded-full bg-stone-400"></div> Sown: <span className="font-bold text-stone-900">{seed.sown_count}</span>
-                     </div>
-                     <div className="flex items-center gap-1.5 text-stone-600">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Sprouted: <span className="font-bold text-stone-900">{seed.germinated_count}</span>
-                     </div>
-                     <div className="flex items-center gap-1.5 text-stone-600">
-                        <div className="w-2 h-2 rounded-full bg-blue-500"></div> Planted: <span className="font-bold text-stone-900">{seed.planted_count}</span>
-                     </div>
-                   </div>
-                 </div>
-               ))}
-             </div>
-
-             {selectedTray.images && selectedTray.images.length > 0 && (
-               <>
-                 <h3 className="font-bold text-stone-800 px-1 pt-2">Gallery</h3>
-                 <div className="grid grid-cols-3 gap-2">
-                   {selectedTray.images.map((img, idx) => (
-                      <div key={idx} className="aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
-                        <img src={img} className="w-full h-full object-cover" alt="Tray Progress" />
-                      </div>
-                   ))}
-                 </div>
-               </>
-             )}
-          </div>
-        </main>
-      );
-    }
-
-    // TRAY LIST VIEW
+  // --- SEED DETAIL & EDIT VIEW ---
+  if (activeView === 'seed_edit' && editFormData) {
     return (
       <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
         <title>Talawa Farmah | Garden Manager</title>
-        <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+        <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsViewingTrays(false)}
-              className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <button onClick={() => handleGoBack('seed_detail')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h1 className="text-xl font-bold">Seedling Tracker</h1>
+            <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
           </div>
-          <button onClick={handleCreateNewTray} className="bg-emerald-500 hover:bg-emerald-400 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            New Tray
+          <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
+            Save
           </button>
         </header>
 
-        <div className="max-w-md mx-auto p-4 space-y-3">
-          {isLoadingDB ? (
-            <div className="flex justify-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
-          ) : trays.length > 0 ? (
-            trays.map(tray => {
-              const totalSown = tray.contents.reduce((s, i) => s + (i.sown_count || 0), 0);
-              const thumb = tray.images && tray.images.length > 0 ? tray.images[0] : null;
-
-              return (
-                <div 
-                  key={tray.id} 
-                  onClick={() => setSelectedTray(tray)}
-                  className="bg-white p-3.5 rounded-2xl border border-stone-200 shadow-sm flex gap-4 items-center hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-95"
-                >
-                  <div className="w-16 h-16 rounded-xl bg-stone-100 flex-shrink-0 border border-stone-200 overflow-hidden relative">
-                    {thumb ? (
-                      <img src={thumb} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-stone-300">
-                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                      </div>
-                    )}
-                    {tray.heat_mat && <div className="absolute bottom-0 right-0 bg-amber-500 text-white text-[8px] font-bold px-1 rounded-tl-lg">HEAT</div>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-stone-800 text-base truncate leading-tight">{tray.name}</h3>
-                    <div className="text-xs text-stone-500 mt-1 mb-2 truncate">Sown: {tray.sown_date} • {tray.location || tray.tray_type}</div>
-                    <div className="flex gap-2">
-                       <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">
-                         {tray.contents.length} Varieties
-                       </span>
-                       <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                         {totalSown} Seeds Sown
-                       </span>
-                    </div>
+        <div className="max-w-md mx-auto p-4 space-y-5">
+          {/* Image Manager */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-stone-800">Photos</h3>
+              <button onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Photo
+              </button>
+              <input type="file" accept="image/*" capture="environment" ref={editPhotoInputRef} className="hidden" onChange={handleEditPhotoCapture} />
+            </div>
+            
+            <div className="grid grid-cols-3 gap-3">
+              {(!editFormData.images || editFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
+              {(editFormData.images || []).map((img, idx) => (
+                <div key={idx} className={`relative aspect-square rounded-xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
+                  <img src={img} alt="Seed" className="w-full h-full object-cover" />
+                  <div className="absolute top-1 right-1 flex flex-col gap-1">
+                     <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-stone-100 hover:bg-stone-900/60'}`}>
+                       <svg className="w-3.5 h-3.5" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                     </button>
+                     <button onClick={() => handleRemoveImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
+                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                     </button>
                   </div>
                 </div>
-              );
-            })
-          ) : (
-             <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
-                <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-                <p>No seedling trays tracked yet.</p>
-                <button onClick={handleCreateNewTray} className="mt-4 text-emerald-600 font-bold border border-emerald-200 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100">Start a New Tray</button>
-             </div>
-          )}
+              ))}
+            </div>
+          </section>
+
+          {/* Basics */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+            <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Basic Info</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
+                <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
+                <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
+                <select 
+                  value={editFormData.category} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__NEW__') {
+                      setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
+                    } else setShowNewCatForm(false);
+                    setEditFormData({ ...editFormData, category: val });
+                  }}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none"
+                >
+                  <option value="" disabled>Select...</option>
+                  {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category</option>
+                </select>
+              </div>
+              
+              {showNewCatForm && (
+                <div className="col-span-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-medium text-emerald-800 mb-1">New Cat Name</label>
+                    <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-emerald-800 mb-1">Prefix (1-2 char)</label>
+                    <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm uppercase outline-none" />
+                  </div>
+                </div>
+              )}
+              
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label>
+                <input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
+                <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Life Cycle</label>
+                <input type="text" value={editFormData.lifecycle} onChange={(e) => setEditFormData({ ...editFormData, lifecycle: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+            </div>
+          </section>
+
+          {/* Specs */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+            <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Planting Specs</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Days to Maturity</label>
+                <input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Sunlight</label>
+                <input type="text" value={editFormData.sunlight} onChange={(e) => setEditFormData({ ...editFormData, sunlight: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Plant Spacing</label>
+                <input type="text" value={editFormData.plant_spacing} onChange={(e) => setEditFormData({ ...editFormData, plant_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Row Spacing</label>
+                <input type="text" value={editFormData.row_spacing} onChange={(e) => setEditFormData({ ...editFormData, row_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Seed Depth</label>
+                <input type="text" value={editFormData.seed_depth} onChange={(e) => setEditFormData({ ...editFormData, seed_depth: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+            </div>
+          </section>
+
+          {/* Germination Needs */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+            <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Germination Needs</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Days to Germination</label>
+                <input type="text" value={editFormData.germination_days} onChange={(e) => setEditFormData({ ...editFormData, germination_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
+                <input type="checkbox" checked={editFormData.light_required} onChange={(e) => setEditFormData({ ...editFormData, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                <label className="text-sm font-medium text-stone-700">Needs Light</label>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
+                <input type="checkbox" checked={editFormData.cold_stratification} onChange={(e) => setEditFormData({ ...editFormData, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                <label className="text-sm font-medium text-stone-700">Cold Strat.</label>
+              </div>
+              {editFormData.cold_stratification && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Stratification Days</label>
+                  <input type="number" value={editFormData.stratification_days} onChange={(e) => setEditFormData({ ...editFormData, stratification_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Notes & Companions */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-500 mb-1">Companion Plants (comma separated)</label>
+              <input type="text" value={(editFormData.companion_plants || []).join(', ')} onChange={(e) => setEditFormData({ ...editFormData, companion_plants: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label>
+              <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" />
+            </div>
+          </section>
+
+          <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Delete Seed Permanently
+          </button>
         </div>
       </main>
     );
   }
 
-  // --- INVENTORY VIEW (LIST & DETAILS) ---
-  if (isViewingInventory) {
-    
-    // 1. DETAIL VIEW & EDIT VIEW
-    if (selectedSeed) {
-      if (isEditingSeed && editFormData) {
-        return (
-          <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-            <title>Talawa Farmah | Garden Manager</title>
-            <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
-              <div className="flex items-center gap-3">
-                <button onClick={() => { setIsEditingSeed(false); setEditFormData(null); setShowNewCatForm(false); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-                <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
-              </div>
-              <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
-                Save
-              </button>
-            </header>
+  if (activeView === 'seed_detail' && selectedSeed) {
+    const displayImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[viewingImageIndex] : null;
+    const seedHistory = trays.filter(t => t.contents.some(c => c.seed_id === selectedSeed.id));
 
-            <div className="max-w-md mx-auto p-4 space-y-5">
-              {/* Image Manager */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-stone-800">Photos</h3>
-                  <button onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    Add Photo
-                  </button>
-                  <input type="file" accept="image/*" capture="environment" ref={editPhotoInputRef} className="hidden" onChange={handleEditPhotoCapture} />
-                </div>
-                
-                <div className="grid grid-cols-3 gap-3">
-                  {(!editFormData.images || editFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No photos attached.</p>}
-                  {(editFormData.images || []).map((img, idx) => (
-                    <div key={idx} className={`relative aspect-square rounded-xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200'}`}>
-                      <img src={img} alt="Seed" className="w-full h-full object-cover" />
-                      <div className="absolute top-1 right-1 flex flex-col gap-1">
-                         <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-stone-100 hover:bg-stone-900/60'}`}>
-                           <svg className="w-3.5 h-3.5" fill={idx === (editFormData.primaryImageIndex || 0) ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
-                         </button>
-                         <button onClick={() => handleRemoveImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
-                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                         </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <title>Talawa Farmah | Garden Manager</title>
+        
+        {/* Full Screen Image Modal */}
+        {fullScreenImage && (
+          <div 
+            className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out"
+            onClick={() => setFullScreenImage(null)}
+          >
+            <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-10">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <img 
+              src={fullScreenImage} 
+              alt="Full screen view" 
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()} 
+            />
+          </div>
+        )}
 
-              {/* Basics */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
-                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Basic Info</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
-                    <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
-                    <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
-                    <select 
-                      value={editFormData.category} 
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '__NEW__') {
-                          setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
-                        } else setShowNewCatForm(false);
-                        setEditFormData({ ...editFormData, category: val });
-                      }}
-                      className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none"
-                    >
-                      <option value="" disabled>Select...</option>
-                      {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                      <option value="__NEW__" className="font-bold text-emerald-600">+ Add New Category</option>
-                    </select>
-                  </div>
-                  
-                  {showNewCatForm && (
-                    <div className="col-span-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-medium text-emerald-800 mb-1">New Cat Name</label>
-                        <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-medium text-emerald-800 mb-1">Prefix (1-2 char)</label>
-                        <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm uppercase outline-none" />
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label>
-                    <input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label>
-                    <input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Life Cycle</label>
-                    <input type="text" value={editFormData.lifecycle} onChange={(e) => setEditFormData({ ...editFormData, lifecycle: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                </div>
-              </section>
+        <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => { setFullScreenImage(null); handleGoBack('vault'); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <h1 className="text-xl font-bold truncate">Seed Details</h1>
+          </div>
+          <button 
+            onClick={() => navigateTo('seed_edit', selectedSeed)}
+            className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            <span className="text-sm font-medium">Edit</span>
+          </button>
+        </header>
 
-              {/* Specs */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
-                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Planting Specs</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Days to Maturity</label>
-                    <input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Sunlight</label>
-                    <input type="text" value={editFormData.sunlight} onChange={(e) => setEditFormData({ ...editFormData, sunlight: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Plant Spacing</label>
-                    <input type="text" value={editFormData.plant_spacing} onChange={(e) => setEditFormData({ ...editFormData, plant_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Row Spacing</label>
-                    <input type="text" value={editFormData.row_spacing} onChange={(e) => setEditFormData({ ...editFormData, row_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Seed Depth</label>
-                    <input type="text" value={editFormData.seed_depth} onChange={(e) => setEditFormData({ ...editFormData, seed_depth: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                </div>
-              </section>
-
-              {/* Germination Needs */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
-                <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Germination Needs</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-500 mb-1">Days to Germination</label>
-                    <input type="text" value={editFormData.germination_days} onChange={(e) => setEditFormData({ ...editFormData, germination_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                  </div>
-                  <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
-                    <input type="checkbox" checked={editFormData.light_required} onChange={(e) => setEditFormData({ ...editFormData, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
-                    <label className="text-sm font-medium text-stone-700">Needs Light</label>
-                  </div>
-                  <div className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-200">
-                    <input type="checkbox" checked={editFormData.cold_stratification} onChange={(e) => setEditFormData({ ...editFormData, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
-                    <label className="text-sm font-medium text-stone-700">Cold Strat.</label>
-                  </div>
-                  {editFormData.cold_stratification && (
-                    <div className="col-span-2">
-                      <label className="block text-xs font-medium text-stone-500 mb-1">Stratification Days</label>
-                      <input type="number" value={editFormData.stratification_days} onChange={(e) => setEditFormData({ ...editFormData, stratification_days: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* Notes & Companions */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-stone-500 mb-1">Companion Plants (comma separated)</label>
-                  <input type="text" value={(editFormData.companion_plants || []).join(', ')} onChange={(e) => setEditFormData({ ...editFormData, companion_plants: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label>
-                  <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" />
-                </div>
-              </section>
-
-              <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                Delete Seed Permanently
-              </button>
-            </div>
-          </main>
-        );
-      }
-
-      // --- DETAIL VIEW ---
-      const displayImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[viewingImageIndex] : null;
-      
-      // Calculate Germination History for this specific seed
-      const seedHistory = trays.filter(t => t.contents.some(c => c.seed_id === selectedSeed.id));
-
-      return (
-        <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
-          <title>Talawa Farmah | Garden Manager</title>
-          
-          {/* Full Screen Image Modal */}
-          {fullScreenImage && (
-            <div 
-              className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out"
-              onClick={() => setFullScreenImage(null)}
-            >
-              <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-10">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+        <div className="max-w-md mx-auto">
+          {/* Hero Image */}
+          <div className="w-full aspect-[4/3] bg-stone-200 relative">
+            {displayImg ? (
               <img 
-                src={fullScreenImage} 
-                alt="Full screen view" 
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()} 
+                src={displayImg} 
+                alt={selectedSeed.variety_name} 
+                className="w-full h-full object-cover cursor-zoom-in" 
+                onClick={() => setFullScreenImage(displayImg)}
               />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
+                <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <span>No primary image</span>
+              </div>
+            )}
+            <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/80 to-transparent p-4 pt-12 pointer-events-none">
+              <div className="flex gap-2 mb-1">
+                <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">{selectedSeed.id}</div>
+                {selectedSeed.out_of_stock && (
+                  <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">OUT OF STOCK</div>
+                )}
+              </div>
+              <h2 className="text-2xl font-bold text-white leading-tight">{selectedSeed.variety_name}</h2>
+              <p className="text-emerald-300 text-sm font-medium">{selectedSeed.category} <span className="text-stone-300 font-normal italic">({selectedSeed.species})</span></p>
+            </div>
+          </div>
+
+          {/* Other Images Strip */}
+          {(selectedSeed.images && selectedSeed.images.length > 1) && (
+            <div className="p-4 bg-white border-b border-stone-200 flex gap-2 overflow-x-auto scrollbar-hide">
+              {selectedSeed.images.map((img, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => setViewingImageIndex(idx)}
+                  className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 cursor-pointer transition-all ${idx === viewingImageIndex ? 'border-emerald-500 opacity-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                >
+                  <img src={img} className="w-full h-full object-cover" alt="Thumbnail" />
+                </div>
+              ))}
             </div>
           )}
 
-          <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button onClick={() => { setSelectedSeed(null); setFullScreenImage(null); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <h1 className="text-xl font-bold truncate">Seed Details</h1>
-            </div>
-            <button 
-              onClick={() => { setEditFormData(selectedSeed); setIsEditingSeed(true); }}
-              className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-              <span className="text-sm font-medium">Edit</span>
-            </button>
-          </header>
-
-          <div className="max-w-md mx-auto">
-            {/* Hero Image */}
-            <div className="w-full aspect-[4/3] bg-stone-200 relative">
-              {displayImg ? (
-                <img 
-                  src={displayImg} 
-                  alt={selectedSeed.variety_name} 
-                  className="w-full h-full object-cover cursor-zoom-in" 
-                  onClick={() => setFullScreenImage(displayImg)}
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
-                  <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                  <span>No primary image</span>
-                </div>
-              )}
-              <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/80 to-transparent p-4 pt-12 pointer-events-none">
-                <div className="flex gap-2 mb-1">
-                  <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">{selectedSeed.id}</div>
-                  {selectedSeed.out_of_stock && (
-                    <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">OUT OF STOCK</div>
-                  )}
-                </div>
-                <h2 className="text-2xl font-bold text-white leading-tight">{selectedSeed.variety_name}</h2>
-                <p className="text-emerald-300 text-sm font-medium">{selectedSeed.category} <span className="text-stone-300 font-normal italic">({selectedSeed.species})</span></p>
+          {/* Data Sheets */}
+          <div className="p-4 space-y-4">
+            
+            {/* Quick Info Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Maturity</div>
+                <div className="text-stone-800 font-bold">{selectedSeed.days_to_maturity} Days</div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Sunlight</div>
+                <div className="text-stone-800 font-bold truncate">{selectedSeed.sunlight || '--'}</div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Life Cycle</div>
+                <div className="text-stone-800 font-bold truncate">{selectedSeed.lifecycle || '--'}</div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
+                <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Vendor</div>
+                <div className="text-stone-800 font-bold truncate">{selectedSeed.vendor || '--'}</div>
               </div>
             </div>
 
-            {/* Other Images Strip */}
-            {(selectedSeed.images && selectedSeed.images.length > 1) && (
-              <div className="p-4 bg-white border-b border-stone-200 flex gap-2 overflow-x-auto scrollbar-hide">
-                {selectedSeed.images.map((img, idx) => (
-                  <div 
-                    key={idx} 
-                    onClick={() => setViewingImageIndex(idx)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 cursor-pointer transition-all ${idx === viewingImageIndex ? 'border-emerald-500 opacity-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                  >
-                    <img src={img} className="w-full h-full object-cover" alt="Thumbnail" />
-                  </div>
-                ))}
+            {/* TRAY HISTORY */}
+            {seedHistory.length > 0 && (
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-emerald-100 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                <h3 className="text-sm font-bold text-emerald-800 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                  Germination History
+                </h3>
+                <div className="space-y-3">
+                  {seedHistory.map(tray => {
+                     const seedData = tray.contents.find(c => c.seed_id === selectedSeed.id);
+                     if (!seedData) return null;
+                     const rate = seedData.sown_count > 0 ? Math.round((seedData.germinated_count / seedData.sown_count) * 100) : 0;
+                     
+                     return (
+                       <div key={tray.id} className="bg-stone-50 rounded-lg p-2.5 border border-stone-200 text-sm flex justify-between items-center cursor-pointer hover:bg-stone-100" onClick={() => navigateTo('tray_detail', tray)}>
+                         <div className="min-w-0 flex-1 pr-2">
+                           <div className="font-bold text-stone-800 truncate leading-tight">{tray.name}</div>
+                           <div className="text-[10px] text-stone-500">{tray.sown_date}</div>
+                         </div>
+                         <div className="flex flex-col items-end text-right flex-shrink-0">
+                           <div className="font-bold text-emerald-700">{rate}% Rate</div>
+                           <div className="text-[10px] text-stone-600 font-medium">({seedData.germinated_count}/{seedData.sown_count} seeds)</div>
+                         </div>
+                       </div>
+                     );
+                  })}
+                </div>
               </div>
             )}
 
-            {/* Data Sheets */}
-            <div className="p-4 space-y-4">
-              
-              {/* Quick Info Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Maturity</div>
-                  <div className="text-stone-800 font-bold">{selectedSeed.days_to_maturity} Days</div>
+            {/* Planting & Germination Specs */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
+              <h3 className="text-sm font-bold text-stone-800 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+                Planting Requirements
+              </h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between border-b border-stone-50 pb-2">
+                  <span className="text-stone-500">Seed Depth</span>
+                  <span className="font-medium text-stone-800">{selectedSeed.seed_depth || '--'}</span>
                 </div>
-                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Sunlight</div>
-                  <div className="text-stone-800 font-bold truncate">{selectedSeed.sunlight || '--'}</div>
+                <div className="flex justify-between border-b border-stone-50 pb-2">
+                  <span className="text-stone-500">Plant Spacing</span>
+                  <span className="font-medium text-stone-800">{selectedSeed.plant_spacing || '--'}</span>
                 </div>
-                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Life Cycle</div>
-                  <div className="text-stone-800 font-bold truncate">{selectedSeed.lifecycle || '--'}</div>
+                <div className="flex justify-between border-b border-stone-50 pb-2">
+                  <span className="text-stone-500">Row Spacing</span>
+                  <span className="font-medium text-stone-800">{selectedSeed.row_spacing || '--'}</span>
                 </div>
-                <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100">
-                  <div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Vendor</div>
-                  <div className="text-stone-800 font-bold truncate">{selectedSeed.vendor || '--'}</div>
+                <div className="flex justify-between border-b border-stone-50 pb-2">
+                  <span className="text-stone-500">Germination Time</span>
+                  <span className="font-medium text-stone-800">{selectedSeed.germination_days || '--'}</span>
                 </div>
+                
+                {/* Tags for specific needs */}
+                {(selectedSeed.light_required || selectedSeed.cold_stratification) && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {selectedSeed.light_required && (
+                      <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded">Needs Light to Germinate</span>
+                    )}
+                    {selectedSeed.cold_stratification && (
+                      <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
+                        Cold Stratification ({selectedSeed.stratification_days} days)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-
-              {/* TRAY HISTORY */}
-              {seedHistory.length > 0 && (
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-emerald-100 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                  <h3 className="text-sm font-bold text-emerald-800 mb-3 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                    Germination History
-                  </h3>
-                  <div className="space-y-3">
-                    {seedHistory.map(tray => {
-                       const seedData = tray.contents.find(c => c.seed_id === selectedSeed.id);
-                       if (!seedData) return null;
-                       const rate = seedData.sown_count > 0 ? Math.round((seedData.germinated_count / seedData.sown_count) * 100) : 0;
-                       
-                       return (
-                         <div key={tray.id} className="bg-stone-50 rounded-lg p-2.5 border border-stone-200 text-sm flex justify-between items-center cursor-pointer hover:bg-stone-100" onClick={() => { setIsViewingTrays(true); setSelectedTray(tray); }}>
-                           <div className="min-w-0 flex-1 pr-2">
-                             <div className="font-bold text-stone-800 truncate leading-tight">{tray.name}</div>
-                             <div className="text-[10px] text-stone-500">{tray.sown_date}</div>
-                           </div>
-                           <div className="flex flex-col items-end text-right flex-shrink-0">
-                             <div className="font-bold text-emerald-700">{rate}% Rate</div>
-                             <div className="text-[10px] text-stone-600 font-medium">({seedData.germinated_count}/{seedData.sown_count} seeds)</div>
-                           </div>
-                         </div>
-                       );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Planting & Germination Specs */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
-                <h3 className="text-sm font-bold text-stone-800 mb-3 flex items-center gap-2">
-                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
-                  Planting Requirements
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between border-b border-stone-50 pb-2">
-                    <span className="text-stone-500">Seed Depth</span>
-                    <span className="font-medium text-stone-800">{selectedSeed.seed_depth || '--'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-stone-50 pb-2">
-                    <span className="text-stone-500">Plant Spacing</span>
-                    <span className="font-medium text-stone-800">{selectedSeed.plant_spacing || '--'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-stone-50 pb-2">
-                    <span className="text-stone-500">Row Spacing</span>
-                    <span className="font-medium text-stone-800">{selectedSeed.row_spacing || '--'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-stone-50 pb-2">
-                    <span className="text-stone-500">Germination Time</span>
-                    <span className="font-medium text-stone-800">{selectedSeed.germination_days || '--'}</span>
-                  </div>
-                  
-                  {/* Tags for specific needs */}
-                  {(selectedSeed.light_required || selectedSeed.cold_stratification) && (
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      {selectedSeed.light_required && (
-                        <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded">Needs Light to Germinate</span>
-                      )}
-                      {selectedSeed.cold_stratification && (
-                        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
-                          Cold Stratification ({selectedSeed.stratification_days} days)
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedSeed.companion_plants && selectedSeed.companion_plants.length > 0 && (
-                <div className="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-100">
-                  <h3 className="text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    Companion Plants
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedSeed.companion_plants.map(comp => (
-                       <span key={comp} className="bg-white border border-emerald-200 text-emerald-700 text-xs font-medium px-2.5 py-1 rounded-full">{comp}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedSeed.notes && (
-                <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
-                  <h3 className="text-stone-800 font-bold mb-2 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    Growing Notes
-                  </h3>
-                  <p className="text-stone-600 text-sm leading-relaxed whitespace-pre-wrap">{selectedSeed.notes}</p>
-                </div>
-              )}
             </div>
-          </div>
-        </main>
-      );
-    }
 
-    // 2. LIST VIEW
+            {selectedSeed.companion_plants && selectedSeed.companion_plants.length > 0 && (
+              <div className="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-100">
+                <h3 className="text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  Companion Plants
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedSeed.companion_plants.map(comp => (
+                     <span key={comp} className="bg-white border border-emerald-200 text-emerald-700 text-xs font-medium px-2.5 py-1 rounded-full">{comp}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedSeed.notes && (
+              <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
+                <h3 className="text-stone-800 font-bold mb-2 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  Growing Notes
+                </h3>
+                <p className="text-stone-600 text-sm leading-relaxed whitespace-pre-wrap">{selectedSeed.notes}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // --- VAULT (LIST) VIEW ---
+  if (activeView === 'vault') {
     const filteredInventory = inventory.filter(seed => {
       const matchesSearch = seed.variety_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             seed.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1803,7 +1444,7 @@ export default function App() {
         <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => setIsViewingInventory(false)}
+              onClick={() => handleGoBack('dashboard')}
               className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1865,7 +1506,7 @@ export default function App() {
                 return (
                   <div 
                     key={seed.id} 
-                    onClick={() => { setSelectedSeed(seed); setViewingImageIndex(seed.primaryImageIndex || 0); }}
+                    onClick={() => navigateTo('seed_detail', seed)}
                     className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}
                   >
                     <div className="flex items-start gap-4">
@@ -1941,6 +1582,397 @@ export default function App() {
     );
   }
 
+  // --- TRAY VIEWS ---
+  if (activeView === 'tray_edit' && trayFormData) {
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <title>Talawa Farmah | Garden Manager</title>
+        <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
+          <div className="flex items-center gap-3">
+            <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
+          </div>
+          <button onClick={handleSaveTray} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
+            Save
+          </button>
+        </header>
+
+        <div className="max-w-md mx-auto p-4 space-y-5">
+          {/* Basic Tray Info */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+             <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Tray Details</h3>
+             <div>
+                <label className="block text-xs font-medium text-stone-500 mb-1">Tray Name / Label <span className="text-red-400">*</span></label>
+                <input type="text" value={trayFormData.name} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
+             </div>
+             
+             <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Sown Date</label>
+                  <input type="date" value={trayFormData.sown_date} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">1st Germination</label>
+                  <input type="date" value={trayFormData.first_germination_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_germination_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">1st Planted Date</label>
+                  <input type="date" value={trayFormData.first_planted_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_planted_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Location</label>
+                  <input type="text" placeholder="Indoors, Greenhouse..." value={trayFormData.location || ''} onChange={(e) => setTrayFormData({ ...trayFormData, location: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Tray Type</label>
+                  <input type="text" placeholder="e.g., 72-cell" value={trayFormData.tray_type} onChange={(e) => setTrayFormData({ ...trayFormData, tray_type: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+               <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Potting Mix</label>
+                  <input type="text" placeholder="e.g., Pro-Mix" value={trayFormData.potting_mix || ''} onChange={(e) => setTrayFormData({ ...trayFormData, potting_mix: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+               </div>
+             </div>
+
+             {/* Environment Toggles */}
+             <div className="grid grid-cols-1 gap-2 pt-2">
+               <label className="block text-xs font-medium text-stone-500 mb-1">Environment Setup</label>
+               
+               <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                  <input type="checkbox" id="heatmat" checked={trayFormData.heat_mat} onChange={(e) => setTrayFormData({ ...trayFormData, heat_mat: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                  <label htmlFor="heatmat" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Heat Mat</label>
+               </div>
+               
+               <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                  <input type="checkbox" id="humdome" checked={trayFormData.humidity_dome} onChange={(e) => setTrayFormData({ ...trayFormData, humidity_dome: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                  <label htmlFor="humdome" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Humidity Dome</label>
+               </div>
+               
+               <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                  <input type="checkbox" id="growlight" checked={trayFormData.grow_light} onChange={(e) => setTrayFormData({ ...trayFormData, grow_light: e.target.checked })} className="w-5 h-5 accent-emerald-600 rounded" />
+                  <label htmlFor="growlight" className="text-sm font-bold text-stone-700 cursor-pointer flex-1">Using Grow Lights</label>
+               </div>
+             </div>
+
+             <div className="pt-2">
+                <label className="block text-xs font-medium text-stone-500 mb-1">Tray Notes</label>
+                <textarea value={trayFormData.notes} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={3} placeholder="Fertilizer schedule, pest issues, etc." className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
+             </div>
+          </section>
+
+          {/* Seed Contents Manager */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-stone-800">Seeds Sown in Tray</h3>
+             </div>
+
+             <div className="space-y-4 mb-4">
+                {trayFormData.contents.map((record, idx) => (
+                   <div key={idx} className="bg-stone-50 p-3 rounded-xl border border-stone-200 relative">
+                      <button onClick={() => handleRemoveTraySeed(idx)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1 rounded-full border border-red-200 hover:bg-red-200">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                      
+                      <div className="mb-3">
+                        <label className="block text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Select Seed</label>
+                        <select 
+                          value={record.seed_id} 
+                          onChange={(e) => handleUpdateTraySeed(idx, 'seed_id', e.target.value)}
+                          className="w-full bg-white border border-stone-300 rounded-lg p-2 text-stone-800 outline-none focus:border-emerald-500 font-medium"
+                        >
+                          <option value="" disabled>Choose from Vault...</option>
+                          {inventory.map(s => <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 bg-white p-2 rounded-lg border border-stone-200">
+                        <div>
+                          <label className="block text-[10px] text-stone-500 text-center mb-1">Sown</label>
+                          <input type="number" min="0" value={record.sown_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'sown_count', parseInt(e.target.value)||0)} className="w-full text-center bg-stone-50 border border-stone-200 rounded p-1.5 font-bold outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-emerald-600 font-bold text-center mb-1">Sprouted</label>
+                          <input type="number" min="0" value={record.germinated_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'germinated_count', parseInt(e.target.value)||0)} className="w-full text-center bg-emerald-50 border border-emerald-200 rounded p-1.5 font-bold text-emerald-800 outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-blue-600 font-bold text-center mb-1">Planted</label>
+                          <input type="number" min="0" value={record.planted_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'planted_count', parseInt(e.target.value)||0)} className="w-full text-center bg-blue-50 border border-blue-200 rounded p-1.5 font-bold text-blue-800 outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                   </div>
+                ))}
+                
+                {trayFormData.contents.length === 0 && (
+                  <div className="text-center py-4 text-stone-400 text-sm border-2 border-dashed border-stone-200 rounded-xl">
+                    No seeds added to this tray yet.
+                  </div>
+                )}
+             </div>
+
+             <button onClick={handleAddSeedToTray} className="w-full py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Seed Variety to Tray
+             </button>
+          </section>
+
+          {/* Photos */}
+          <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-stone-800">Tray Progress Photos</h3>
+              <button onClick={() => trayPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Add Photo
+              </button>
+              <input type="file" accept="image/*" capture="environment" ref={trayPhotoInputRef} className="hidden" onChange={handleTrayPhotoCapture} />
+            </div>
+            
+            <div className="grid grid-cols-3 gap-3">
+              {(!trayFormData.images || trayFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No progress photos.</p>}
+              {(trayFormData.images || []).map((img, idx) => (
+                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                  <img src={img} alt="Tray" className="w-full h-full object-cover" />
+                  <div className="absolute top-1 right-1 flex flex-col gap-1">
+                     <button onClick={() => handleRemoveTrayImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
+                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {trayFormData.id && (
+            <button onClick={handleDeleteTray} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              Delete Tray
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  if (activeView === 'tray_detail' && selectedTray) {
+    const totalSown = selectedTray.contents.reduce((sum, item) => sum + (item.sown_count || 0), 0);
+    const totalGerminated = selectedTray.contents.reduce((sum, item) => sum + (item.germinated_count || 0), 0);
+    const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
+
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <title>Talawa Farmah | Garden Manager</title>
+        <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => handleGoBack('trays')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <h1 className="text-xl font-bold truncate">Tray Details</h1>
+          </div>
+          <button 
+            onClick={() => navigateTo('tray_edit', selectedTray)}
+            className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            <span className="text-sm font-medium">Edit / Update</span>
+          </button>
+        </header>
+
+        <div className="max-w-md mx-auto p-4 space-y-5">
+           <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+              <div className="flex justify-between items-start mb-3">
+                 <h2 className="text-2xl font-bold text-stone-800 leading-tight">{selectedTray.name}</h2>
+                 <div className="flex gap-1.5">
+                   {selectedTray.heat_mat && (
+                     <span className="bg-amber-100 text-amber-800 p-1.5 rounded-lg flex items-center justify-center" title="Heat Mat Used">
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                     </span>
+                   )}
+                   {selectedTray.humidity_dome && (
+                     <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg flex items-center justify-center" title="Humidity Dome Used">
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h18M5 15v4a2 2 0 002 2h10a2 2 0 002-2v-4M12 15V3m0 0l-4 4m4-4l4 4" /></svg>
+                     </span>
+                   )}
+                   {selectedTray.grow_light && (
+                     <span className="bg-yellow-100 text-yellow-800 p-1.5 rounded-lg flex items-center justify-center" title="Grow Light Used">
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                     </span>
+                   )}
+                 </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 mb-4">
+                <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.location || 'Unknown Location'}</span>
+                <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.tray_type || 'Unknown flat'}</span>
+              </div>
+              
+              {/* Timeline Grid */}
+              <div className="grid grid-cols-3 gap-2 mb-4 bg-stone-50 rounded-xl p-3 border border-stone-200">
+                 <div className="text-center">
+                   <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sown</div>
+                   <div className="text-sm font-bold text-stone-800">{selectedTray.sown_date || '--'}</div>
+                 </div>
+                 <div className="text-center border-l border-stone-200">
+                   <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">1st Sprout</div>
+                   <div className="text-sm font-bold text-stone-800">{selectedTray.first_germination_date || '--'}</div>
+                 </div>
+                 <div className="text-center border-l border-stone-200">
+                   <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Planted</div>
+                   <div className="text-sm font-bold text-stone-800">{selectedTray.first_planted_date || '--'}</div>
+                 </div>
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100 mb-4">
+                 <div className="text-center">
+                   <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sown</div>
+                   <div className="text-xl font-black text-emerald-900">{totalSown}</div>
+                 </div>
+                 <div className="text-center border-l border-emerald-200">
+                   <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sprouted</div>
+                   <div className="text-xl font-black text-emerald-900">{totalGerminated}</div>
+                 </div>
+                 <div className="text-center border-l border-emerald-200">
+                   <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Rate</div>
+                   <div className="text-xl font-black text-emerald-900">{germRate}%</div>
+                 </div>
+              </div>
+
+              {selectedTray.potting_mix && (
+                 <div className="mb-4">
+                   <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">Potting Mix</div>
+                   <div className="text-sm text-stone-800 font-medium">{selectedTray.potting_mix}</div>
+                 </div>
+              )}
+
+              {selectedTray.notes && (
+                <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{selectedTray.notes}</p>
+              )}
+           </div>
+
+           <h3 className="font-bold text-stone-800 px-1">Contents</h3>
+           <div className="space-y-3">
+             {selectedTray.contents.map((seed, idx) => (
+               <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
+                 <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-2">
+                   <div>
+                     <h4 className="font-bold text-stone-800">{seed.variety_name}</h4>
+                     <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200">{seed.seed_id}</span>
+                   </div>
+                   <div className="text-right">
+                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                       {seed.sown_count > 0 ? Math.round((seed.germinated_count / seed.sown_count) * 100) : 0}% Germ
+                     </span>
+                   </div>
+                 </div>
+                 <div className="flex justify-between text-sm">
+                   <div className="flex items-center gap-1.5 text-stone-600">
+                      <div className="w-2 h-2 rounded-full bg-stone-400"></div> Sown: <span className="font-bold text-stone-900">{seed.sown_count}</span>
+                   </div>
+                   <div className="flex items-center gap-1.5 text-stone-600">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Sprouted: <span className="font-bold text-stone-900">{seed.germinated_count}</span>
+                   </div>
+                   <div className="flex items-center gap-1.5 text-stone-600">
+                      <div className="w-2 h-2 rounded-full bg-blue-500"></div> Planted: <span className="font-bold text-stone-900">{seed.planted_count}</span>
+                   </div>
+                 </div>
+               </div>
+             ))}
+           </div>
+
+           {selectedTray.images && selectedTray.images.length > 0 && (
+             <>
+               <h3 className="font-bold text-stone-800 px-1 pt-2">Gallery</h3>
+               <div className="grid grid-cols-3 gap-2">
+                 {selectedTray.images.map((img, idx) => (
+                    <div key={idx} className="aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                      <img src={img} className="w-full h-full object-cover" alt="Tray Progress" />
+                    </div>
+                 ))}
+               </div>
+             </>
+           )}
+        </div>
+      </main>
+    );
+  }
+
+  if (activeView === 'trays') {
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <title>Talawa Farmah | Garden Manager</title>
+        <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => handleGoBack('dashboard')}
+              className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <h1 className="text-xl font-bold">Seedling Tracker</h1>
+          </div>
+          <button onClick={handleCreateNewTray} className="bg-emerald-500 hover:bg-emerald-400 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            New Tray
+          </button>
+        </header>
+
+        <div className="max-w-md mx-auto p-4 space-y-3">
+          {isLoadingDB ? (
+            <div className="flex justify-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+          ) : trays.length > 0 ? (
+            trays.map(tray => {
+              const totalSown = tray.contents.reduce((s, i) => s + (i.sown_count || 0), 0);
+              const thumb = tray.images && tray.images.length > 0 ? tray.images[0] : null;
+
+              return (
+                <div 
+                  key={tray.id} 
+                  onClick={() => navigateTo('tray_detail', tray)}
+                  className="bg-white p-3.5 rounded-2xl border border-stone-200 shadow-sm flex gap-4 items-center hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                >
+                  <div className="w-16 h-16 rounded-xl bg-stone-100 flex-shrink-0 border border-stone-200 overflow-hidden relative">
+                    {thumb ? (
+                      <img src={thumb} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-stone-300">
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                      </div>
+                    )}
+                    {tray.heat_mat && <div className="absolute bottom-0 right-0 bg-amber-500 text-white text-[8px] font-bold px-1 rounded-tl-lg">HEAT</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-stone-800 text-base truncate leading-tight">{tray.name}</h3>
+                    <div className="text-xs text-stone-500 mt-1 mb-2 truncate">Sown: {tray.sown_date} • {tray.location || tray.tray_type}</div>
+                    <div className="flex gap-2">
+                       <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">
+                         {tray.contents.length} Varieties
+                       </span>
+                       <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                         {totalSown} Seeds Sown
+                       </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+             <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
+                <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                <p>No seedling trays tracked yet.</p>
+                <button onClick={handleCreateNewTray} className="mt-4 text-emerald-600 font-bold border border-emerald-200 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100">Start a New Tray</button>
+             </div>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   // --- DASHBOARD VIEW ---
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
@@ -1950,7 +1982,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.29</span>
+              <span className="text-sm font-normal text-emerald-300">v1.30</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -1964,28 +1996,28 @@ export default function App() {
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Inventory Management</h2>
           <div className="grid grid-cols-2 gap-4">
-            <button onClick={() => setIsScanning(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95">
+            <button onClick={() => navigateTo('scanner')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-emerald-100 p-3 rounded-full mb-2 text-emerald-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               </div>
               <span className="text-sm font-medium">Scan Packet</span>
             </button>
 
-            <button onClick={() => setIsImportingUrl(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
+            <button onClick={() => navigateTo('importer')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-blue-100 p-3 rounded-full mb-2 text-blue-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
               </div>
               <span className="text-sm font-medium">Import URL</span>
             </button>
             
-            <button onClick={() => setIsViewingInventory(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95">
+            <button onClick={() => navigateTo('vault')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-amber-100 p-3 rounded-full mb-2 text-amber-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               </div>
               <span className="text-sm font-medium">View Vault</span>
             </button>
 
-            <button onClick={() => {setIsViewingTrays(true); fetchTrays();}} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95">
+            <button onClick={() => navigateTo('trays')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-purple-100 p-3 rounded-full mb-2 text-purple-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
               </div>
