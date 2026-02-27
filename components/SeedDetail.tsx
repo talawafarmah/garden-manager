@@ -79,7 +79,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => { setFullScreenImage(null); handleGoBack('vault'); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+          <button onClick={() => { setFullScreenImage(null); navigateTo('vault'); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <h1 className="text-xl font-bold truncate">Seed Details</h1>
         </div>
         <button onClick={() => navigateTo('seed_edit', fullSeed)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3">
