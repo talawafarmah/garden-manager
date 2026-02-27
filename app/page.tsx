@@ -19,9 +19,8 @@ interface SeedData {
   species?: string;
   category?: string;
   notes?: string;
-  companion_plants?: string[]; // New: Companion Plants Array
+  companion_plants?: string[];
   
-  // New Botanical Attributes
   cold_stratification?: boolean;
   stratification_days?: number | string;
   light_required?: boolean;
@@ -43,9 +42,8 @@ interface InventorySeed {
   notes: string;
   images: string[];
   primaryImageIndex: number;
-  companion_plants: string[]; // New: Companion Plants Array
+  companion_plants: string[];
   
-  // New Botanical Attributes
   cold_stratification: boolean;
   stratification_days: number | string;
   light_required: boolean;
@@ -53,7 +51,7 @@ interface InventorySeed {
   seed_depth: string;
   plant_spacing: string;
   row_spacing: string;
-  out_of_stock: boolean; // Quick toggle flag
+  out_of_stock: boolean; 
   sunlight: string;
   lifecycle: string;
 }
@@ -63,15 +61,38 @@ interface SeedCategory {
   prefix: string;
 }
 
+// NEW: Tray Tracking Interfaces
+interface TraySeedRecord {
+  seed_id: string; 
+  variety_name: string; 
+  sown_count: number;
+  germinated_count: number;
+  planted_count: number;
+  germination_date: string; 
+}
+
+interface SeedlingTray {
+  id?: string; // UUID (optional before saving)
+  name: string; 
+  tray_type: string; 
+  sown_date: string; 
+  heat_mat: boolean;
+  notes: string;
+  images: string[];
+  contents: TraySeedRecord[];
+}
+
 export default function App() {
   // Navigation States
   const [isScanning, setIsScanning] = useState(false);
   const [isImportingUrl, setIsImportingUrl] = useState(false);
   const [isViewingInventory, setIsViewingInventory] = useState(false);
+  const [isViewingTrays, setIsViewingTrays] = useState(false);
   
   // App Data State
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
   const [categories, setCategories] = useState<SeedCategory[]>([]);
+  const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
   
   // Add/Scanner States
@@ -95,6 +116,12 @@ export default function App() {
   const [viewingImageIndex, setViewingImageIndex] = useState(0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   
+  // Tray States
+  const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
+  const [isEditingTray, setIsEditingTray] = useState(false);
+  const [trayFormData, setTrayFormData] = useState<SeedlingTray | null>(null);
+  const trayPhotoInputRef = useRef<HTMLInputElement>(null);
+
   // Companion Modal States
   const [companionModalSeed, setCompanionModalSeed] = useState<InventorySeed | null>(null);
   const [companionInStockOnly, setCompanionInStockOnly] = useState(false);
@@ -108,48 +135,38 @@ export default function App() {
   useEffect(() => {
     document.title = "Talawa Farmah | Garden Manager";
     fetchCategories();
+    // Fetch inventory and trays globally so we can cross-reference them
+    fetchInventory();
+    fetchTrays();
   }, []);
 
-  useEffect(() => {
-    if (isViewingInventory) {
-      fetchInventory();
-    }
-  }, [isViewingInventory]);
-
   const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('seed_categories')
-      .select('*')
-      .order('name');
-    if (!error && data) {
-      setCategories(data);
-    }
+    const { data, error } = await supabase.from('seed_categories').select('*').order('name');
+    if (!error && data) setCategories(data);
   };
 
   const fetchInventory = async () => {
     setIsLoadingDB(true);
-    const { data, error } = await supabase
-      .from('seed_inventory')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error("Error fetching inventory:", error);
-    } else if (data) {
-      // Ensure companion_plants defaults to an array if null in older records
+    const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false });
+    if (!error && data) {
       const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
       setInventory(sanitizedData);
     }
     setIsLoadingDB(false);
   };
 
+  const fetchTrays = async () => {
+    const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
+    if (!error && data) {
+       // Ensure contents exists
+       const safeTrays = data.map(t => ({ ...t, contents: t.contents || [], images: t.images || [] }));
+       setTrays(safeTrays);
+    }
+  };
+
   // --- ID GENERATION LOGIC ---
   const generateNextId = async (prefix: string) => {
-    const { data, error } = await supabase
-      .from('seed_inventory')
-      .select('id')
-      .ilike('id', `${prefix}%`);
-    
+    const { data, error } = await supabase.from('seed_inventory').select('id').ilike('id', `${prefix}%`);
     let maxNum = 0;
     if (!error && data) {
       data.forEach(row => {
@@ -165,21 +182,12 @@ export default function App() {
 
   // --- QUICK TOGGLE LOGIC ---
   const toggleOutOfStock = async (seed: InventorySeed, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent opening detail view
+    e.stopPropagation(); 
     const newStatus = !seed.out_of_stock;
-    
-    // Optimistic UI Update
     setInventory(inventory.map(s => s.id === seed.id ? { ...s, out_of_stock: newStatus } : s));
-
-    // Update DB
-    const { error } = await supabase
-      .from('seed_inventory')
-      .update({ out_of_stock: newStatus })
-      .eq('id', seed.id);
-
+    const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
     if (error) {
       alert("Failed to update stock status: " + error.message);
-      // Revert on error
       setInventory(inventory.map(s => s.id === seed.id ? { ...s, out_of_stock: !newStatus } : s));
     }
   };
@@ -188,13 +196,9 @@ export default function App() {
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Convert to Base64 Data URL so it persists in the database
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
+      reader.onloadend = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
-      
       setSelectedFile(file);
       setAnalysisResult(null);
       setErrorMsg(null);
@@ -218,7 +222,6 @@ export default function App() {
       const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
       const vendor = analysisResult.vendor?.trim() || 'Unknown Vendor';
 
-      // Duplicate Check: Query the database for case-insensitive matches
       const { data: duplicates, error: checkError } = await supabase
         .from('seed_inventory')
         .select('id, variety_name, vendor')
@@ -227,7 +230,7 @@ export default function App() {
 
       if (!checkError && duplicates && duplicates.length > 0) {
         const isConfirmed = confirm(`⚠️ Duplicate Detected!\n\nIt looks like you already have '${variety}' from '${vendor}' in your inventory. Do you want to add it again anyway?`);
-        if (!isConfirmed) return; // Stop the save process
+        if (!isConfirmed) return; 
       }
 
       let finalCatName = analysisResult.category || 'Uncategorized';
@@ -305,9 +308,8 @@ export default function App() {
     }
   };
 
-  // Helper to resolve Gemini Model
   const getBestModel = async () => {
-    let modelToUse = "gemini-2.5-flash"; // Priority model for pay-as-you-go
+    let modelToUse = "gemini-2.5-flash-lite"; 
     if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
       try {
         const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -317,7 +319,7 @@ export default function App() {
             .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
             .map((m: any) => m.name.replace('models/', ''));
           
-          const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite"];
+          const bestModels = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
           modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
         }
       } catch (e) {
@@ -356,7 +358,6 @@ export default function App() {
   const processAiResult = (textResponse: string | undefined) => {
     if (textResponse) {
       const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
-      
       const aiCat = parsedData.category;
       if (aiCat) {
         const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
@@ -380,17 +381,13 @@ export default function App() {
     if (!selectedFile) return;
     setIsAnalyzing(true);
     setErrorMsg(null);
-
     if (!apiKey) {
       setErrorMsg("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
-      setIsAnalyzing(false);
-      return;
+      setIsAnalyzing(false); return;
     }
-
     try {
       const base64Data = await fileToBase64(selectedFile);
       const mimeType = selectedFile.type || "image/jpeg";
-      
       const payload = {
         contents: [{
           role: "user",
@@ -402,11 +399,9 @@ export default function App() {
         systemInstruction: aiSystemInstruction,
         generationConfig: aiGenerationConfig
       };
-
       const modelToUse = await getBestModel();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
-
       processAiResult(result.candidates?.[0]?.content?.parts?.[0]?.text);
     } catch (err: any) {
       setErrorMsg(`Error: ${err.message || "Unknown error occurred"}`);
@@ -417,86 +412,50 @@ export default function App() {
 
   const analyzeUrl = async () => {
     if (!importUrl.trim() || !importUrl.startsWith("http")) {
-      setErrorMsg("Please enter a valid complete URL starting with http:// or https://");
-      return;
+      setErrorMsg("Please enter a valid complete URL starting with http:// or https://"); return;
     }
-    setIsAnalyzing(true);
-    setErrorMsg(null);
-    setImagePreview(null); // Clear any old images
-
+    setIsAnalyzing(true); setErrorMsg(null); setImagePreview(null);
     if (!apiKey) {
       setErrorMsg("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
-      setIsAnalyzing(false);
-      return;
+      setIsAnalyzing(false); return;
     }
-
     try {
       let htmlContent = "";
-
-      // 1. Attempt Direct Browser Fetch (Fastest, but subject to CORS blocking)
       try {
         const directRes = await fetch(importUrl);
         if (!directRes.ok) throw new Error("Direct fetch failed");
         htmlContent = await directRes.text();
       } catch (directErr) {
-        // 2. Fallback to CORS proxy if direct fetch is blocked by vendor's server
-        console.log("Direct fetch blocked by CORS, falling back to proxy...", directErr);
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`;
         const fetchResponse = await fetch(proxyUrl);
-        
         if (!fetchResponse.ok) throw new Error("Failed to fetch data from the provided URL via proxy.");
-        
         const data = await fetchResponse.json();
         htmlContent = data.contents;
       }
-      
       if (!htmlContent) throw new Error("No readable content found at that URL.");
-
-      // Parse HTML to extract text AND product images
-      const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
-
-      // --- IMAGE EXTRACTION ---
-      // Standard e-commerce product image tag
-      let extractedImageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
       
-      // Fallback: look for a prominent image on the page
+      const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+      let extractedImageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
       if (!extractedImageUrl) {
         const imgElement = doc.querySelector('img[src*="product"], img[src*="seed"], .product-image img');
-        if (imgElement) {
-            extractedImageUrl = imgElement.getAttribute('src');
-        }
+        if (imgElement) extractedImageUrl = imgElement.getAttribute('src');
       }
-
-      // Ensure the image URL is absolute (http...)
       if (extractedImageUrl && !extractedImageUrl.startsWith('http')) {
         try {
             const base = new URL(importUrl);
             extractedImageUrl = new URL(extractedImageUrl, base.origin).href;
-        } catch(e) {
-            // Ignore URL parsing errors
-        }
+        } catch(e) {}
       }
+      if (extractedImageUrl) setImagePreview(extractedImageUrl);
 
-      // Set the image so it shows up in the UI and gets saved automatically
-      if (extractedImageUrl) {
-          setImagePreview(extractedImageUrl);
-      }
-
-      // --- TEXT EXTRACTION ---
-      // Remove scripts, styles, nav bars, and footers for cleaner text (saves AI tokens)
       doc.querySelectorAll('script, style, nav, footer, header, iframe').forEach(el => el.remove());
       const rawText = doc.body.textContent || "";
-      
-      // Clean up massive whitespace and truncate to a reasonable limit (~20k chars)
       const cleanText = rawText.replace(/\s+/g, ' ').substring(0, 20000);
 
-      // 3. Send cleaned text to Gemini for extraction
       const payload = {
         contents: [{
           role: "user",
-          parts: [
-            { text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. If specific numbers (like days to maturity) aren't present but a range is, pick the average or the higher end of the range.\n\nWebsite Content:\n${cleanText}` }
-          ]
+          parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. If specific numbers (like days to maturity) aren't present but a range is, pick the average or the higher end of the range.\n\nWebsite Content:\n${cleanText}` }]
         }],
         systemInstruction: aiSystemInstruction,
         generationConfig: aiGenerationConfig
@@ -505,7 +464,6 @@ export default function App() {
       const modelToUse = await getBestModel();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
-
       processAiResult(result.candidates?.[0]?.content?.parts?.[0]?.text);
     } catch (err: any) {
       setErrorMsg(`Error: ${err.message || "Unknown error occurred while scraping/analyzing."}`);
@@ -518,13 +476,9 @@ export default function App() {
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && editFormData) {
-      // Convert to Base64 Data URL so it persists in the database
       const reader = new FileReader();
       reader.onloadend = () => {
-        setEditFormData({
-          ...editFormData,
-          images: [...(editFormData.images || []), reader.result as string]
-        });
+        setEditFormData({ ...editFormData, images: [...(editFormData.images || []), reader.result as string] });
       };
       reader.readAsDataURL(file);
     }
@@ -542,33 +496,24 @@ export default function App() {
   const handleSaveEdit = async () => {
     if (!editFormData) return;
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
-
     if (editFormData.id !== selectedSeed?.id) {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
-      if (isDuplicate) {
-        alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`);
-        return;
-      }
+      if (isDuplicate) { alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`); return; }
     }
-
     let finalCatName = editFormData.category;
-
     if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
       finalCatName = newCatName.trim();
       const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
       await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
       setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
     } else if (editFormData.category === '__NEW__') {
-      alert("Please provide a name for the new category.");
-      return;
+      alert("Please provide a name for the new category."); return;
     }
-
     const payload = { ...editFormData, category: finalCatName };
     const { error } = await supabase.from('seed_inventory').update(payload).eq('id', selectedSeed?.id);
 
-    if (error) {
-      alert("Failed to update database: " + error.message);
-    } else {
+    if (error) alert("Failed to update database: " + error.message);
+    else {
       setInventory(inventory.map(s => s.id === selectedSeed?.id ? payload : s));
       setSelectedSeed(payload);
       setViewingImageIndex(payload.primaryImageIndex || 0);
@@ -581,9 +526,8 @@ export default function App() {
     if (!selectedSeed) return;
     if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id})?`)) {
       const { error } = await supabase.from('seed_inventory').delete().eq('id', selectedSeed.id);
-      if (error) {
-        alert("Failed to delete from database: " + error.message);
-      } else {
+      if (error) alert("Failed to delete from database: " + error.message);
+      else {
         setInventory(inventory.filter(s => s.id !== selectedSeed.id));
         setSelectedSeed(null);
         setIsEditingSeed(false);
@@ -591,251 +535,425 @@ export default function App() {
     }
   };
 
+  // --- TRAY LOGIC ---
+  const handleCreateNewTray = () => {
+     setTrayFormData({
+       name: `Tray ${trays.length + 1}`,
+       tray_type: "72-Cell Flat",
+       sown_date: new Date().toISOString().split('T')[0],
+       heat_mat: false,
+       notes: "",
+       images: [],
+       contents: []
+     });
+     setIsEditingTray(true);
+  };
+
+  const handleTrayPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && trayFormData) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), reader.result as string] });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveTrayImage = (indexToRemove: number) => {
+    if (!trayFormData) return;
+    const newImages = trayFormData.images.filter((_, idx) => idx !== indexToRemove);
+    setTrayFormData({ ...trayFormData, images: newImages });
+  };
+
+  const handleSaveTray = async () => {
+    if (!trayFormData) return;
+    if (!trayFormData.name.trim()) { alert("Tray name is required."); return; }
+
+    const isNew = !trayFormData.id;
+    let error;
+    let savedTray = { ...trayFormData };
+
+    if (isNew) {
+      const { data, error: insertErr } = await supabase.from('seedling_trays').insert([trayFormData]).select();
+      error = insertErr;
+      if (data) savedTray = data[0];
+    } else {
+      const { error: updateErr } = await supabase.from('seedling_trays').update(trayFormData).eq('id', trayFormData.id);
+      error = updateErr;
+    }
+
+    if (error) {
+      alert("Failed to save tray: " + error.message);
+    } else {
+      if (isNew) setTrays([savedTray, ...trays]);
+      else setTrays(trays.map(t => t.id === savedTray.id ? savedTray : t));
+      
+      setSelectedTray(savedTray);
+      setIsEditingTray(false);
+    }
+  };
+
+  const handleDeleteTray = async () => {
+    if (!selectedTray?.id) return;
+    if (confirm(`Are you sure you want to delete ${selectedTray.name}?`)) {
+      const { error } = await supabase.from('seedling_trays').delete().eq('id', selectedTray.id);
+      if (error) alert("Failed to delete tray.");
+      else {
+        setTrays(trays.filter(t => t.id !== selectedTray.id));
+        setSelectedTray(null);
+        setIsEditingTray(false);
+      }
+    }
+  };
+
+  const handleAddSeedToTray = () => {
+    if (!trayFormData) return;
+    setTrayFormData({
+      ...trayFormData,
+      contents: [
+        ...trayFormData.contents, 
+        { seed_id: "", variety_name: "", sown_count: 0, germinated_count: 0, planted_count: 0, germination_date: "" }
+      ]
+    });
+  };
+
+  const handleUpdateTraySeed = (index: number, field: keyof TraySeedRecord, value: any) => {
+    if (!trayFormData) return;
+    const newContents = [...trayFormData.contents];
+    
+    // Auto-fill variety name when seed ID is selected
+    if (field === 'seed_id') {
+       const matchedSeed = inventory.find(s => s.id === value);
+       newContents[index] = { ...newContents[index], seed_id: value, variety_name: matchedSeed ? matchedSeed.variety_name : "Unknown" };
+    } else {
+       newContents[index] = { ...newContents[index], [field]: value };
+    }
+    
+    setTrayFormData({ ...trayFormData, contents: newContents });
+  };
+
+  const handleRemoveTraySeed = (index: number) => {
+    if (!trayFormData) return;
+    const newContents = trayFormData.contents.filter((_, idx) => idx !== index);
+    setTrayFormData({ ...trayFormData, contents: newContents });
+  };
+
+
   // ==========================================
   // VIEW ROUTING
   // ==========================================
 
-  // --- ADD SEED VIEW (Scanner & URL Import) ---
-  if (isScanning || isImportingUrl) {
-    const isScanMode = isScanning;
+  // --- TRAYS VIEW ---
+  if (isViewingTrays) {
     
-    return (
-      <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col">
-        <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950">
-          <button onClick={cancelAdd} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">
-            {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.25</span>
-          </h1>
-        </header>
+    // TRAY EDIT/DETAIL VIEW
+    if (selectedTray) {
+      if (isEditingTray && trayFormData) {
+        return (
+          <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+            <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setIsEditingTray(false); if(!selectedTray.id) setSelectedTray(null); }} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+                <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
+              </div>
+              <button onClick={handleSaveTray} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
+                Save
+              </button>
+            </header>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-          {/* Hidden File Input for Scanner */}
-          <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleImageCapture} />
-
-          {errorMsg && (
-            <div className="w-full max-w-sm bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-xs font-mono break-words">{errorMsg}</div>
-          )}
-
-          {analysisResult ? (
-            <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
-              {/* IMAGE PREVIEW HEADER (Shows for both Scanner and successful URL Scrape) */}
-              {imagePreview && (
-                <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
-                  <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
-                      <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      {isScanMode ? 'Packet Image Attached' : 'Product Image Extracted'}
-                    </span>
-                  </div>
-                </div>
-              )}
+            <div className="max-w-md mx-auto p-4 space-y-5">
               
-              {!imagePreview && isImportingUrl && (
-                 <div className="bg-blue-900/40 text-blue-300 p-3 rounded-xl border border-blue-800 text-xs flex items-center gap-2">
-                   <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                   Data extracted from URL successfully. You can attach photos later via the Edit page.
+              {/* Basic Tray Info */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+                 <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Tray Details</h3>
+                 <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Tray Name / Label <span className="text-red-400">*</span></label>
+                    <input type="text" value={trayFormData.name} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
                  </div>
-              )}
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">Sown Date</label>
+                      <input type="date" value={trayFormData.sown_date} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
+                   <div>
+                      <label className="block text-xs font-medium text-stone-500 mb-1">Tray Type</label>
+                      <input type="text" placeholder="e.g., 72-cell" value={trayFormData.tray_type} onChange={(e) => setTrayFormData({ ...trayFormData, tray_type: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                   </div>
+                 </div>
+                 <div className="flex items-center gap-2 p-3 bg-amber-50/50 rounded-xl border border-amber-200/50">
+                    <input type="checkbox" id="heatmat" checked={trayFormData.heat_mat} onChange={(e) => setTrayFormData({ ...trayFormData, heat_mat: e.target.checked })} className="w-5 h-5 accent-amber-500 rounded" />
+                    <label htmlFor="heatmat" className="text-sm font-bold text-amber-800 cursor-pointer">Using a Heat Mat?</label>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-medium text-stone-500 mb-1">Tray Notes</label>
+                    <textarea value={trayFormData.notes} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={3} placeholder="Location, light setup, etc." className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 resize-none" />
+                 </div>
+              </section>
 
-              {/* BASIC DETAILS */}
-              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
-                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Basic Details</h3>
-                
-                <div>
-                  <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
-                  <select 
-                    value={analysisResult.category || ''} 
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__NEW__') {
-                        setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
-                      } else setShowNewCatForm(false);
-                      setAnalysisResult({ ...analysisResult, category: val });
-                    }}
-                    className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none appearance-none"
-                  >
-                    <option value="" disabled>Select a category...</option>
-                    {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    <option value="__NEW__" className="font-bold text-emerald-400">+ Add New Category</option>
-                  </select>
-                </div>
+              {/* Seed Contents Manager */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-stone-800">Seeds Sown in Tray</h3>
+                 </div>
 
-                {showNewCatForm && (
-                  <div className="p-4 bg-stone-900/50 border border-emerald-900 rounded-xl space-y-3 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                    <div>
-                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Category Name</label>
-                      <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Prefix Code (1-2 letters)</label>
-                      <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase outline-none" />
-                    </div>
-                  </div>
-                )}
+                 <div className="space-y-4 mb-4">
+                    {trayFormData.contents.map((record, idx) => (
+                       <div key={idx} className="bg-stone-50 p-3 rounded-xl border border-stone-200 relative">
+                          <button onClick={() => handleRemoveTraySeed(idx)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1 rounded-full border border-red-200 hover:bg-red-200">
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                          
+                          <div className="mb-3">
+                            <label className="block text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Select Seed</label>
+                            <select 
+                              value={record.seed_id} 
+                              onChange={(e) => handleUpdateTraySeed(idx, 'seed_id', e.target.value)}
+                              className="w-full bg-white border border-stone-300 rounded-lg p-2 text-stone-800 outline-none focus:border-emerald-500 font-medium"
+                            >
+                              <option value="" disabled>Choose from Vault...</option>
+                              {inventory.map(s => <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>)}
+                            </select>
+                          </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
-                  <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 outline-none" />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
-                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 italic focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
-                    <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Life Cycle</label>
-                    <input type="text" value={analysisResult.lifecycle || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, lifecycle: e.target.value })} placeholder="Annual, Perennial..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Sunlight</label>
-                    <input type="text" value={analysisResult.sunlight || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, sunlight: e.target.value })} placeholder="Full Sun..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                </div>
-              </div>
-
-              {/* PLANTING SPECS */}
-              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
-                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Planting Specs</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Seed Depth</label>
-                    <input type="text" value={analysisResult.seed_depth || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, seed_depth: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Plant Spacing</label>
-                    <input type="text" value={analysisResult.plant_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, plant_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Row Spacing</label>
-                    <input type="text" value={analysisResult.row_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, row_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
-                    <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                </div>
-              </div>
-
-              {/* GERMINATION NEEDS */}
-              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
-                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Germination Needs</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Germination</label>
-                    <input type="text" value={analysisResult.germination_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, germination_days: e.target.value })} placeholder="e.g. 7-14 days" className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                  </div>
-                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
-                    <input type="checkbox" checked={analysisResult.light_required || false} onChange={(e) => setAnalysisResult({ ...analysisResult, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
-                    <label className="text-xs text-stone-200">Needs Light</label>
-                  </div>
-                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
-                    <input type="checkbox" checked={analysisResult.cold_stratification || false} onChange={(e) => setAnalysisResult({ ...analysisResult, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
-                    <label className="text-xs text-stone-200">Needs Cold Strat.</label>
-                  </div>
-                  {analysisResult.cold_stratification && (
-                    <div className="col-span-2 mt-2">
-                      <label className="block text-xs font-medium text-stone-400 mb-1">Stratification Days</label>
-                      <input type="number" value={analysisResult.stratification_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value })} placeholder="Days in fridge..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* NOTES & COMPANIONS */}
-              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-stone-400 mb-1">Companion Plants (Comma separated)</label>
-                  <input type="text" value={(analysisResult.companion_plants || []).join(', ')} onChange={(e) => setAnalysisResult({ ...analysisResult, companion_plants: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} placeholder="Basil, Marigold..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes</label>
-                  <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none resize-none" />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-                <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
-              </div>
-            </div>
-            
-          ) : isScanMode ? (
-            // --- IMAGE SCANNER INPUT ---
-            <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
-              {imagePreview ? (
-                <>
-                  <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl">
-                    <img src={imagePreview} alt="Captured" className={`object-cover w-full h-full transition-opacity ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`} />
-                    {isAnalyzing && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400 bg-stone-900/40">
-                        <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        <span className="font-bold text-lg drop-shadow-md">Extracting Data...</span>
+                          <div className="grid grid-cols-3 gap-2 bg-white p-2 rounded-lg border border-stone-200">
+                            <div>
+                              <label className="block text-[10px] text-stone-500 text-center mb-1">Sown</label>
+                              <input type="number" min="0" value={record.sown_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'sown_count', parseInt(e.target.value)||0)} className="w-full text-center bg-stone-50 border border-stone-200 rounded p-1.5 font-bold outline-none focus:border-emerald-500" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-emerald-600 font-bold text-center mb-1">Sprouted</label>
+                              <input type="number" min="0" value={record.germinated_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'germinated_count', parseInt(e.target.value)||0)} className="w-full text-center bg-emerald-50 border border-emerald-200 rounded p-1.5 font-bold text-emerald-800 outline-none focus:border-emerald-500" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-blue-600 font-bold text-center mb-1">Planted</label>
+                              <input type="number" min="0" value={record.planted_count || ''} onChange={(e) => handleUpdateTraySeed(idx, 'planted_count', parseInt(e.target.value)||0)} className="w-full text-center bg-blue-50 border border-blue-200 rounded p-1.5 font-bold text-blue-800 outline-none focus:border-blue-500" />
+                            </div>
+                          </div>
+                       </div>
+                    ))}
+                    
+                    {trayFormData.contents.length === 0 && (
+                      <div className="text-center py-4 text-stone-400 text-sm border-2 border-dashed border-stone-200 rounded-xl">
+                        No seeds added to this tray yet.
                       </div>
                     )}
-                  </div>
-                  <div className="flex gap-4 w-full max-w-sm">
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
-                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      {isAnalyzing ? "Processing..." : "Analyze"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-full max-w-sm aspect-[3/4] border-2 border-dashed border-stone-600 rounded-3xl bg-stone-800/50 text-stone-400 hover:text-emerald-400 hover:border-emerald-500 active:scale-95 transition-all">
-                  <div className="bg-stone-800 p-5 rounded-full mb-4 shadow-lg">
-                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                  </div>
-                  <span className="text-lg font-medium">Tap to open camera</span>
+                 </div>
+
+                 <button onClick={handleAddSeedToTray} className="w-full py-3 bg-emerald-50 text-emerald-700 font-bold rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    Add Seed Variety to Tray
+                 </button>
+              </section>
+
+              {/* Photos */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-stone-800">Tray Progress Photos</h3>
+                  <button onClick={() => trayPhotoInputRef.current?.click()} className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:text-emerald-500 bg-emerald-50 px-3 py-1.5 rounded-lg">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    Add Photo
+                  </button>
+                  <input type="file" accept="image/*" capture="environment" ref={trayPhotoInputRef} className="hidden" onChange={handleTrayPhotoCapture} />
+                </div>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  {(!trayFormData.images || trayFormData.images.length === 0) && <p className="text-xs text-stone-400 col-span-3 text-center py-4">No progress photos.</p>}
+                  {(trayFormData.images || []).map((img, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                      <img src={img} alt="Tray" className="w-full h-full object-cover" />
+                      <div className="absolute top-1 right-1 flex flex-col gap-1">
+                         <button onClick={() => handleRemoveTrayImage(idx)} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white hover:bg-red-500 shadow-sm">
+                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {trayFormData.id && (
+                <button onClick={handleDeleteTray} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  Delete Tray
                 </button>
               )}
             </div>
-            
-          ) : (
-            // --- URL IMPORT INPUT ---
-            <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
-              <div className="w-full max-w-sm bg-stone-800 p-6 rounded-3xl border border-stone-700 shadow-2xl relative overflow-hidden">
-                {isAnalyzing && (
-                  <div className="absolute inset-0 bg-stone-900/80 z-10 flex flex-col items-center justify-center text-blue-400 backdrop-blur-sm">
-                    <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    <span className="font-bold text-lg drop-shadow-md">Scraping URL...</span>
-                  </div>
-                )}
-                
-                <div className="bg-blue-900/30 border border-blue-800 p-4 rounded-full w-16 h-16 flex items-center justify-center mb-6 mx-auto text-blue-400 shadow-inner">
-                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                </div>
-                <h2 className="text-xl font-bold text-center text-stone-100 mb-2">Import from Link</h2>
-                <p className="text-sm text-stone-400 text-center mb-6 leading-relaxed">Paste a link to a seed product page. The AI will scrape the page and extract the botanical details automatically.</p>
+          </main>
+        );
+      }
 
-                <input
-                   type="url"
-                   value={importUrl}
-                   onChange={(e) => setImportUrl(e.target.value)}
-                   placeholder="https://www.bakercreek.com/..."
-                   className="w-full bg-stone-900 border border-stone-600 rounded-xl p-4 text-stone-100 focus:border-blue-500 outline-none mb-4 transition-colors placeholder:text-stone-600"
-                />
+      // TRAY READ-ONLY DETAIL VIEW
+      const totalSown = selectedTray.contents.reduce((sum, item) => sum + (item.sown_count || 0), 0);
+      const totalGerminated = selectedTray.contents.reduce((sum, item) => sum + (item.germinated_count || 0), 0);
+      const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
-                <button
-                   onClick={analyzeUrl}
-                   disabled={isAnalyzing || !importUrl.trim()}
-                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                  Extract Data
-                </button>
-              </div>
+      return (
+        <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+          <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSelectedTray(null)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <h1 className="text-xl font-bold truncate">Tray Details</h1>
             </div>
+            <button 
+              onClick={() => { setTrayFormData(selectedTray); setIsEditingTray(true); }}
+              className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+              <span className="text-sm font-medium">Edit / Update</span>
+            </button>
+          </header>
+
+          <div className="max-w-md mx-auto p-4 space-y-5">
+             <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
+                <div className="flex justify-between items-start mb-2">
+                   <h2 className="text-2xl font-bold text-stone-800 leading-tight">{selectedTray.name}</h2>
+                   {selectedTray.heat_mat && (
+                     <span className="bg-amber-100 text-amber-800 p-1.5 rounded-lg" title="Heat Mat Used">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                     </span>
+                   )}
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">Sown: {selectedTray.sown_date}</span>
+                  <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{selectedTray.tray_type || 'Unknown flat'}</span>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                   <div className="text-center">
+                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sown</div>
+                     <div className="text-xl font-black text-emerald-900">{totalSown}</div>
+                   </div>
+                   <div className="text-center border-l border-emerald-200">
+                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sprouted</div>
+                     <div className="text-xl font-black text-emerald-900">{totalGerminated}</div>
+                   </div>
+                   <div className="text-center border-l border-emerald-200">
+                     <div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Rate</div>
+                     <div className="text-xl font-black text-emerald-900">{germRate}%</div>
+                   </div>
+                </div>
+
+                {selectedTray.notes && (
+                  <p className="mt-4 text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{selectedTray.notes}</p>
+                )}
+             </div>
+
+             <h3 className="font-bold text-stone-800 px-1">Contents</h3>
+             <div className="space-y-3">
+               {selectedTray.contents.map((seed, idx) => (
+                 <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
+                   <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-2">
+                     <div>
+                       <h4 className="font-bold text-stone-800">{seed.variety_name}</h4>
+                       <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200">{seed.seed_id}</span>
+                     </div>
+                     <div className="text-right">
+                       <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                         {seed.sown_count > 0 ? Math.round((seed.germinated_count / seed.sown_count) * 100) : 0}% Germ
+                       </span>
+                     </div>
+                   </div>
+                   <div className="flex justify-between text-sm">
+                     <div className="flex items-center gap-1.5 text-stone-600">
+                        <div className="w-2 h-2 rounded-full bg-stone-400"></div> Sown: <span className="font-bold text-stone-900">{seed.sown_count}</span>
+                     </div>
+                     <div className="flex items-center gap-1.5 text-stone-600">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Sprouted: <span className="font-bold text-stone-900">{seed.germinated_count}</span>
+                     </div>
+                     <div className="flex items-center gap-1.5 text-stone-600">
+                        <div className="w-2 h-2 rounded-full bg-blue-500"></div> Planted: <span className="font-bold text-stone-900">{seed.planted_count}</span>
+                     </div>
+                   </div>
+                 </div>
+               ))}
+             </div>
+
+             {selectedTray.images && selectedTray.images.length > 0 && (
+               <>
+                 <h3 className="font-bold text-stone-800 px-1 pt-2">Gallery</h3>
+                 <div className="grid grid-cols-3 gap-2">
+                   {selectedTray.images.map((img, idx) => (
+                      <div key={idx} className="aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                        <img src={img} className="w-full h-full object-cover" alt="Tray Progress" />
+                      </div>
+                   ))}
+                 </div>
+               </>
+             )}
+          </div>
+        </main>
+      );
+    }
+
+    // TRAY LIST VIEW
+    return (
+      <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsViewingTrays(false)}
+              className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <h1 className="text-xl font-bold">Seedling Tracker</h1>
+          </div>
+          <button onClick={handleCreateNewTray} className="bg-emerald-500 hover:bg-emerald-400 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            New Tray
+          </button>
+        </header>
+
+        <div className="max-w-md mx-auto p-4 space-y-3">
+          {isLoadingDB ? (
+            <div className="flex justify-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+          ) : trays.length > 0 ? (
+            trays.map(tray => {
+              const totalSown = tray.contents.reduce((s, i) => s + (i.sown_count || 0), 0);
+              const thumb = tray.images && tray.images.length > 0 ? tray.images[0] : null;
+
+              return (
+                <div 
+                  key={tray.id} 
+                  onClick={() => setSelectedTray(tray)}
+                  className="bg-white p-3.5 rounded-2xl border border-stone-200 shadow-sm flex gap-4 items-center hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                >
+                  <div className="w-16 h-16 rounded-xl bg-stone-100 flex-shrink-0 border border-stone-200 overflow-hidden relative">
+                    {thumb ? (
+                      <img src={thumb} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-stone-300">
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                      </div>
+                    )}
+                    {tray.heat_mat && <div className="absolute bottom-0 right-0 bg-amber-500 text-white text-[8px] font-bold px-1 rounded-tl-lg">HEAT</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-stone-800 text-base truncate leading-tight">{tray.name}</h3>
+                    <div className="text-xs text-stone-500 mt-1 mb-2 truncate">Sown: {tray.sown_date} • {tray.tray_type}</div>
+                    <div className="flex gap-2">
+                       <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200">
+                         {tray.contents.length} Varieties
+                       </span>
+                       <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                         {totalSown} Seeds Sown
+                       </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+             <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
+                <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                <p>No seedling trays tracked yet.</p>
+                <button onClick={handleCreateNewTray} className="mt-4 text-emerald-600 font-bold border border-emerald-200 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100">Start a New Tray</button>
+             </div>
           )}
         </div>
       </main>
@@ -892,8 +1010,6 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Data Forms grouped into cards */}
-              
               {/* Basics */}
               <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
                 <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2">Basic Info</h3>
@@ -1029,6 +1145,9 @@ export default function App() {
       // --- DETAIL VIEW ---
       const displayImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[viewingImageIndex] : null;
       
+      // Calculate Germination History for this specific seed
+      const seedHistory = trays.filter(t => t.contents.some(c => c.seed_id === selectedSeed.id));
+
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
           
@@ -1131,6 +1250,37 @@ export default function App() {
                   <div className="text-stone-800 font-bold truncate">{selectedSeed.vendor || '--'}</div>
                 </div>
               </div>
+
+              {/* TRAY HISTORY */}
+              {seedHistory.length > 0 && (
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-emerald-100 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                  <h3 className="text-sm font-bold text-emerald-800 mb-3 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                    Germination History
+                  </h3>
+                  <div className="space-y-3">
+                    {seedHistory.map(tray => {
+                       const seedData = tray.contents.find(c => c.seed_id === selectedSeed.id);
+                       if (!seedData) return null;
+                       const rate = seedData.sown_count > 0 ? Math.round((seedData.germinated_count / seedData.sown_count) * 100) : 0;
+                       
+                       return (
+                         <div key={tray.id} className="bg-stone-50 rounded-lg p-2.5 border border-stone-200 text-sm flex justify-between items-center cursor-pointer hover:bg-stone-100" onClick={() => { setIsViewingTrays(true); setSelectedTray(tray); }}>
+                           <div className="min-w-0 flex-1 pr-2">
+                             <div className="font-bold text-stone-800 truncate leading-tight">{tray.name}</div>
+                             <div className="text-[10px] text-stone-500">{tray.sown_date}</div>
+                           </div>
+                           <div className="flex flex-col items-end text-right flex-shrink-0">
+                             <div className="font-bold text-emerald-700">{rate}% Rate</div>
+                             <div className="text-[10px] text-stone-600 font-medium">({seedData.germinated_count}/{seedData.sown_count} seeds)</div>
+                           </div>
+                         </div>
+                       );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Planting & Germination Specs */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
@@ -1246,7 +1396,6 @@ export default function App() {
                     </div>
                  )}
                  {(companionModalSeed.companion_plants || []).map(comp => {
-                   // Search inventory for matches (excluding the current seed itself)
                    const matches = inventory.filter(s =>
                      !s.out_of_stock &&
                      s.id !== companionModalSeed.id &&
@@ -1433,7 +1582,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.25</span>
+              <span className="text-sm font-normal text-emerald-300">v1.26</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -1445,7 +1594,7 @@ export default function App() {
 
       <div className="max-w-md mx-auto p-4 mt-4 space-y-6">
         <section>
-          <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Add to Inventory</h2>
+          <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Inventory Management</h2>
           <div className="grid grid-cols-2 gap-4">
             <button onClick={() => setIsScanning(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-emerald-100 p-3 rounded-full mb-2 text-emerald-600">
@@ -1460,20 +1609,21 @@ export default function App() {
               </div>
               <span className="text-sm font-medium">Import URL</span>
             </button>
-
-            <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95">
-              <div className="bg-purple-100 p-3 rounded-full mb-2 text-purple-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-              </div>
-              <span className="text-sm font-medium">Manual Entry</span>
-            </button>
-
+            
             <button onClick={() => setIsViewingInventory(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-amber-100 p-3 rounded-full mb-2 text-amber-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               </div>
-              <span className="text-sm font-medium">View Inventory</span>
+              <span className="text-sm font-medium">View Vault</span>
             </button>
+
+            <button onClick={() => {setIsViewingTrays(true); fetchTrays();}} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95">
+              <div className="bg-purple-100 p-3 rounded-full mb-2 text-purple-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+              </div>
+              <span className="text-sm font-medium">Seedling Tracker</span>
+            </button>
+
           </div>
         </section>
 
