@@ -19,6 +19,7 @@ interface SeedData {
   species?: string;
   category?: string;
   notes?: string;
+  companion_plants?: string[]; // New: Companion Plants Array
   
   // New Botanical Attributes
   cold_stratification?: boolean;
@@ -42,6 +43,7 @@ interface InventorySeed {
   notes: string;
   images: string[];
   primaryImageIndex: number;
+  companion_plants: string[]; // New: Companion Plants Array
   
   // New Botanical Attributes
   cold_stratification: boolean;
@@ -93,6 +95,10 @@ export default function App() {
   const [viewingImageIndex, setViewingImageIndex] = useState(0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   
+  // Companion Modal States
+  const [companionModalSeed, setCompanionModalSeed] = useState<InventorySeed | null>(null);
+  const [companionInStockOnly, setCompanionInStockOnly] = useState(false);
+
   // Edit States
   const [isEditingSeed, setIsEditingSeed] = useState(false);
   const [editFormData, setEditFormData] = useState<InventorySeed | null>(null);
@@ -130,7 +136,9 @@ export default function App() {
     if (error) {
       console.error("Error fetching inventory:", error);
     } else if (data) {
-      setInventory(data);
+      // Ensure companion_plants defaults to an array if null in older records
+      const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
+      setInventory(sanitizedData);
     }
     setIsLoadingDB(false);
   };
@@ -247,6 +255,7 @@ export default function App() {
         notes: analysisResult.notes || '',
         images: imagePreview ? [imagePreview] : [],
         primaryImageIndex: 0,
+        companion_plants: analysisResult.companion_plants || [],
         
         cold_stratification: analysisResult.cold_stratification || false,
         stratification_days: analysisResult.stratification_days || 0,
@@ -318,7 +327,7 @@ export default function App() {
     return modelToUse;
   }
 
-  const aiSystemInstruction = { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.) so the database remains clean. Infer common botanical requirements if they are missing." }] };
+  const aiSystemInstruction = { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.) so the database remains clean. Extract a list of companion plants. Infer common botanical requirements if they are missing." }] };
   const aiGenerationConfig = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -330,6 +339,7 @@ export default function App() {
         species: { type: "STRING" },
         category: { type: "STRING" },
         notes: { type: "STRING" },
+        companion_plants: { type: "ARRAY", items: { type: "STRING" } },
         seed_depth: { type: "STRING" },
         plant_spacing: { type: "STRING" },
         row_spacing: { type: "STRING" },
@@ -597,7 +607,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.24</span>
+            <span className="text-sm font-normal text-stone-500">v1.25</span>
           </h1>
         </header>
 
@@ -741,8 +751,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* NOTES */}
+              {/* NOTES & COMPANIONS */}
               <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Companion Plants (Comma separated)</label>
+                  <input type="text" value={(analysisResult.companion_plants || []).join(', ')} onChange={(e) => setAnalysisResult({ ...analysisResult, companion_plants: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} placeholder="Basil, Marigold..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes</label>
                   <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none resize-none" />
@@ -991,10 +1005,16 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Notes */}
-              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-                <label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label>
-                <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" />
+              {/* Notes & Companions */}
+              <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-stone-500 mb-1">Companion Plants (comma separated)</label>
+                  <input type="text" value={(editFormData.companion_plants || []).join(', ')} onChange={(e) => setEditFormData({ ...editFormData, companion_plants: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-800 mb-2">Growing Notes</label>
+                  <textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed" />
+                </div>
               </section>
 
               <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
@@ -1152,6 +1172,20 @@ export default function App() {
                 </div>
               </div>
 
+              {selectedSeed.companion_plants && selectedSeed.companion_plants.length > 0 && (
+                <div className="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-100">
+                  <h3 className="text-sm font-bold text-emerald-800 mb-2 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    Companion Plants
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedSeed.companion_plants.map(comp => (
+                       <span key={comp} className="bg-white border border-emerald-200 text-emerald-700 text-xs font-medium px-2.5 py-1 rounded-full">{comp}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {selectedSeed.notes && (
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
                   <h3 className="text-stone-800 font-bold mb-2 flex items-center gap-2">
@@ -1178,6 +1212,78 @@ export default function App() {
 
     return (
       <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+        
+        {/* COMPANION PLANT MODAL */}
+        {companionModalSeed && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl p-5 w-full max-w-sm max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+               <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-stone-800 text-lg leading-tight">Companion Plants</h3>
+                    <p className="text-xs text-stone-500 mt-0.5">for {companionModalSeed.variety_name}</p>
+                  </div>
+                  <button onClick={() => setCompanionModalSeed(null)} className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-600 transition-colors">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+               </div>
+
+               <div className="flex items-center gap-2 mb-4 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
+                  <input 
+                    type="checkbox" 
+                    id="inStockToggle"
+                    checked={companionInStockOnly} 
+                    onChange={e => setCompanionInStockOnly(e.target.checked)} 
+                    className="w-4 h-4 accent-emerald-600 rounded" 
+                  />
+                  <label htmlFor="inStockToggle" className="text-sm font-medium text-stone-700 cursor-pointer select-none">Only show seeds I own</label>
+               </div>
+
+               <div className="overflow-y-auto flex-1 space-y-3 pr-1 scrollbar-hide">
+                 {(!companionModalSeed.companion_plants || companionModalSeed.companion_plants.length === 0) && (
+                    <div className="text-center py-6 text-stone-400">
+                      <svg className="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                      <p className="text-sm">No companions recorded.</p>
+                    </div>
+                 )}
+                 {(companionModalSeed.companion_plants || []).map(comp => {
+                   // Search inventory for matches (excluding the current seed itself)
+                   const matches = inventory.filter(s =>
+                     !s.out_of_stock &&
+                     s.id !== companionModalSeed.id &&
+                     (s.category.toLowerCase().includes(comp.toLowerCase()) ||
+                      s.variety_name.toLowerCase().includes(comp.toLowerCase()) ||
+                      comp.toLowerCase().includes(s.category.toLowerCase()) ||
+                      comp.toLowerCase().includes(s.variety_name.toLowerCase()))
+                   );
+
+                   if (companionInStockOnly && matches.length === 0) return null;
+
+                   return (
+                     <div key={comp} className="border border-stone-200 rounded-xl p-3.5 bg-white shadow-sm">
+                       <h4 className="font-bold text-stone-800 text-sm flex items-center gap-2">
+                         {matches.length > 0 && <span className="w-2 h-2 rounded-full bg-emerald-500"></span>}
+                         {comp}
+                       </h4>
+                       {matches.length > 0 ? (
+                         <div className="mt-2.5 space-y-1.5">
+                           {matches.map(m => (
+                             <div key={m.id} className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 px-2.5 py-1.5 rounded-lg flex items-center justify-between">
+                               <span className="truncate font-medium">{m.variety_name}</span>
+                               <span className="font-mono text-[9px] opacity-70 ml-2 bg-emerald-100 px-1 rounded">{m.id}</span>
+                             </div>
+                           ))}
+                         </div>
+                       ) : (
+                         <p className="text-xs text-stone-400 mt-1.5 italic">Not currently in your inventory</p>
+                       )}
+                     </div>
+                   );
+                 })}
+               </div>
+            </div>
+          </div>
+        )}
+
         <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <button 
@@ -1268,7 +1374,7 @@ export default function App() {
                         <div className="text-xs text-emerald-600 font-semibold mb-2 truncate">{seed.category} <span className="text-stone-400 font-normal italic">({seed.species})</span></div>
                         
                         <div className="flex justify-between items-center text-[11px]">
-                          {/* New Attribute Display: Plant Spacing visible on card */}
+                          {/* Plant Spacing visible on card */}
                           <span className="font-medium text-stone-600 flex items-center gap-1 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200">
                             <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
                             {seed.plant_spacing || '--'}
@@ -1282,7 +1388,18 @@ export default function App() {
                     </div>
                     
                     {/* Quick Action Footer */}
-                    <div className="flex justify-end border-t border-stone-100 pt-2">
+                    <div className="flex justify-between items-center border-t border-stone-100 pt-2">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setCompanionModalSeed(seed); 
+                          setCompanionInStockOnly(false); 
+                        }}
+                        className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        Companions
+                      </button>
                       <button 
                         onClick={(e) => toggleOutOfStock(seed, e)}
                         className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border ${isOutOfStock ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100 hover:text-stone-800'}`}
@@ -1316,7 +1433,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.24</span>
+              <span className="text-sm font-normal text-emerald-300">v1.25</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
