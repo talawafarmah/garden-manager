@@ -88,6 +88,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedSeed, setSelectedSeed] = useState<InventorySeed | null>(null);
+  const [viewingImageIndex, setViewingImageIndex] = useState(0);
   
   // Edit States
   const [isEditingSeed, setIsEditingSeed] = useState(false);
@@ -434,6 +435,7 @@ export default function App() {
     } else {
       setInventory(inventory.map(s => s.id === selectedSeed?.id ? payload : s));
       setSelectedSeed(payload);
+      setViewingImageIndex(payload.primaryImageIndex || 0);
       setIsEditingSeed(false);
       setShowNewCatForm(false);
     }
@@ -824,7 +826,7 @@ export default function App() {
       }
 
       // --- DETAIL VIEW ---
-      const primaryImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[selectedSeed.primaryImageIndex || 0] : null;
+      const displayImg = (selectedSeed.images && selectedSeed.images.length > 0) ? selectedSeed.images[viewingImageIndex] : null;
       
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
@@ -847,8 +849,8 @@ export default function App() {
           <div className="max-w-md mx-auto">
             {/* Hero Image */}
             <div className="w-full aspect-[4/3] bg-stone-200 relative">
-              {primaryImg ? (
-                <img src={primaryImg} alt={selectedSeed.variety_name} className="w-full h-full object-cover" />
+              {displayImg ? (
+                <img src={displayImg} alt={selectedSeed.variety_name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
                   <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -871,7 +873,11 @@ export default function App() {
             {(selectedSeed.images && selectedSeed.images.length > 1) && (
               <div className="p-4 bg-white border-b border-stone-200 flex gap-2 overflow-x-auto scrollbar-hide">
                 {selectedSeed.images.map((img, idx) => (
-                  <div key={idx} className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 ${idx === (selectedSeed.primaryImageIndex || 0) ? 'border-emerald-500 opacity-100' : 'border-transparent opacity-60'}`}>
+                  <div 
+                    key={idx} 
+                    onClick={() => setViewingImageIndex(idx)}
+                    className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 cursor-pointer transition-all ${idx === viewingImageIndex ? 'border-emerald-500 opacity-100 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                  >
                     <img src={img} className="w-full h-full object-cover" alt="Thumbnail" />
                   </div>
                 ))}
@@ -1032,7 +1038,7 @@ export default function App() {
                 return (
                   <div 
                     key={seed.id} 
-                    onClick={() => setSelectedSeed(seed)}
+                    onClick={() => { setSelectedSeed(seed); setViewingImageIndex(seed.primaryImageIndex || 0); }}
                     className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}
                   >
                     <div className="flex items-start gap-4">
