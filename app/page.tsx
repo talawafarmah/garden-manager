@@ -207,6 +207,21 @@ export default function App() {
 
   const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
+      const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
+      const vendor = analysisResult.vendor?.trim() || 'Unknown Vendor';
+
+      // Duplicate Check: Query the database for case-insensitive matches
+      const { data: duplicates, error: checkError } = await supabase
+        .from('seed_inventory')
+        .select('id, variety_name, vendor')
+        .ilike('variety_name', variety)
+        .ilike('vendor', vendor);
+
+      if (!checkError && duplicates && duplicates.length > 0) {
+        const isConfirmed = confirm(`⚠️ Duplicate Detected!\n\nIt looks like you already have '${variety}' from '${vendor}' in your inventory. Do you want to add it again anyway?`);
+        if (!isConfirmed) return; // Stop the save process
+      }
+
       let finalCatName = analysisResult.category || 'Uncategorized';
       let finalPrefix = 'U';
 
@@ -582,7 +597,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.23</span>
+            <span className="text-sm font-normal text-stone-500">v1.24</span>
           </h1>
         </header>
 
@@ -1301,7 +1316,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.23</span>
+              <span className="text-sm font-normal text-emerald-300">v1.24</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
