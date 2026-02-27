@@ -71,7 +71,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                      </h4>
                      {matches.length > 0 ? (
                        <div className="mt-2.5 space-y-1.5">
-                         {matches.map(m => (
+                         {matches.map((m: InventorySeed) => (
                            <div key={m.id} className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 px-2.5 py-1.5 rounded-lg flex items-center justify-between">
                              <span className="truncate font-medium">{m.variety_name}</span>
                              <span className="font-mono text-[9px] opacity-70 ml-2 bg-emerald-100 px-1 rounded">{m.id}</span>
@@ -92,7 +92,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
           <div className="flex-1">
             <h1 className="text-xl font-bold">Seed Vault</h1>
