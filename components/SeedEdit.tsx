@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory } from '../types';
+import { fetchWithRetry, getBestModel } from '../lib/utils';
 
 export default function SeedEdit({ seed, inventory, setInventory, categories, setCategories, navigateTo, handleGoBack }: any) {
   const [editFormData, setEditFormData] = useState<InventorySeed>(seed);
   const [showNewCatForm, setShowNewCatForm] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatPrefix, setNewCatPrefix] = useState("");
+  const [isAutoFilling, setIsAutoFilling] = useState(false);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,6 +67,76 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     }
   };
 
+  const handleAutoFill = async () => {
+    setIsAutoFilling(true);
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+      if (!apiKey) throw new Error("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
+
+      // 1. Gather missing text details using Web Grounding
+      const modelToUse = await getBestModel();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      
+      const payload = {
+        contents: [{
+          role: "user",
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(editFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact. Ensure companion_plants is an array. Return the complete updated JSON.` }]
+        }],
+        tools: [{ google_search: {} }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              variety_name: { type: "STRING" }, vendor: { type: "STRING" }, days_to_maturity: { type: "INTEGER" }, species: { type: "STRING" }, category: { type: "STRING" }, notes: { type: "STRING" }, companion_plants: { type: "ARRAY", items: { type: "STRING" } }, seed_depth: { type: "STRING" }, plant_spacing: { type: "STRING" }, row_spacing: { type: "STRING" }, germination_days: { type: "STRING" }, sunlight: { type: "STRING" }, lifecycle: { type: "STRING" }, cold_stratification: { type: "BOOLEAN" }, stratification_days: { type: "INTEGER" }, light_required: { type: "BOOLEAN" }
+            }
+          }
+        }
+      };
+
+      const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
+      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (textResponse) {
+        const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+        
+        // Update form data safely, protecting original IDs and Images
+        setEditFormData(prev => ({
+          ...prev,
+          ...parsedData,
+          id: prev.id,
+          images: prev.images,
+          primaryImageIndex: prev.primaryImageIndex
+        }));
+      }
+
+      // 2. Fetch a new image if there are less than 2
+      const currentImages = editFormData.images || [];
+      if (currentImages.length < 2) {
+         const imgUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+         const imgPayload = {
+             instances: { prompt: `A highly detailed, realistic macro photograph of a ${editFormData.variety_name} ${editFormData.category} plant or crop, growing naturally in a lush garden. Natural sunlight, high resolution, no text, no people.` },
+             parameters: { sampleCount: 1 }
+         };
+         
+         const imgResult = await fetchWithRetry(imgUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imgPayload) }, 2);
+         
+         if (imgResult.predictions?.[0]?.bytesBase64Encoded) {
+            const base64Img = `data:image/png;base64,${imgResult.predictions[0].bytesBase64Encoded}`;
+            setEditFormData(prev => ({
+               ...prev,
+               images: [...(prev.images || []), base64Img]
+            }));
+         }
+      }
+      
+    } catch (e: any) {
+      alert("Auto-fill failed: " + e.message);
+    } finally {
+      setIsAutoFilling(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
@@ -72,10 +144,30 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           <button onClick={() => handleGoBack('seed_detail')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
           <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
         </div>
-        <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-50 transition-colors shadow-sm">Save</button>
+        <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">Save</button>
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-5">
+        
+        {/* MAGIC AUTO-FILL BUTTON */}
+        <button 
+          onClick={handleAutoFill}
+          disabled={isAutoFilling}
+          className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
+        >
+          {isAutoFilling ? (
+            <>
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              Gathering Data & Images...
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              ✨ Auto-Fill Missing Data (AI)
+            </>
+          )}
+        </button>
+
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold text-stone-800">Photos</h3>
