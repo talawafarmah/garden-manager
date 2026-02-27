@@ -89,6 +89,7 @@ export default function App() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedSeed, setSelectedSeed] = useState<InventorySeed | null>(null);
   const [viewingImageIndex, setViewingImageIndex] = useState(0);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   
   // Edit States
   const [isEditingSeed, setIsEditingSeed] = useState(false);
@@ -324,7 +325,7 @@ export default function App() {
         }
       };
 
-      let modelToUse = "gemini-2.0-flash"; // Defaulting to 2.0-flash for testing prioritization
+      let modelToUse = "gemini-2.5-flash-lite"; // Defaulting to 2.5-flash-lite for testing prioritization
       
       // Auto-discover models to bypass 404 errors on deprecated aliases
       if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
@@ -337,8 +338,8 @@ export default function App() {
               .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
               .map((m: any) => m.name.replace('models/', ''));
             
-            // Prioritize gemini-2.0-flash, falling back to 1.5-flash or whatever is available
-            const bestModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest"];
+            // Prioritize gemini-2.5-flash-lite, falling back to 2.5-flash, 1.5-flash, or whatever is available
+            const bestModels = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
             modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
             console.log("Auto-discovered and selected model:", modelToUse);
           }
@@ -467,7 +468,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.17</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.19</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -830,9 +831,28 @@ export default function App() {
       
       return (
         <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+          
+          {/* Full Screen Image Modal */}
+          {fullScreenImage && (
+            <div 
+              className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out"
+              onClick={() => setFullScreenImage(null)}
+            >
+              <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-10">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+              <img 
+                src={fullScreenImage} 
+                alt="Full screen view" 
+                className="max-w-full max-h-full object-contain"
+                onClick={(e) => e.stopPropagation()} 
+              />
+            </div>
+          )}
+
           <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => setSelectedSeed(null)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
+              <button onClick={() => { setSelectedSeed(null); setFullScreenImage(null); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               </button>
               <h1 className="text-xl font-bold truncate">Seed Details</h1>
@@ -850,14 +870,19 @@ export default function App() {
             {/* Hero Image */}
             <div className="w-full aspect-[4/3] bg-stone-200 relative">
               {displayImg ? (
-                <img src={displayImg} alt={selectedSeed.variety_name} className="w-full h-full object-cover" />
+                <img 
+                  src={displayImg} 
+                  alt={selectedSeed.variety_name} 
+                  className="w-full h-full object-cover cursor-zoom-in" 
+                  onClick={() => setFullScreenImage(displayImg)}
+                />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-stone-400">
                   <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                   <span>No primary image</span>
                 </div>
               )}
-              <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/80 to-transparent p-4 pt-12">
+              <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/80 to-transparent p-4 pt-12 pointer-events-none">
                 <div className="flex gap-2 mb-1">
                   <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">{selectedSeed.id}</div>
                   {selectedSeed.out_of_stock && (
@@ -1111,7 +1136,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.17</span>
+              <span className="text-sm font-normal text-emerald-300">v1.19</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
