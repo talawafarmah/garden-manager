@@ -54,7 +54,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       for (const img of (editFormData.images || [])) {
         if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
-          const { data } = await supabase.storage.from('vault_media').createSignedUrl(img, 3600); // 1-hour expiry
+          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600); // 1-hour expiry
           if (data) {
             newUrls[img] = data.signedUrl;
             changed = true;
@@ -121,7 +121,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           const filePath = `${folderName}/${fileName}`;
           
           // 3. Upload to private Supabase bucket
-          const { error: uploadErr } = await supabase.storage.from('vault_media').upload(filePath, blob, { contentType: 'image/jpeg' });
+          const { error: uploadErr } = await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
           if (uploadErr) throw new Error("Upload failed: " + uploadErr.message);
           
           uploadedImagePaths.push(filePath);

@@ -38,7 +38,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
       for (const img of fullSeed.images) {
         // If it's NOT a base64 string and NOT a standard http link, it must be a bucket path
         if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
-          const { data } = await supabase.storage.from('vault_media').createSignedUrl(img, 3600); // 1 hour expiry
+          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600); // 1 hour expiry
           if (data) {
             newUrls[img] = data.signedUrl;
             changed = true;
