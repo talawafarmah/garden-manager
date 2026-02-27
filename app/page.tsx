@@ -64,6 +64,7 @@ interface SeedCategory {
 export default function App() {
   // Navigation States
   const [isScanning, setIsScanning] = useState(false);
+  const [isImportingUrl, setIsImportingUrl] = useState(false);
   const [isViewingInventory, setIsViewingInventory] = useState(false);
   
   // App Data State
@@ -71,9 +72,10 @@ export default function App() {
   const [categories, setCategories] = useState<SeedCategory[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
   
-  // Scanner States
+  // Add/Scanner States
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importUrl, setImportUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<SeedData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -174,7 +176,7 @@ export default function App() {
     }
   };
 
-  // --- SCANNER LOGIC ---
+  // --- SCANNER / IMPORT LOGIC ---
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -192,10 +194,12 @@ export default function App() {
     }
   };
 
-  const cancelScan = () => {
+  const cancelAdd = () => {
     setIsScanning(false);
+    setIsImportingUrl(false);
     setImagePreview(null);
     setSelectedFile(null);
+    setImportUrl("");
     setAnalysisResult(null);
     setErrorMsg(null);
     setShowNewCatForm(false);
@@ -248,7 +252,7 @@ export default function App() {
       } else {
         setInventory([newSeed, ...inventory]);
         alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
-        cancelScan();
+        cancelAdd();
       }
     }
   };
@@ -277,6 +281,76 @@ export default function App() {
     }
   };
 
+  // Helper to resolve Gemini Model
+  const getBestModel = async () => {
+    let modelToUse = "gemini-2.5-flash"; // Priority model for pay-as-you-go
+    if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      try {
+        const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const modelsData = await modelsRes.json();
+        if (modelsData.models) {
+          const available = modelsData.models
+            .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
+            .map((m: any) => m.name.replace('models/', ''));
+          
+          const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite"];
+          modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
+        }
+      } catch (e) {
+           console.error("Model discovery failed, attempting to proceed.", e);
+      }
+    }
+    return modelToUse;
+  }
+
+  const aiSystemInstruction = { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.) so the database remains clean. Infer common botanical requirements if they are missing." }] };
+  const aiGenerationConfig = {
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "OBJECT",
+      properties: {
+        variety_name: { type: "STRING" },
+        vendor: { type: "STRING" },
+        days_to_maturity: { type: "INTEGER" },
+        species: { type: "STRING" },
+        category: { type: "STRING" },
+        notes: { type: "STRING" },
+        seed_depth: { type: "STRING" },
+        plant_spacing: { type: "STRING" },
+        row_spacing: { type: "STRING" },
+        germination_days: { type: "STRING" },
+        sunlight: { type: "STRING" },
+        lifecycle: { type: "STRING" },
+        cold_stratification: { type: "BOOLEAN" },
+        stratification_days: { type: "INTEGER" },
+        light_required: { type: "BOOLEAN" }
+      }
+    }
+  };
+
+  const processAiResult = (textResponse: string | undefined) => {
+    if (textResponse) {
+      const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+      
+      const aiCat = parsedData.category;
+      if (aiCat) {
+        const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
+        if (matched) {
+          parsedData.category = matched.name;
+          setShowNewCatForm(false);
+        } else {
+          parsedData.category = '__NEW__';
+          setShowNewCatForm(true);
+          setNewCatName(aiCat);
+          setNewCatPrefix(aiCat.substring(0, 2).toUpperCase());
+        }
+      }
+      setAnalysisResult(parsedData);
+    } else {
+      throw new Error("No text returned from AI");
+    }
+  };
+
   const analyzeImage = async () => {
     if (!selectedFile) return;
     setIsAnalyzing(true);
@@ -296,85 +370,80 @@ export default function App() {
         contents: [{
           role: "user",
           parts: [
-            { text: "Analyze this seed packet. Extract variety name, vendor, days to maturity (number only), botanical species, general category, seed depth, plant spacing, row spacing, days to germination, sunlight requirements (e.g., Full Sun), life cycle (Annual/Perennial), whether it requires cold stratification (boolean), whether it requires light to germinate (boolean), and any growing notes. IMPORTANT: Map the category to a broad group (e.g., Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Allium, Tomato, Pepper). If the packet is missing critical information, use your internal botanical knowledge to infer missing data." },
+            { text: "Analyze this seed packet image. Extract all details requested in the JSON schema. Map the category to a broad group." },
             { inlineData: { mimeType: mimeType, data: base64Data } }
           ]
         }],
-        systemInstruction: { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, etc.) so the database remains clean. Infer common botanical requirements if they are missing from the packet text." }] },
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              variety_name: { type: "STRING" },
-              vendor: { type: "STRING" },
-              days_to_maturity: { type: "INTEGER" },
-              species: { type: "STRING" },
-              category: { type: "STRING" },
-              notes: { type: "STRING" },
-              seed_depth: { type: "STRING" },
-              plant_spacing: { type: "STRING" },
-              row_spacing: { type: "STRING" },
-              germination_days: { type: "STRING" },
-              sunlight: { type: "STRING" },
-              lifecycle: { type: "STRING" },
-              cold_stratification: { type: "BOOLEAN" },
-              stratification_days: { type: "INTEGER" },
-              light_required: { type: "BOOLEAN" }
-            }
-          }
-        }
+        systemInstruction: aiSystemInstruction,
+        generationConfig: aiGenerationConfig
       };
 
-      let modelToUse = "gemini-2.5-flash"; // Priority model for pay-as-you-go
-      
-      // Auto-discover models to bypass 404 errors on deprecated aliases
-      if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-        try {
-          const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-          const modelsData = await modelsRes.json();
-          if (modelsData.models) {
-            // Find all valid vision/generation models the key has access to
-            const available = modelsData.models
-              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('gemini'))
-              .map((m: any) => m.name.replace('models/', ''));
-            
-            // Prioritize gemini-2.5-flash, falling back to other models
-            const bestModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite"];
-            modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
-            console.log("Auto-discovered and selected model:", modelToUse);
-          }
-        } catch (e) {
-             console.error("Model discovery failed, attempting to proceed.", e);
-        }
-      }
-
+      const modelToUse = await getBestModel();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
 
-      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (textResponse) {
-        const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
-        
-        const aiCat = parsedData.category;
-        if (aiCat) {
-          const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
-          if (matched) {
-            parsedData.category = matched.name;
-            setShowNewCatForm(false);
-          } else {
-            parsedData.category = '__NEW__';
-            setShowNewCatForm(true);
-            setNewCatName(aiCat);
-            setNewCatPrefix(aiCat.substring(0, 2).toUpperCase());
-          }
-        }
-        setAnalysisResult(parsedData);
-      } else {
-        throw new Error("No text returned from AI");
-      }
+      processAiResult(result.candidates?.[0]?.content?.parts?.[0]?.text);
     } catch (err: any) {
       setErrorMsg(`Error: ${err.message || "Unknown error occurred"}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const analyzeUrl = async () => {
+    if (!importUrl.trim() || !importUrl.startsWith("http")) {
+      setErrorMsg("Please enter a valid complete URL starting with http:// or https://");
+      return;
+    }
+    setIsAnalyzing(true);
+    setErrorMsg(null);
+
+    if (!apiKey) {
+      setErrorMsg("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
+      setIsAnalyzing(false);
+      return;
+    }
+
+    try {
+      // 1. Fetch the HTML of the website via a CORS proxy
+      // Using allorigins.win to bypass CORS restrictions directly from the browser
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`;
+      const fetchResponse = await fetch(proxyUrl);
+      
+      if (!fetchResponse.ok) throw new Error("Failed to fetch data from the provided URL.");
+      
+      const data = await fetchResponse.json();
+      const htmlContent = data.contents;
+      
+      if (!htmlContent) throw new Error("No readable content found at that URL.");
+
+      // 2. Strip HTML tags to get raw text to save tokens
+      const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+      // Remove scripts and styles for cleaner text
+      doc.querySelectorAll('script, style').forEach(el => el.remove());
+      const rawText = doc.body.textContent || "";
+      // Clean up massive whitespace and truncate to a reasonable limit (approx 20k chars) to avoid blowing up tokens
+      const cleanText = rawText.replace(/\s+/g, ' ').substring(0, 20000);
+
+      // 3. Send text to Gemini for extraction
+      const payload = {
+        contents: [{
+          role: "user",
+          parts: [
+            { text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. If specific numbers (like days to maturity) aren't present but a range is, pick the average or the higher end of the range.\n\nWebsite Content:\n${cleanText}` }
+          ]
+        }],
+        systemInstruction: aiSystemInstruction,
+        generationConfig: aiGenerationConfig
+      };
+
+      const modelToUse = await getBestModel();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
+
+      processAiResult(result.candidates?.[0]?.content?.parts?.[0]?.text);
+    } catch (err: any) {
+      setErrorMsg(`Error: ${err.message || "Unknown error occurred while scraping/analyzing."}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -461,18 +530,24 @@ export default function App() {
   // VIEW ROUTING
   // ==========================================
 
-  // --- SCANNER VIEW ---
-  if (isScanning) {
+  // --- ADD SEED VIEW (Scanner & URL Import) ---
+  if (isScanning || isImportingUrl) {
+    const isScanMode = isScanning;
+    
     return (
       <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col">
         <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950">
-          <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
+          <button onClick={cancelAdd} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.21</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">
+            {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
+            <span className="text-sm font-normal text-stone-500">v1.22</span>
+          </h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+          {/* Hidden File Input for Scanner */}
           <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleImageCapture} />
 
           {errorMsg && (
@@ -481,7 +556,7 @@ export default function App() {
 
           {analysisResult ? (
             <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
-              {/* IMAGE PREVIEW HEADER */}
+              {/* IMAGE PREVIEW HEADER (Only relevant if scanned) */}
               {imagePreview && (
                 <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
                   <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
@@ -492,6 +567,13 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+              )}
+              
+              {!imagePreview && isImportingUrl && (
+                 <div className="bg-blue-900/40 text-blue-300 p-3 rounded-xl border border-blue-800 text-xs flex items-center gap-2">
+                   <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   Data extracted from URL successfully. You can attach photos later via the Edit page.
+                 </div>
               )}
 
               {/* BASIC DETAILS */}
@@ -617,32 +699,74 @@ export default function App() {
                 <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
               </div>
             </div>
-          ) : imagePreview ? (
+            
+          ) : isScanMode ? (
+            // --- IMAGE SCANNER INPUT ---
             <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
-              <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl">
-                <img src={imagePreview} alt="Captured" className={`object-cover w-full h-full transition-opacity ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`} />
+              {imagePreview ? (
+                <>
+                  <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl">
+                    <img src={imagePreview} alt="Captured" className={`object-cover w-full h-full transition-opacity ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`} />
+                    {isAnalyzing && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400 bg-stone-900/40">
+                        <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span className="font-bold text-lg drop-shadow-md">Extracting Data...</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-4 w-full max-w-sm">
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
+                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      {isAnalyzing ? "Processing..." : "Analyze"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-full max-w-sm aspect-[3/4] border-2 border-dashed border-stone-600 rounded-3xl bg-stone-800/50 text-stone-400 hover:text-emerald-400 hover:border-emerald-500 active:scale-95 transition-all">
+                  <div className="bg-stone-800 p-5 rounded-full mb-4 shadow-lg">
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  </div>
+                  <span className="text-lg font-medium">Tap to open camera</span>
+                </button>
+              )}
+            </div>
+            
+          ) : (
+            // --- URL IMPORT INPUT ---
+            <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
+              <div className="w-full max-w-sm bg-stone-800 p-6 rounded-3xl border border-stone-700 shadow-2xl relative overflow-hidden">
                 {isAnalyzing && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400 bg-stone-900/40">
+                  <div className="absolute inset-0 bg-stone-900/80 z-10 flex flex-col items-center justify-center text-blue-400 backdrop-blur-sm">
                     <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    <span className="font-bold text-lg drop-shadow-md">Extracting Data...</span>
+                    <span className="font-bold text-lg drop-shadow-md">Scraping URL...</span>
                   </div>
                 )}
-              </div>
-              <div className="flex gap-4 w-full max-w-sm">
-                <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
-                <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                  {isAnalyzing ? "Processing..." : "Analyze"}
+                
+                <div className="bg-blue-900/30 border border-blue-800 p-4 rounded-full w-16 h-16 flex items-center justify-center mb-6 mx-auto text-blue-400 shadow-inner">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                </div>
+                <h2 className="text-xl font-bold text-center text-stone-100 mb-2">Import from Link</h2>
+                <p className="text-sm text-stone-400 text-center mb-6 leading-relaxed">Paste a link to a seed product page. The AI will scrape the page and extract the botanical details automatically.</p>
+
+                <input
+                   type="url"
+                   value={importUrl}
+                   onChange={(e) => setImportUrl(e.target.value)}
+                   placeholder="https://www.bakercreek.com/..."
+                   className="w-full bg-stone-900 border border-stone-600 rounded-xl p-4 text-stone-100 focus:border-blue-500 outline-none mb-4 transition-colors placeholder:text-stone-600"
+                />
+
+                <button
+                   onClick={analyzeUrl}
+                   disabled={isAnalyzing || !importUrl.trim()}
+                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  Extract Data
                 </button>
               </div>
             </div>
-          ) : (
-            <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-full max-w-sm aspect-[3/4] border-2 border-dashed border-stone-600 rounded-3xl bg-stone-800/50 text-stone-400 hover:text-emerald-400 hover:border-emerald-500 active:scale-95">
-              <div className="bg-stone-800 p-5 rounded-full mb-4 shadow-lg">
-                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-              </div>
-              <span className="text-lg font-medium">Tap to open camera</span>
-            </button>
           )}
         </div>
       </main>
@@ -1137,7 +1261,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.21</span>
+              <span className="text-sm font-normal text-emerald-300">v1.22</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -1158,7 +1282,7 @@ export default function App() {
               <span className="text-sm font-medium">Scan Packet</span>
             </button>
 
-            <button className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
+            <button onClick={() => setIsImportingUrl(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-blue-100 p-3 rounded-full mb-2 text-blue-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
               </div>
