@@ -11,7 +11,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isPagingDB, setIsPagingDB] = useState(false);
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 10;
 
   // Companion Modal States
   const [companionModalSeed, setCompanionModalSeed] = useState<InventorySeed | null>(null);
