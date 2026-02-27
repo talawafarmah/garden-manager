@@ -397,6 +397,7 @@ export default function App() {
     }
     setIsAnalyzing(true);
     setErrorMsg(null);
+    setImagePreview(null); // Clear any old images
 
     if (!apiKey) {
       setErrorMsg("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
@@ -405,27 +406,66 @@ export default function App() {
     }
 
     try {
-      // 1. Fetch the HTML of the website via a CORS proxy
-      // Using allorigins.win to bypass CORS restrictions directly from the browser
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`;
-      const fetchResponse = await fetch(proxyUrl);
-      
-      if (!fetchResponse.ok) throw new Error("Failed to fetch data from the provided URL.");
-      
-      const data = await fetchResponse.json();
-      const htmlContent = data.contents;
+      let htmlContent = "";
+
+      // 1. Attempt Direct Browser Fetch (Fastest, but subject to CORS blocking)
+      try {
+        const directRes = await fetch(importUrl);
+        if (!directRes.ok) throw new Error("Direct fetch failed");
+        htmlContent = await directRes.text();
+      } catch (directErr) {
+        // 2. Fallback to CORS proxy if direct fetch is blocked by vendor's server
+        console.log("Direct fetch blocked by CORS, falling back to proxy...", directErr);
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`;
+        const fetchResponse = await fetch(proxyUrl);
+        
+        if (!fetchResponse.ok) throw new Error("Failed to fetch data from the provided URL via proxy.");
+        
+        const data = await fetchResponse.json();
+        htmlContent = data.contents;
+      }
       
       if (!htmlContent) throw new Error("No readable content found at that URL.");
 
-      // 2. Strip HTML tags to get raw text to save tokens
+      // Parse HTML to extract text AND product images
       const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
-      // Remove scripts and styles for cleaner text
-      doc.querySelectorAll('script, style').forEach(el => el.remove());
+
+      // --- IMAGE EXTRACTION ---
+      // Standard e-commerce product image tag
+      let extractedImageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
+      
+      // Fallback: look for a prominent image on the page
+      if (!extractedImageUrl) {
+        const imgElement = doc.querySelector('img[src*="product"], img[src*="seed"], .product-image img');
+        if (imgElement) {
+            extractedImageUrl = imgElement.getAttribute('src');
+        }
+      }
+
+      // Ensure the image URL is absolute (http...)
+      if (extractedImageUrl && !extractedImageUrl.startsWith('http')) {
+        try {
+            const base = new URL(importUrl);
+            extractedImageUrl = new URL(extractedImageUrl, base.origin).href;
+        } catch(e) {
+            // Ignore URL parsing errors
+        }
+      }
+
+      // Set the image so it shows up in the UI and gets saved automatically
+      if (extractedImageUrl) {
+          setImagePreview(extractedImageUrl);
+      }
+
+      // --- TEXT EXTRACTION ---
+      // Remove scripts, styles, nav bars, and footers for cleaner text (saves AI tokens)
+      doc.querySelectorAll('script, style, nav, footer, header, iframe').forEach(el => el.remove());
       const rawText = doc.body.textContent || "";
-      // Clean up massive whitespace and truncate to a reasonable limit (approx 20k chars) to avoid blowing up tokens
+      
+      // Clean up massive whitespace and truncate to a reasonable limit (~20k chars)
       const cleanText = rawText.replace(/\s+/g, ' ').substring(0, 20000);
 
-      // 3. Send text to Gemini for extraction
+      // 3. Send cleaned text to Gemini for extraction
       const payload = {
         contents: [{
           role: "user",
@@ -542,7 +582,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.22</span>
+            <span className="text-sm font-normal text-stone-500">v1.23</span>
           </h1>
         </header>
 
@@ -556,14 +596,14 @@ export default function App() {
 
           {analysisResult ? (
             <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
-              {/* IMAGE PREVIEW HEADER (Only relevant if scanned) */}
+              {/* IMAGE PREVIEW HEADER (Shows for both Scanner and successful URL Scrape) */}
               {imagePreview && (
                 <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
                   <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
                       <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      Packet Image Attached
+                      {isScanMode ? 'Packet Image Attached' : 'Product Image Extracted'}
                     </span>
                   </div>
                 </div>
@@ -1261,7 +1301,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.22</span>
+              <span className="text-sm font-normal text-emerald-300">v1.23</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
