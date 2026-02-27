@@ -35,6 +35,7 @@ export interface InventorySeed {
   seed_depth: string;
   plant_spacing: string;
   row_spacing: string;
+  thumbnail?: string;
   out_of_stock: boolean; 
   sunlight: string;
   lifecycle: string;
@@ -58,7 +59,7 @@ export interface SeedlingTray {
   id?: string;
   name: string; 
   tray_type: string; 
-  sown_date: string; 
+  sown_date: string;  
   first_germination_date?: string; 
   first_planted_date?: string;     
   heat_mat: boolean;
