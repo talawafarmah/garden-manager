@@ -30,7 +30,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
-    let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
+    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants', { count: 'exact' });
 
     // Apply Category Filter
     if (activeFilter !== "All") {
@@ -52,7 +52,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       console.error("Error fetching inventory:", error);
       alert("Failed to load inventory: " + error.message);
     } else if (data) {
-      const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
+      const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })) as InventorySeed[];
       
       if (reset) {
         setSeeds(sanitizedData);
@@ -221,7 +221,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
           ) : seeds.length > 0 ? (
             <>
               {seeds.map((seed: InventorySeed) => {
-                const thumb = seed.images && seed.images.length > 0 ? seed.images[seed.primaryImageIndex || 0] : null;
+                const thumb = seed.thumbnail || null;
                 const isOutOfStock = seed.out_of_stock;
 
                 return (

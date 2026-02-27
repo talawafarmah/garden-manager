@@ -3,6 +3,32 @@ import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory } from '../types';
 import { fetchWithRetry, getBestModel } from '../lib/utils';
 
+// Helper function to dynamically downscale large images into tiny thumbnails
+const generateThumbnail = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!base64Str) return resolve("");
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_SIZE = 150; // Optimal thumbnail size
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+      } else {
+        if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Compress heavily for speed
+    };
+    img.onerror = () => resolve("");
+    img.src = base64Str;
+  });
+};
+
 export default function SeedEdit({ seed, inventory, setInventory, categories, setCategories, navigateTo, handleGoBack }: any) {
   const [editFormData, setEditFormData] = useState<InventorySeed>(seed);
   const [showNewCatForm, setShowNewCatForm] = useState(false);
@@ -37,6 +63,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const isDuplicate = inventory.some((s: InventorySeed) => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) { alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`); return; }
     }
+    
     let finalCatName = editFormData.category;
     if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
       finalCatName = newCatName.trim();
@@ -46,7 +73,15 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     } else if (editFormData.category === '__NEW__') {
       alert("Please provide a name for the new category."); return;
     }
-    const payload = { ...editFormData, category: finalCatName };
+
+    // --- NEW: Generate Thumbnail before saving ---
+    let newThumbnail = editFormData.thumbnail || "";
+    if (editFormData.images && editFormData.images.length > 0) {
+      const primaryIdx = editFormData.primaryImageIndex || 0;
+      newThumbnail = await generateThumbnail(editFormData.images[primaryIdx]);
+    }
+
+    const payload = { ...editFormData, category: finalCatName, thumbnail: newThumbnail };
     const { error } = await supabase.from('seed_inventory').update(payload).eq('id', seed.id);
 
     if (error) alert("Failed to update database: " + error.message);
