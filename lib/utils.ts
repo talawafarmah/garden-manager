@@ -38,7 +38,7 @@ export const getBestModel = async () => {
           .map((m: any) => m.name.replace('models/', ''));
         
         // --- UPDATE THIS ARRAY ---
-        const bestModels = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
+        const bestModels = ["gemini-2-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"];
         // -------------------------
 
         modelToUse = bestModels.find(m => available.includes(m)) || available[0] || modelToUse;
