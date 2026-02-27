@@ -288,12 +288,11 @@ export default function App() {
         contents: [{
           role: "user",
           parts: [
-            { text: "Analyze this seed packet. Extract variety name, vendor, days to maturity (number only), botanical species, general category, seed depth, plant spacing, row spacing, days to germination, sunlight requirements (e.g., Full Sun), life cycle (Annual/Perennial), whether it requires cold stratification (boolean), whether it requires light to germinate (boolean), and any growing notes. IMPORTANT: Map the category to a broad group (e.g., Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Allium, Tomato, Pepper). If the packet is missing critical information, use Google Search to find the vendor's website or general botanical databases to fill in the missing JSON fields." },
+            { text: "Analyze this seed packet. Extract variety name, vendor, days to maturity (number only), botanical species, general category, seed depth, plant spacing, row spacing, days to germination, sunlight requirements (e.g., Full Sun), life cycle (Annual/Perennial), whether it requires cold stratification (boolean), whether it requires light to germinate (boolean), and any growing notes. IMPORTANT: Map the category to a broad group (e.g., Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Allium, Tomato, Pepper). If the packet is missing critical information, use your internal botanical knowledge to infer missing data." },
             { inlineData: { mimeType: mimeType, data: base64Data } }
           ]
         }],
-        systemInstruction: { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, etc.) so the database remains clean. If any details are missing on the packet, use the google_search tool to look up the exact variety and vendor to fill in the gaps." }] },
-        tools: [{ "google_search": {} }],
+        systemInstruction: { parts: [{ text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, etc.) so the database remains clean. Infer common botanical requirements if they are missing from the packet text." }] },
         generationConfig: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -448,7 +447,7 @@ export default function App() {
           <button onClick={cancelScan} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.13</span></h1>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">Scan Seed Packet <span className="text-sm font-normal text-stone-500">v1.14</span></h1>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
@@ -1088,7 +1087,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.13</span>
+              <span className="text-sm font-normal text-emerald-300">v1.14</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
