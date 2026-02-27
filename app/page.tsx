@@ -667,6 +667,253 @@ export default function App() {
   // VIEW ROUTING
   // ==========================================
 
+  // --- ADD SEED VIEW (Scanner & URL Import) ---
+  if (isScanning || isImportingUrl) {
+    const isScanMode = isScanning;
+    
+    return (
+      <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col">
+        <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950">
+          <button onClick={cancelAdd} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <h1 className="text-xl font-bold flex items-baseline gap-2">
+            {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
+            <span className="text-sm font-normal text-stone-500">v1.29</span>
+          </h1>
+        </header>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+          {/* Hidden File Input for Scanner */}
+          <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleImageCapture} />
+
+          {errorMsg && (
+            <div className="w-full max-w-sm bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-xs font-mono break-words">{errorMsg}</div>
+          )}
+
+          {analysisResult ? (
+            <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
+              {/* IMAGE PREVIEW HEADER (Shows for both Scanner and successful URL Scrape) */}
+              {imagePreview && (
+                <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
+                  <img src={imagePreview} alt="Captured" className="object-cover w-full h-full opacity-60" />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="bg-stone-900/80 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-200 shadow-sm flex items-center gap-1.5">
+                      <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      {isScanMode ? 'Packet Image Attached' : 'Product Image Extracted'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              {!imagePreview && isImportingUrl && (
+                 <div className="bg-blue-900/40 text-blue-300 p-3 rounded-xl border border-blue-800 text-xs flex items-center gap-2">
+                   <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   Data extracted from URL successfully. You can attach photos later via the Edit page.
+                 </div>
+              )}
+
+              {/* BASIC DETAILS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Basic Details</h3>
+                
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Category</label>
+                  <select 
+                    value={analysisResult.category || ''} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__NEW__') {
+                        setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix("");
+                      } else setShowNewCatForm(false);
+                      setAnalysisResult({ ...analysisResult, category: val });
+                    }}
+                    className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none appearance-none"
+                  >
+                    <option value="" disabled>Select a category...</option>
+                    {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    <option value="__NEW__" className="font-bold text-emerald-400">+ Add New Category</option>
+                  </select>
+                </div>
+
+                {showNewCatForm && (
+                  <div className="p-4 bg-stone-900/50 border border-emerald-900 rounded-xl space-y-3 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Category Name</label>
+                      <input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-stone-400 mb-1">Prefix Code (1-2 letters)</label>
+                      <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase outline-none" />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Variety Name</label>
+                  <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 font-bold focus:border-emerald-500 outline-none" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Botanical Species</label>
+                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 italic focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Vendor</label>
+                    <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Life Cycle</label>
+                    <input type="text" value={analysisResult.lifecycle || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, lifecycle: e.target.value })} placeholder="Annual, Perennial..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Sunlight</label>
+                    <input type="text" value={analysisResult.sunlight || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, sunlight: e.target.value })} placeholder="Full Sun..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* PLANTING SPECS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Planting Specs</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Seed Depth</label>
+                    <input type="text" value={analysisResult.seed_depth || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, seed_depth: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Plant Spacing</label>
+                    <input type="text" value={analysisResult.plant_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, plant_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Row Spacing</label>
+                    <input type="text" value={analysisResult.row_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, row_spacing: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Maturity</label>
+                    <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value })} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* GERMINATION NEEDS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Germination Needs</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-stone-400 mb-1">Days to Germination</label>
+                    <input type="text" value={analysisResult.germination_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, germination_days: e.target.value })} placeholder="e.g. 7-14 days" className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
+                    <input type="checkbox" checked={analysisResult.light_required || false} onChange={(e) => setAnalysisResult({ ...analysisResult, light_required: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
+                    <label className="text-xs text-stone-200">Needs Light</label>
+                  </div>
+                  <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-lg border border-stone-700">
+                    <input type="checkbox" checked={analysisResult.cold_stratification || false} onChange={(e) => setAnalysisResult({ ...analysisResult, cold_stratification: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
+                    <label className="text-xs text-stone-200">Needs Cold Strat.</label>
+                  </div>
+                  {analysisResult.cold_stratification && (
+                    <div className="col-span-2 mt-2">
+                      <label className="block text-xs font-medium text-stone-400 mb-1">Stratification Days</label>
+                      <input type="number" value={analysisResult.stratification_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value })} placeholder="Days in fridge..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2 text-stone-100 focus:border-emerald-500 outline-none" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* NOTES & COMPANIONS */}
+              <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Companion Plants (Comma separated)</label>
+                  <input type="text" value={(analysisResult.companion_plants || []).join(', ')} onChange={(e) => setAnalysisResult({ ...analysisResult, companion_plants: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) })} placeholder="Basil, Marigold..." className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-stone-400 mb-1">Growing Notes</label>
+                  <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-stone-100 focus:border-emerald-500 outline-none resize-none" />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
+                <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
+              </div>
+            </div>
+            
+          ) : isScanMode ? (
+            // --- IMAGE SCANNER INPUT ---
+            <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
+              {imagePreview ? (
+                <>
+                  <div className="relative w-full max-w-sm aspect-[3/4] mb-8 rounded-2xl overflow-hidden border-2 border-stone-700 shadow-2xl">
+                    <img src={imagePreview} alt="Captured" className={`object-cover w-full h-full transition-opacity ${isAnalyzing ? 'opacity-50' : 'opacity-100'}`} />
+                    {isAnalyzing && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-400 bg-stone-900/40">
+                        <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span className="font-bold text-lg drop-shadow-md">Extracting Data...</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-4 w-full max-w-sm">
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
+                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      {isAnalyzing ? "Processing..." : "Analyze"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-full max-w-sm aspect-[3/4] border-2 border-dashed border-stone-600 rounded-3xl bg-stone-800/50 text-stone-400 hover:text-emerald-400 hover:border-emerald-50 active:scale-95 transition-all">
+                  <div className="bg-stone-800 p-5 rounded-full mb-4 shadow-lg">
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  </div>
+                  <span className="text-lg font-medium">Tap to open camera</span>
+                </button>
+              )}
+            </div>
+            
+          ) : (
+            // --- URL IMPORT INPUT ---
+            <div className="w-full flex flex-col items-center animate-in fade-in duration-300">
+              <div className="w-full max-w-sm bg-stone-800 p-6 rounded-3xl border border-stone-700 shadow-2xl relative overflow-hidden">
+                {isAnalyzing && (
+                  <div className="absolute inset-0 bg-stone-900/80 z-10 flex flex-col items-center justify-center text-blue-400 backdrop-blur-sm">
+                    <svg className="w-12 h-12 animate-spin mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <span className="font-bold text-lg drop-shadow-md">Scraping URL...</span>
+                  </div>
+                )}
+                
+                <div className="bg-blue-900/30 border border-blue-800 p-4 rounded-full w-16 h-16 flex items-center justify-center mb-6 mx-auto text-blue-400 shadow-inner">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                </div>
+                <h2 className="text-xl font-bold text-center text-stone-100 mb-2">Import from Link</h2>
+                <p className="text-sm text-stone-400 text-center mb-6 leading-relaxed">Paste a link to a seed product page. The AI will scrape the page and extract the botanical details automatically.</p>
+
+                <input
+                   type="url"
+                   value={importUrl}
+                   onChange={(e) => setImportUrl(e.target.value)}
+                   placeholder="https://www.bakercreek.com/..."
+                   className="w-full bg-stone-900 border border-stone-600 rounded-xl p-4 text-stone-100 focus:border-blue-500 outline-none mb-4 transition-colors placeholder:text-stone-600"
+                />
+
+                <button
+                   onClick={analyzeUrl}
+                   disabled={isAnalyzing || !importUrl.trim()}
+                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  Extract Data
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   // --- TRAYS VIEW ---
   if (isViewingTrays) {
     
@@ -1688,7 +1935,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.28</span>
+              <span className="text-sm font-normal text-emerald-300">v1.29</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
