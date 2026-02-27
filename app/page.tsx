@@ -100,6 +100,7 @@ export default function App() {
   const [categories, setCategories] = useState<SeedCategory[]>([]);
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // NEW: Global saving state
   
   // Add/Scanner States
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -142,9 +143,24 @@ export default function App() {
     // Aggressively override the document title on client load
     document.title = "Talawa Farmah | Garden Manager";
     fetchCategories();
+    // Fetch initially just in case session is ready
     fetchInventory();
     fetchTrays();
   }, []);
+
+  // Guarantee a fresh fetch when views are opened in case the initial load fired too early for Supabase
+  useEffect(() => {
+    if (isViewingInventory) {
+      fetchInventory();
+    }
+  }, [isViewingInventory]);
+
+  useEffect(() => {
+    if (isViewingTrays) {
+      fetchTrays();
+      fetchInventory(); // Trays also need inventory data to map varieties
+    }
+  }, [isViewingTrays]);
 
   const fetchCategories = async () => {
     const { data, error } = await supabase.from('seed_categories').select('*').order('name');
@@ -154,7 +170,10 @@ export default function App() {
   const fetchInventory = async () => {
     setIsLoadingDB(true);
     const { data, error } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false });
-    if (!error && data) {
+    if (error) {
+      console.error("Error fetching inventory:", error);
+      alert("Error fetching inventory. Did you add the new 'companion_plants' column to your database? " + error.message);
+    } else if (data) {
       const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] }));
       setInventory(sanitizedData);
     }
@@ -163,7 +182,10 @@ export default function App() {
 
   const fetchTrays = async () => {
     const { data, error } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
-    if (!error && data) {
+    if (error) {
+       console.error("Error fetching trays:", error);
+       alert("Error fetching trays. Did you run the SQL to add the latest columns (first_germination_date, etc)? " + error.message);
+    } else if (data) {
        // Ensure new fields exist gracefully for older records
        const safeTrays = data.map(t => ({ 
          ...t, 
@@ -235,6 +257,7 @@ export default function App() {
 
   const handleSaveScannedToInventory = async () => {
     if (analysisResult) {
+      setIsSaving(true);
       const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
       const vendor = analysisResult.vendor?.trim() || 'Unknown Vendor';
 
@@ -246,7 +269,10 @@ export default function App() {
 
       if (!checkError && duplicates && duplicates.length > 0) {
         const isConfirmed = confirm(`⚠️ Duplicate Detected!\n\nIt looks like you already have '${variety}' from '${vendor}' in your inventory. Do you want to add it again anyway?`);
-        if (!isConfirmed) return; 
+        if (!isConfirmed) {
+          setIsSaving(false);
+          return; 
+        }
       }
 
       let finalCatName = analysisResult.category || 'Uncategorized';
@@ -289,6 +315,8 @@ export default function App() {
       };
 
       const { error } = await supabase.from('seed_inventory').insert([newSeed]);
+      
+      setIsSaving(false);
 
       if (error) {
         alert("Failed to save to database: " + error.message);
@@ -516,6 +544,8 @@ export default function App() {
       const isDuplicate = inventory.some(s => s.id.toLowerCase() === editFormData.id.toLowerCase());
       if (isDuplicate) { alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`); return; }
     }
+    
+    setIsSaving(true);
     let finalCatName = editFormData.category;
     if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
       finalCatName = newCatName.trim();
@@ -523,10 +553,14 @@ export default function App() {
       await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
       setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
     } else if (editFormData.category === '__NEW__') {
-      alert("Please provide a name for the new category."); return;
+      alert("Please provide a name for the new category.");
+      setIsSaving(false);
+      return;
     }
     const payload = { ...editFormData, category: finalCatName };
     const { error } = await supabase.from('seed_inventory').update(payload).eq('id', selectedSeed?.id);
+
+    setIsSaving(false);
 
     if (error) alert("Failed to update database: " + error.message);
     else {
@@ -541,7 +575,10 @@ export default function App() {
   const handleDeleteSeed = async () => {
     if (!selectedSeed) return;
     if (confirm(`Are you sure you want to permanently delete ${selectedSeed.variety_name} (${selectedSeed.id})?`)) {
+      setIsSaving(true);
       const { error } = await supabase.from('seed_inventory').delete().eq('id', selectedSeed.id);
+      setIsSaving(false);
+      
       if (error) alert("Failed to delete from database: " + error.message);
       else {
         setInventory(inventory.filter(s => s.id !== selectedSeed.id));
@@ -594,6 +631,7 @@ export default function App() {
     if (!trayFormData) return;
     if (!trayFormData.name.trim()) { alert("Tray name is required."); return; }
 
+    setIsSaving(true);
     const isNew = !trayFormData.id;
     let error;
     let savedTray = { ...trayFormData };
@@ -606,6 +644,8 @@ export default function App() {
       const { error: updateErr } = await supabase.from('seedling_trays').update(trayFormData).eq('id', trayFormData.id);
       error = updateErr;
     }
+
+    setIsSaving(false);
 
     if (error) {
       alert("Failed to save tray: " + error.message);
@@ -621,7 +661,10 @@ export default function App() {
   const handleDeleteTray = async () => {
     if (!selectedTray?.id) return;
     if (confirm(`Are you sure you want to delete ${selectedTray.name}?`)) {
+      setIsSaving(true);
       const { error } = await supabase.from('seedling_trays').delete().eq('id', selectedTray.id);
+      setIsSaving(false);
+      
       if (error) alert("Failed to delete tray.");
       else {
         setTrays(trays.filter(t => t.id !== selectedTray.id));
@@ -679,7 +722,7 @@ export default function App() {
           </button>
           <h1 className="text-xl font-bold flex items-baseline gap-2">
             {isScanMode ? 'Scan Seed Packet' : 'Import from URL'} 
-            <span className="text-sm font-normal text-stone-500">v1.29</span>
+            <span className="text-sm font-normal text-stone-500">v1.31</span>
           </h1>
         </header>
 
@@ -837,7 +880,13 @@ export default function App() {
 
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-                <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">Save to Database</button>
+                <button 
+                  onClick={handleSaveScannedToInventory} 
+                  disabled={isSaving}
+                  className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {isSaving ? 'Saving...' : 'Save to Database'}
+                </button>
               </div>
             </div>
             
@@ -856,8 +905,8 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex gap-4 w-full max-w-sm">
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50">Retake</button>
-                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50">
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing} className="flex-1 py-4 bg-stone-800 rounded-xl font-medium hover:bg-stone-700 border border-stone-700 disabled:opacity-50 disabled:cursor-not-allowed">Retake</button>
+                    <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                       {isAnalyzing ? "Processing..." : "Analyze"}
                     </button>
@@ -901,7 +950,7 @@ export default function App() {
                 <button
                    onClick={analyzeUrl}
                    disabled={isAnalyzing || !importUrl.trim()}
-                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95"
+                   className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   Extract Data
@@ -930,8 +979,12 @@ export default function App() {
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
               </div>
-              <button onClick={handleSaveTray} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
-                Save
+              <button 
+                onClick={handleSaveTray} 
+                disabled={isSaving}
+                className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
             </header>
 
@@ -1086,7 +1139,11 @@ export default function App() {
               </section>
 
               {trayFormData.id && (
-                <button onClick={handleDeleteTray} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                <button 
+                  onClick={handleDeleteTray} 
+                  disabled={isSaving}
+                  className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   Delete Tray
                 </button>
@@ -1326,8 +1383,12 @@ export default function App() {
                 </button>
                 <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
               </div>
-              <button onClick={handleSaveEdit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm">
-                Save
+              <button 
+                onClick={handleSaveEdit} 
+                disabled={isSaving}
+                className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
             </header>
 
@@ -1484,9 +1545,13 @@ export default function App() {
                 </div>
               </section>
 
-              <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+              <button 
+                onClick={handleDeleteSeed} 
+                disabled={isSaving}
+                className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                Delete Seed Permanently
+                {isSaving ? 'Deleting...' : 'Delete Seed Permanently'}
               </button>
             </div>
           </main>
@@ -1935,7 +2000,7 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v1.29</span>
+              <span className="text-sm font-normal text-emerald-300">v1.31</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -1951,7 +2016,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-4">
             <button onClick={() => setIsScanning(true)} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95">
               <div className="bg-emerald-100 p-3 rounded-full mb-2 text-emerald-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               </div>
               <span className="text-sm font-medium">Scan Packet</span>
             </button>
