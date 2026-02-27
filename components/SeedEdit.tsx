@@ -10,7 +10,7 @@ const generateThumbnail = (base64Str: string): Promise<string> => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const MAX_SIZE = 150; // Optimal thumbnail size
+      const MAX_SIZE = 150; 
       let width = img.width;
       let height = img.height;
       if (width > height) {
@@ -22,10 +22,10 @@ const generateThumbnail = (base64Str: string): Promise<string> => {
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Compress heavily for speed
+      resolve(canvas.toDataURL('image/jpeg', 0.6)); 
     };
     img.onerror = () => resolve("");
-    img.src = base64Str;
+    img.src = base64Str.startsWith('data:') ? base64Str : `data:image/jpeg;base64,${base64Str}`;
   });
 };
 
@@ -60,8 +60,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const handleSaveEdit = async () => {
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
     if (editFormData.id !== seed.id) {
-      const isDuplicate = inventory.some((s: InventorySeed) => s.id.toLowerCase() === editFormData.id.toLowerCase());
-      if (isDuplicate) { alert(`Error: The shortcode '${editFormData.id}' is already assigned to another seed.`); return; }
+      const { data: duplicates } = await supabase.from('seed_inventory').select('id').eq('id', editFormData.id);
+      if (duplicates && duplicates.length > 0) { alert(`Error: The shortcode '${editFormData.id}' is already assigned.`); return; }
     }
     
     let finalCatName = editFormData.category;
@@ -74,7 +74,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       alert("Please provide a name for the new category."); return;
     }
 
-    // --- NEW: Generate Thumbnail before saving ---
     let newThumbnail = editFormData.thumbnail || "";
     if (editFormData.images && editFormData.images.length > 0) {
       const primaryIdx = editFormData.primaryImageIndex || 0;
@@ -86,7 +85,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
     if (error) alert("Failed to update database: " + error.message);
     else {
-      setInventory(inventory.map((s: InventorySeed) => s.id === seed.id ? payload : s));
+      // Update global inventory if needed, but VaultList fetches its own now
       navigateTo('seed_detail', payload); 
     }
   };
@@ -96,7 +95,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const { error } = await supabase.from('seed_inventory').delete().eq('id', seed.id);
       if (error) alert("Failed to delete from database: " + error.message);
       else {
-        setInventory(inventory.filter((s: InventorySeed) => s.id !== seed.id));
         navigateTo('vault');
       }
     }
@@ -106,16 +104,18 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     setIsAutoFilling(true);
     try {
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-      if (!apiKey) throw new Error("Missing API Key! Please set NEXT_PUBLIC_GEMINI_API_KEY in your .env.local file.");
+      if (!apiKey) throw new Error("Missing API Key!");
 
-      // 1. Gather missing text details using Web Grounding
       const modelToUse = await getBestModel();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
       
+      // Remove massive base64 images from the payload to prevent token limits
+      const { images, thumbnail, ...cleanFormData } = editFormData;
+
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(editFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes (no \`\`\`json). The JSON must exactly match this structure (use null or defaults if unknown): {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes (no \`\`\`json). The JSON must exactly match this structure (use null or defaults if unknown): {"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -125,18 +125,11 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       
       if (textResponse) {
         const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
-        
-        // Update form data safely, protecting original IDs and Images
         setEditFormData(prev => ({
-          ...prev,
-          ...parsedData,
-          id: prev.id,
-          images: prev.images,
-          primaryImageIndex: prev.primaryImageIndex
+          ...prev, ...parsedData, id: prev.id, images: prev.images, primaryImageIndex: prev.primaryImageIndex
         }));
       }
 
-      // 2. Fetch a new image if there are less than 2
       const currentImages = editFormData.images || [];
       if (currentImages.length < 2) {
          const imgUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
@@ -146,21 +139,14 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          };
          
          const imgResult = await fetchWithRetry(imgUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imgPayload) }, 2);
-         
          if (imgResult.predictions?.[0]?.bytesBase64Encoded) {
             const base64Img = `data:image/png;base64,${imgResult.predictions[0].bytesBase64Encoded}`;
-            setEditFormData(prev => ({
-               ...prev,
-               images: [...(prev.images || []), base64Img]
-            }));
+            setEditFormData(prev => ({ ...prev, images: [...(prev.images || []), base64Img] }));
          }
       }
       
-    } catch (e: any) {
-      alert("Auto-fill failed: " + e.message);
-    } finally {
-      setIsAutoFilling(false);
-    }
+    } catch (e: any) { alert("Auto-fill failed: " + e.message); } 
+    finally { setIsAutoFilling(false); }
   };
 
   return (
