@@ -3,45 +3,45 @@ import React, { useState } from 'react';
 // Inline SVG components to replace lucide-react and resolve module errors
 const Icons = {
   Search: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="11" cy="11" r="8"></circle>
       <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
     </svg>
   ),
   Loader2: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
     </svg>
   ),
   Globe: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="12" r="10"></circle>
       <line x1="2" y1="12" x2="22" y2="12"></line>
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
     </svg>
   ),
   X: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <line x1="18" y1="6" x2="6" y2="18"></line>
       <line x1="6" y1="6" x2="18" y2="18"></line>
     </svg>
   ),
   ExternalLink: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
     </svg>
   ),
   AlertCircle: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="12" r="10"></circle>
       <line x1="12" y1="8" x2="12" y2="12"></line>
       <line x1="12" y1="16" x2="12.01" y2="16"></line>
     </svg>
   ),
   ImageIcon: ({ className }: { className?: string }) => (
-    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
       <circle cx="8.5" cy="8.5" r="1.5"></circle>
       <polyline points="21 15 16 10 5 21"></polyline>
@@ -76,11 +76,11 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     setResults([]);
 
     const apiKey = ""; // Environment provides this at runtime
-    // Switching to gemini-1.5-flash as it is more reliably permitted for google_search tool usage in most API tiers
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // MUST use gemini-2.5-flash-preview-09-2025 as it is the only supported model for text generation in this environment
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
-    const promptText = `Find real-world botanical images for the plant cultivar: "${query}". 
-    Use Google Search to locate high-quality, direct image URLs (.jpg, .png) from reputable sources like seed catalogs, university extensions, or botanical gardens. 
+    const promptText = `Find real-world botanical images for the plant: "${query}". 
+    Use Google Search to find high-quality, direct image URLs (.jpg, .png) from reputable sources like seed catalogs or botanical gardens. 
     
     Return the data as a valid JSON object with this exact structure:
     {
@@ -93,15 +93,13 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
       ]
     }
     
-    IMPORTANT: Provide ONLY the JSON. Do not include conversational text.`;
+    IMPORTANT: Provide ONLY the JSON. Do not include conversational text or markdown code blocks.`;
 
     const payload = {
       contents: [{ 
         parts: [{ text: promptText }] 
       }],
-      tools: [{ google_search: {} }]
-      // Note: We avoid responseMimeType: "application/json" here because it can conflict with search tools 
-      // on certain API keys/models, causing 403 or 400 errors. We will parse the text manually instead.
+      tools: [{ "google_search": {} }]
     };
 
     let retries = 0;
@@ -117,7 +115,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
 
         if (!response.ok) {
           if (response.status === 403) {
-            throw new Error("Access forbidden. Your API key might not have permission for Google Search grounding with this model.");
+            throw new Error("Access forbidden. Ensure Google Search tool is permitted for this environment.");
           }
           
           if (response.status === 429 && retries < maxRetries) {
@@ -144,7 +142,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
               throw new Error("No images found in the search results.");
             }
           } catch (parseErr) {
-            console.error("Parse Error:", contentText);
+            console.error("Parse Error Content:", contentText);
             throw new Error("The search engine returned an invalid data format.");
           }
         } else {
