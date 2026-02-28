@@ -1,12 +1,7 @@
 import React from 'react';
 import { SeedlingTray } from '../types';
 
-/**
- * TrayList Component
- * Displays the gallery of all active seedling trays.
- */
 export default function TrayList({ trays, navigateTo, handleGoBack, isLoadingDB, navMetadata }: any) {
-
   const handleCreateNewTray = () => {
     const newTray: SeedlingTray = {
       name: `Tray ${trays.length + 1}`, 
@@ -87,11 +82,11 @@ export default function TrayList({ trays, navigateTo, handleGoBack, isLoadingDB,
                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200 uppercase tracking-wider">{totalSown} Seeds</span>
                   </div>
                   
-                  {/* NEW: At-a-glance variety list */}
+                  {/* At-a-glance variety list */}
                   {tray.contents.length > 0 && (
                     <div className="mt-2.5 text-[10px] text-stone-500 truncate leading-tight">
                       <span className="font-semibold text-stone-400 mr-1">Includes:</span> 
-                      {tray.contents.map(c => c.variety_name).join(', ')}
+                      {tray.contents.map((c: any) => c.variety_name).join(', ')}
                     </div>
                   )}
                 </div>
