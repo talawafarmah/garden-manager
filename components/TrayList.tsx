@@ -3,11 +3,10 @@ import { SeedlingTray } from '../types';
 
 /**
  * TrayList Component
- * * Displays the gallery of all active seedling trays.
- * navMetadata allows this component to return to a previous context (like a Seed Detail)
- * if the user arrived here from somewhere other than the main dashboard.
+ * Displays the gallery of all active seedling trays.
  */
 export default function TrayList({ trays, navigateTo, handleGoBack, isLoadingDB, navMetadata }: any) {
+
   const handleCreateNewTray = () => {
     const newTray: SeedlingTray = {
       name: `Tray ${trays.length + 1}`, 
@@ -63,6 +62,7 @@ export default function TrayList({ trays, navigateTo, handleGoBack, isLoadingDB,
         ) : trays.length > 0 ? (
           trays.map((tray: SeedlingTray) => {
             const totalSown = tray.contents.reduce((s, i) => s + (i.sown_count || 0), 0);
+            
             return (
               <div 
                 key={tray.id} 
@@ -86,6 +86,14 @@ export default function TrayList({ trays, navigateTo, handleGoBack, isLoadingDB,
                      <span className="text-[10px] font-bold bg-stone-100 text-stone-600 px-2 py-0.5 rounded border border-stone-200 uppercase tracking-wider">{tray.contents.length} Varieties</span>
                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200 uppercase tracking-wider">{totalSown} Seeds</span>
                   </div>
+                  
+                  {/* NEW: At-a-glance variety list */}
+                  {tray.contents.length > 0 && (
+                    <div className="mt-2.5 text-[10px] text-stone-500 truncate leading-tight">
+                      <span className="font-semibold text-stone-400 mr-1">Includes:</span> 
+                      {tray.contents.map(c => c.variety_name).join(', ')}
+                    </div>
+                  )}
                 </div>
                 <div className="text-stone-300 group-hover:text-emerald-500 transition-colors pr-1">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>

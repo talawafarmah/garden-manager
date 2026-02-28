@@ -15,7 +15,7 @@ import TrayEdit from '../components/TrayEdit';
 
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>('dashboard');
-  const [selectedSeed, setSelectedSeed] = useState<any>(null); // Allowed any to support navigation metadata
+  const [selectedSeed, setSelectedSeed] = useState<any>(null); 
   const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
 
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -23,13 +23,7 @@ export default function App() {
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
-  // Persistence for vault scroll/filters
-  const [vaultState, setVaultState] = useState({
-    searchQuery: "",
-    activeFilter: "All",
-    page: 0,
-    scrollY: 0
-  });
+  const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
 
   const fetchCategories = async () => {
     const { data } = await supabase.from('seed_categories').select('*').order('name');
@@ -60,11 +54,7 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchCategories();
-    fetchInventory();
-    fetchTrays();
-  }, []);
+  useEffect(() => { fetchCategories(); fetchInventory(); fetchTrays(); }, []);
 
   const applyRoute = (view: AppView, payload: any = null) => {
     setActiveView(view);
@@ -78,14 +68,18 @@ export default function App() {
     if (view === 'tray_detail' && payload) setSelectedTray(payload);
     if (view === 'tray_edit' && payload) setSelectedTray(payload);
     
-    // Refresh lists on main view entry
     if (view === 'vault') fetchInventory();
     if (view === 'trays') { fetchTrays(); fetchInventory(); }
   };
 
-  const navigateTo = (view: AppView, payload: any = null) => {
+  // ADDED 'replace' flag to prevent history loops when saving edits
+  const navigateTo = (view: AppView, payload: any = null, replace: boolean = false) => {
     if (typeof window !== 'undefined') {
-        window.history.pushState({ view, payload }, '', `#${view}`);
+        if (replace) {
+            window.history.replaceState({ view, payload }, '', `#${view}`);
+        } else {
+            window.history.pushState({ view, payload }, '', `#${view}`);
+        }
     }
     applyRoute(view, payload);
   };
@@ -107,6 +101,14 @@ export default function App() {
         }
     };
     window.addEventListener('popstate', handlePopState);
+    
+    const initialHash = window.location.hash.replace('#', '') as AppView;
+    if (initialHash && ['vault', 'trays'].includes(initialHash)) {
+         window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
+         applyRoute(initialHash);
+    } else {
+         window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
+    }
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
@@ -123,7 +125,6 @@ export default function App() {
     case 'trays':
       return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'tray_detail':
-      // Inventory is passed here so TrayDetail can show seed thumbnails and link back correctly
       return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'tray_edit':
       return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;

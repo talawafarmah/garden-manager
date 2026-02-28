@@ -5,7 +5,6 @@ import { InventorySeed, SeedCategory, AppView } from '../types';
 export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0 }, setVaultState }: any) {
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   
-  // Bind directly to lifted state from App Router
   const searchQuery = vaultState.searchQuery || "";
   const activeFilter = vaultState.activeFilter || "All";
   const page = vaultState.page || 0;
@@ -17,47 +16,35 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   };
 
   const handleSetSearchQuery = (val: string) => updateVaultState({ searchQuery: val });
-  const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); // Reset page on filter change
+  const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); 
   const handleSetPage = (val: number) => updateVaultState({ page: val });
   
-  // Pagination & Loading States
   const [hasMore, setHasMore] = useState(true);
   const [isPagingDB, setIsPagingDB] = useState(false);
   const PAGE_SIZE = 10;
   const [isInitialMount, setIsInitialMount] = useState(true);
 
-  // Companion Modal States
   const [companionModalSeed, setCompanionModalSeed] = useState<InventorySeed | null>(null);
   const [companionInStockOnly, setCompanionInStockOnly] = useState(false);
   const [companionMatches, setCompanionMatches] = useState<InventorySeed[]>([]);
   const [isLoadingCompanions, setIsLoadingCompanions] = useState(false);
 
-  // Initial Mount & Restore Effect
   useEffect(() => {
     if (isInitialMount) {
         const restoreVaultData = async () => {
             setIsPagingDB(true);
             let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
 
-            if (activeFilter !== "All") {
-              query = query.eq('category', activeFilter);
-            }
-            if (searchQuery.trim() !== "") {
-              query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
-            }
+            if (activeFilter !== "All") query = query.eq('category', activeFilter);
+            if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
-            // Restore all pages up to where the user was previously
             const to = ((page + 1) * PAGE_SIZE) - 1;
             const { data, count, error } = await query.order('created_at', { ascending: false }).range(0, to);
 
             if (!error && data) {
                 setSeeds(data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })) as InventorySeed[]);
                 setHasMore(count !== null && data.length < count);
-                
-                // Let the DOM render the restored seeds, then snap to the saved scroll position
-                setTimeout(() => {
-                  window.scrollTo({ top: vaultState.scrollY || 0, behavior: 'instant' });
-                }, 50);
+                setTimeout(() => { window.scrollTo({ top: vaultState.scrollY || 0, behavior: 'instant' }); }, 50);
             }
             setIsPagingDB(false);
             setIsInitialMount(false);
@@ -66,15 +53,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     }
   }, [isInitialMount]);
 
-  // Debounced Search & Filter Effect (Triggers ONLY after initial mount)
   useEffect(() => {
     if (isInitialMount) return;
-
-    const timeoutId = setTimeout(() => {
-      handleSetPage(0);
-      fetchSeeds(0, true);
-    }, 300); // Wait 300ms after typing stops to query DB
-    
+    const timeoutId = setTimeout(() => { handleSetPage(0); fetchSeeds(0, true); }, 300); 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, activeFilter]);
 
@@ -82,13 +63,8 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     setIsPagingDB(true);
     let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
 
-    if (activeFilter !== "All") {
-      query = query.eq('category', activeFilter);
-    }
-    
-    if (searchQuery.trim() !== "") {
-      query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
-    }
+    if (activeFilter !== "All") query = query.eq('category', activeFilter);
+    if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
     const from = pageNumber * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -96,17 +72,11 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     const { data, error, count } = await query.order('created_at', { ascending: false }).range(from, to);
 
     if (error) {
-      console.error("Error fetching inventory:", error);
       alert("Failed to load inventory: " + error.message);
     } else if (data) {
       const sanitizedData = data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })) as InventorySeed[];
-      
-      if (reset) {
-        setSeeds(sanitizedData);
-      } else {
-        setSeeds(prev => [...prev, ...sanitizedData]);
-      }
-      
+      if (reset) setSeeds(sanitizedData);
+      else setSeeds(prev => [...prev, ...sanitizedData]);
       setHasMore(count !== null && from + data.length < count);
     }
     setIsPagingDB(false);
@@ -119,7 +89,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   };
 
   const handleSeedClick = (seed: InventorySeed) => {
-    // Save exactly where the user is scrolled to right before navigating away
     updateVaultState({ scrollY: window.scrollY });
     navigateTo('seed_detail', seed);
   };
@@ -127,10 +96,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const toggleOutOfStock = async (seed: InventorySeed, e: React.MouseEvent) => {
     e.stopPropagation(); 
     const newStatus = !seed.out_of_stock;
-    
-    // Optimistic UI update
     setSeeds(seeds.map((s: InventorySeed) => s.id === seed.id ? { ...s, out_of_stock: newStatus } : s));
-    
     const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
     if (error) {
       alert("Failed to update stock status: " + error.message);
@@ -146,20 +112,24 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (seed.companion_plants && seed.companion_plants.length > 0) {
       setIsLoadingCompanions(true);
       const orQuery = seed.companion_plants.map((c: string) => `category.ilike.%${c}%,variety_name.ilike.%${c}%`).join(',');
-      
-      const { data, error } = await supabase
-        .from('seed_inventory')
-        .select('id, variety_name, category, out_of_stock')
-        .neq('id', seed.id)
-        .or(orQuery);
-        
-      if (!error && data) {
-        setCompanionMatches(data as InventorySeed[]);
-      }
+      const { data, error } = await supabase.from('seed_inventory').select('id, variety_name, category, out_of_stock').neq('id', seed.id).or(orQuery);
+      if (!error && data) setCompanionMatches(data as InventorySeed[]);
       setIsLoadingCompanions(false);
     } else {
       setCompanionMatches([]);
     }
+  };
+
+  // ADDED: Launch a blank editor from the vault
+  const handleManualNew = () => {
+    const newSeed: any = {
+      id: '', category: '', variety_name: '', vendor: '', days_to_maturity: '',
+      species: '', notes: '', images: [], primaryImageIndex: 0, companion_plants: [],
+      cold_stratification: false, stratification_days: '', light_required: false,
+      germination_days: '', seed_depth: '', plant_spacing: '', row_spacing: '',
+      out_of_stock: false, sunlight: '', lifecycle: '', thumbnail: '', scoville_rating: ''
+    };
+    navigateTo('seed_edit', newSeed);
   };
 
   return (
@@ -230,16 +200,28 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
         </div>
       )}
 
-      <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
+      {/* HEADER WITH NEW ADD/SCAN BUTTONS */}
+      <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold">Seed Vault</h1>
+            <h1 className="text-xl font-bold truncate pr-2">Seed Vault</h1>
           </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => navigateTo('scanner')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Scan Packet">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+          <button onClick={() => navigateTo('importer')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Import Link">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+          </button>
+          <button onClick={handleManualNew} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Manual Entry">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          </button>
         </div>
       </header>
 

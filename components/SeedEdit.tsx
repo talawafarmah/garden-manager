@@ -232,7 +232,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       if (isNewRecord) setInventory([savedSeed, ...inventory]);
       else setInventory(inventory.map((s: InventorySeed) => s.id === seed.id ? savedSeed : s));
 
-      navigateTo('seed_detail', savedSeed); 
+      // FIX: Use replace flag to prevent back-button loops!
+      navigateTo('seed_detail', savedSeed, true); 
     } catch (error: any) { alert(error.message); } 
     finally { setIsSaving(false); }
   };
@@ -248,16 +249,25 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     }
   };
 
+  // Safe Cancel: Prevents history loops if cancelling out of an edit
+  const handleCancel = () => {
+    if (seed.id) {
+       navigateTo('seed_detail', seed, true); 
+    } else {
+       handleGoBack('vault');
+    }
+  };
+
   const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('seed_detail')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+          <button onClick={handleCancel} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
-          <h1 className="text-xl font-bold text-stone-800">Edit Seed</h1>
+          <h1 className="text-xl font-bold text-stone-800">{seed.id ? 'Edit Seed' : 'New Seed'}</h1>
         </div>
         <button onClick={handleSaveEdit} disabled={isSaving} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50">
           {isSaving ? "Saving..." : "Save"}
@@ -304,19 +314,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-widest">Basic Details</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label>
-              <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label>
-              <input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" />
-            </div>
+            <div className="col-span-2"><label className="block text-xs font-medium text-stone-500 mb-1">Shortcode ID <span className="text-red-400">*</span></label><input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-mono outline-none focus:border-emerald-500 uppercase" /></div>
+            <div className="col-span-2"><label className="block text-xs font-medium text-stone-500 mb-1">Variety Name</label><input type="text" value={editFormData.variety_name} onChange={(e) => setEditFormData({ ...editFormData, variety_name: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 font-bold outline-none focus:border-emerald-500" /></div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-stone-500 mb-1">Category</label>
               <select value={editFormData.category} onChange={(e) => {
                   const val = e.target.value;
-                  if (val === '__NEW__') { setShowNewCatForm(true); } else setShowNewCatForm(false);
+                  if (val === '__NEW__') { setShowNewCatForm(true); setNewCatName(""); setNewCatPrefix(""); } else setShowNewCatForm(false);
                   setEditFormData({ ...editFormData, category: val });
                 }} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500 appearance-none">
                 <option value="" disabled>Select...</option>
@@ -330,6 +334,15 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                 <div><label className="block text-[10px] font-medium text-emerald-800 mb-1">Prefix (1-2 char)</label><input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm uppercase outline-none" /></div>
               </div>
             )}
+            {isPepper && (
+               <div className="col-span-2 bg-red-50 p-3 rounded-lg border border-red-100 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-red-800">
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                     <label className="block text-xs font-bold mb-0">Scoville Rating (SHU)</label>
+                  </div>
+                  <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} placeholder="e.g. 50000" className="w-1/2 bg-white border border-red-200 rounded-md p-2 text-stone-800 font-bold outline-none focus:border-red-500" />
+               </div>
+            )}
             <div className="col-span-2"><label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label><input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label><input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Life Cycle</label><input type="text" value={editFormData.lifecycle} onChange={(e) => setEditFormData({ ...editFormData, lifecycle: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
@@ -339,7 +352,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-bold text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-widest">Planting Specs</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium text-stone-500 mb-1">Maturity (Days)</label><input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
+            <div><label className="block text-xs font-medium text-stone-500 mb-1">Days to Maturity</label><input type="number" value={editFormData.days_to_maturity} onChange={(e) => setEditFormData({ ...editFormData, days_to_maturity: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Sunlight</label><input type="text" value={editFormData.sunlight} onChange={(e) => setEditFormData({ ...editFormData, sunlight: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Plant Spacing</label><input type="text" value={editFormData.plant_spacing} onChange={(e) => setEditFormData({ ...editFormData, plant_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Row Spacing</label><input type="text" value={editFormData.row_spacing} onChange={(e) => setEditFormData({ ...editFormData, row_spacing: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
@@ -362,10 +375,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           <div><label className="block text-xs font-bold text-stone-800 mb-2 uppercase text-[10px] tracking-widest">Growing Notes</label><textarea value={editFormData.notes} onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })} rows={5} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-3 text-stone-800 outline-none focus:border-emerald-500 resize-none leading-relaxed text-sm" /></div>
         </section>
 
-        <button onClick={handleDeleteSeed} disabled={isSaving} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          Delete Seed Variety
-        </button>
+        {seed.id && <button onClick={handleDeleteSeed} className="w-full py-4 mt-4 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>Delete Seed Permanently</button>}
       </div>
     </main>
   );
