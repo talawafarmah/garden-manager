@@ -76,8 +76,8 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     setResults([]);
 
     const apiKey = ""; // Environment provides this at runtime
-    // Using gemini-2-flash as requested
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2-flash:generateContent?key=${apiKey}`;
+    // Using gemini-2.5-flash-preview-09-2025 to avoid 403 Forbidden errors in this environment
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
     const systemPrompt = `You are a professional horticultural researcher. 
     Find real-world images for the plant: "${query}". 
@@ -125,6 +125,11 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         });
 
         if (!response.ok) {
+          // Handle specific status codes
+          if (response.status === 403) {
+            throw new Error("Access forbidden. This usually happens if the model string or search tool is not permitted for the current API key.");
+          }
+          
           if (response.status === 429 && retries < maxRetries) {
             const delay = Math.pow(2, retries) * 1000;
             retries++;
@@ -172,7 +177,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
             </div>
             <div>
               <h3 className="text-lg font-bold text-white leading-tight">Web Image Search</h3>
-              <p className="text-xs text-slate-400">Powered by Gemini 2 Flash</p>
+              <p className="text-xs text-slate-400">Powered by Gemini AI</p>
             </div>
           </div>
           <button 
