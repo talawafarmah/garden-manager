@@ -78,43 +78,34 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     const apiKey = ""; // Environment provides this at runtime
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
-    const systemPrompt = `You are a professional horticultural researcher with deep knowledge of seed catalogs and botanical databases.
-    Your task is to find real-world image URLs for the plant variety: "${query}".
-    
-    Since the grounding tool is unavailable, you must rely on your internal knowledge of typical image path structures from reliable botanical sources.
-    
-    Look for results from:
-    1. Baker Creek Heirloom Seeds (rareseeds.com)
-    2. Johnny's Selected Seeds (johnnyseeds.com)
-    3. Burpee Seeds (burpee.com)
-    4. University extension databases (.edu)
-    5. Botanical gardens (.org)
-    
-    Return a JSON array of 4-6 high-quality results in this exact format:
-    [{"url": "valid_direct_image_link", "title": "precise_variety_name", "source": "website_name"}]
-    
-    IMPORTANT: Provide ONLY the JSON array. Do not include markdown code blocks or any conversational text.`;
+    const systemPrompt = `You are a professional horticultural researcher. Find real-world image URLs for the plant: "${query}". Use Google Search grounding to find high-quality links from reputable botanical sources. 
+    Return a JSON object with an "images" array. Each item must have: "url" (direct image link), "title" (variety name), and "source" (website name).`;
 
     const payload = {
       contents: [{ 
-        role: "user",
-        parts: [{ text: `Generate image reference results for: ${query}` }] 
+        parts: [{ text: `Search for real images of: ${query}` }] 
       }],
       systemInstruction: {
         parts: [{ text: systemPrompt }]
       },
+      tools: [{ "google_search": {} }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              url: { type: "string" },
-              title: { type: "string" },
-              source: { type: "string" }
-            },
-            required: ["url", "title", "source"]
+          type: "OBJECT",
+          properties: {
+            images: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  url: { type: "string" },
+                  title: { type: "string" },
+                  source: { type: "string" }
+                },
+                required: ["url", "title", "source"]
+              }
+            }
           }
         }
       }
@@ -147,8 +138,8 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         if (contentText) {
           try {
             const parsed = JSON.parse(contentText);
-            if (Array.isArray(parsed)) {
-              setResults(parsed);
+            if (parsed.images && Array.isArray(parsed.images)) {
+              setResults(parsed.images);
             } else {
               throw new Error("Invalid botanical data structure received.");
             }
@@ -171,7 +162,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
       <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 p-5">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
@@ -190,7 +180,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
           </button>
         </div>
 
-        {/* Search Bar */}
         <div className="p-5 bg-slate-900/50">
           <form onSubmit={searchImages} className="relative">
             <input
@@ -210,7 +199,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
           </form>
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
           {isSearching && (
             <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">
@@ -255,7 +243,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
                       alt={img.title}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                       onError={(e) => {
-                        // Fallback to a styled placeholder if the URL is old or blocked
                         (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(img.source)}`;
                       }}
                     />
@@ -280,7 +267,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         <div className="p-4 bg-slate-950/50 border-t border-slate-800/50 flex justify-between items-center">
           <p className="text-[10px] text-slate-500 flex items-center gap-1">
             <Icons.AlertCircle className="w-3 h-3" />
-            Links are generated based on horticultural supplier databases.
+            Grounding references via Google Search.
           </p>
         </div>
       </div>
