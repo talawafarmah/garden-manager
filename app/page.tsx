@@ -15,7 +15,7 @@ import TrayEdit from '../components/TrayEdit';
 
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>('dashboard');
-  const [selectedSeed, setSelectedSeed] = useState<InventorySeed | null>(null);
+  const [selectedSeed, setSelectedSeed] = useState<any>(null); // Allowed any to support navigation metadata
   const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
 
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -23,7 +23,7 @@ export default function App() {
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
-  // Lift vault state up here so it survives navigation unmounts
+  // Persistence for vault scroll/filters
   const [vaultState, setVaultState] = useState({
     searchQuery: "",
     activeFilter: "All",
@@ -78,6 +78,7 @@ export default function App() {
     if (view === 'tray_detail' && payload) setSelectedTray(payload);
     if (view === 'tray_edit' && payload) setSelectedTray(payload);
     
+    // Refresh lists on main view entry
     if (view === 'vault') fetchInventory();
     if (view === 'trays') { fetchTrays(); fetchInventory(); }
   };
@@ -106,14 +107,6 @@ export default function App() {
         }
     };
     window.addEventListener('popstate', handlePopState);
-    
-    const initialHash = window.location.hash.replace('#', '') as AppView;
-    if (initialHash && ['vault', 'trays'].includes(initialHash)) {
-         window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
-         applyRoute(initialHash);
-    } else {
-         window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
-    }
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
@@ -124,17 +117,15 @@ export default function App() {
     case 'vault':
       return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} />;
     case 'seed_detail':
-      // Passes categories for ID generation during duplication
       return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'trays':
       return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'tray_detail':
-      // Passes inventory list so tray contents can show thumbnails and link to seed details
+      // Inventory is passed here so TrayDetail can show seed thumbnails and link back correctly
       return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'tray_edit':
-      // PASSED CATEGORIES DOWN HERE
       return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'dashboard':
     default:

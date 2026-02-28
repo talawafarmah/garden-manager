@@ -213,6 +213,15 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, categories,
     return matchesSearch && matchesFilter;
   });
 
+  // Dynamic back navigation: if editing existing tray, go back to detail. If new, go back to list.
+  const handleCancel = () => {
+    if (trayFormData.id) {
+       navigateTo('tray_detail', tray);
+    } else {
+       handleGoBack('trays');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       
@@ -287,7 +296,9 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, categories,
 
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+          <button onClick={handleCancel} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
           <h1 className="text-xl font-bold text-stone-800">{trayFormData.id ? 'Edit Tray' : 'New Tray'}</h1>
         </div>
         <button onClick={handleSaveTray} disabled={isSaving} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 transition-colors shadow-sm disabled:opacity-50">
