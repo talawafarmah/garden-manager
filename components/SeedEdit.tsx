@@ -171,7 +171,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       }
 
       // Explicitly construct the database payload, converting empty strings to actual nulls for numeric columns to prevent DB crashes
-      // Typed as 'any' to bypass strict TS interface temporarily just for the DB submission
       const payloadToSave: any = { 
         id: editFormData.id,
         category: finalCatName, 
@@ -196,8 +195,19 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         thumbnail: newThumbnail 
       };
       
-      const { error } = await supabase.from('seed_inventory').update(payloadToSave).eq('id', seed.id);
-      if (error) throw new Error("Failed to update database: " + error.message);
+      // Check if this record already exists in the database (e.g., if it's a fresh Duplicate vs an Edit)
+      const { data: existingRecords } = await supabase.from('seed_inventory').select('id').eq('id', seed.id);
+      const isNewDuplicate = !existingRecords || existingRecords.length === 0;
+
+      if (isNewDuplicate) {
+        // It's a newly duplicated seed that doesn't exist yet, insert it!
+        const { error } = await supabase.from('seed_inventory').insert([payloadToSave]);
+        if (error) throw new Error("Failed to insert new duplicated seed: " + error.message);
+      } else {
+        // It's a standard edit, update the existing row!
+        const { error } = await supabase.from('seed_inventory').update(payloadToSave).eq('id', seed.id);
+        if (error) throw new Error("Failed to update database: " + error.message);
+      }
       
       // Reconstruct local state with valid TS types to pass back to the UI seamlessly
       const savedSeed: InventorySeed = {
