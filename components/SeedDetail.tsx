@@ -68,6 +68,22 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
   
   const seedHistory = trays.filter((t: SeedlingTray) => t.contents.some(c => c.seed_id === fullSeed.id));
 
+  // Pepper & Scoville Indicator Logic
+  const isPepper = fullSeed.category?.toLowerCase().includes('pepper');
+  const shu = fullSeed.scoville_rating !== undefined && fullSeed.scoville_rating !== null ? Number(fullSeed.scoville_rating) : null;
+  
+  let spiceColor = "bg-stone-100 text-stone-500 border-stone-200";
+  let spiceLabel = "Unknown Heat";
+  if (shu !== null && !isNaN(shu)) {
+    if (shu === 0) { spiceColor = "bg-stone-100 text-stone-600 border-stone-200"; spiceLabel = "Sweet (0 SHU)"; }
+    else if (shu < 2500) { spiceColor = "bg-green-100 text-green-700 border-green-200"; spiceLabel = `Mild (${shu.toLocaleString()} SHU)`; }
+    else if (shu < 30000) { spiceColor = "bg-amber-100 text-amber-700 border-amber-200"; spiceLabel = `Medium (${shu.toLocaleString()} SHU)`; }
+    else if (shu < 100000) { spiceColor = "bg-orange-100 text-orange-700 border-orange-200"; spiceLabel = `Hot (${shu.toLocaleString()} SHU)`; }
+    else if (shu < 300000) { spiceColor = "bg-red-100 text-red-700 border-red-200"; spiceLabel = `Extra Hot (${shu.toLocaleString()} SHU)`; }
+    else { spiceColor = "bg-red-900 text-red-100 border-red-800"; spiceLabel = `Superhot (${shu.toLocaleString()} SHU)`; }
+  }
+
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       {fullScreenImage && (
@@ -125,6 +141,17 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
         )}
 
         <div className="p-4 space-y-4">
+          
+          {isPepper && (
+             <div className={`p-3 rounded-xl border flex items-center justify-between shadow-sm ${spiceColor}`}>
+                <div className="flex items-center gap-2">
+                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                   <span className="font-bold">Scoville Heat Rating</span>
+                </div>
+                <div className="font-black text-lg">{spiceLabel}</div>
+             </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100"><div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Maturity</div><div className="text-stone-800 font-bold">{fullSeed.days_to_maturity} Days</div></div>
             <div className="bg-white p-3.5 rounded-xl shadow-sm border border-stone-100"><div className="text-stone-400 text-[10px] font-bold uppercase tracking-wider mb-1">Sunlight</div><div className="text-stone-800 font-bold truncate">{fullSeed.sunlight || '--'}</div></div>

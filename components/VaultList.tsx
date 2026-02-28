@@ -30,7 +30,8 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
-    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants', { count: 'exact' });
+    // Added scoville_rating to the select query
+    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
 
     // Apply Category Filter
     if (activeFilter !== "All") {
@@ -182,7 +183,8 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
+          {/* Explicitly call navigateTo('dashboard') to bypass history stack issues */}
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -223,6 +225,21 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
               {seeds.map((seed: InventorySeed) => {
                 const thumb = seed.thumbnail || null;
                 const isOutOfStock = seed.out_of_stock;
+                
+                // Pepper & Scoville Indicator Logic
+                const isPepper = seed.category?.toLowerCase().includes('pepper');
+                const shu = seed.scoville_rating !== undefined && seed.scoville_rating !== null ? Number(seed.scoville_rating) : null;
+                
+                let spiceColor = "bg-stone-100 text-stone-500 border-stone-200";
+                let spiceLabel = "SHU ?";
+                if (shu !== null && !isNaN(shu)) {
+                  if (shu === 0) { spiceColor = "bg-stone-100 text-stone-600 border-stone-200"; spiceLabel = "Sweet"; }
+                  else if (shu < 2500) { spiceColor = "bg-green-100 text-green-700 border-green-200"; spiceLabel = "Mild"; }
+                  else if (shu < 30000) { spiceColor = "bg-amber-100 text-amber-700 border-amber-200"; spiceLabel = "Medium"; }
+                  else if (shu < 100000) { spiceColor = "bg-orange-100 text-orange-700 border-orange-200"; spiceLabel = "Hot"; }
+                  else if (shu < 300000) { spiceColor = "bg-red-100 text-red-700 border-red-200"; spiceLabel = "X-Hot"; }
+                  else { spiceColor = "bg-red-900 text-red-100 border-red-800"; spiceLabel = "Superhot"; }
+                }
 
                 return (
                   <div key={seed.id} onClick={() => navigateTo('seed_detail', seed)} className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}>
@@ -240,8 +257,19 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                           <div className="bg-stone-100 text-stone-600 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border border-stone-200 shadow-inner whitespace-nowrap">{seed.id}</div>
                         </div>
                         <div className="text-xs text-emerald-600 font-semibold mb-2 truncate">{seed.category} <span className="text-stone-400 font-normal italic">({seed.species})</span></div>
-                        <div className="flex justify-between items-center text-[11px]">
-                          <span className="font-medium text-stone-600 flex items-center gap-1 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200"><svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>{seed.plant_spacing || '--'}</span>
+                        <div className="flex justify-between items-center text-[11px] mt-1">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="font-medium text-stone-600 flex items-center gap-1 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200">
+                              <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                              {seed.plant_spacing || '--'}
+                            </span>
+                            {isPepper && (
+                              <span className={`font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded border ${spiceColor}`} title={shu !== null && !isNaN(shu) ? `${shu.toLocaleString()} SHU` : 'Unknown Scoville'}>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                                {spiceLabel}
+                              </span>
+                            )}
+                          </div>
                           <span className="font-bold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded flex-shrink-0 border border-stone-200">{seed.days_to_maturity} DTM</span>
                         </div>
                       </div>

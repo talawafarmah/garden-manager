@@ -167,6 +167,12 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
 
+      // Ensure SHU is a number or undefined
+      let parsedScoville: number | undefined = undefined;
+      if (editFormData.scoville_rating !== undefined && editFormData.scoville_rating !== null && editFormData.scoville_rating !== "") {
+         parsedScoville = Number(editFormData.scoville_rating);
+      }
+
       // Explicitly construct the payload to prevent schema cache errors from unexpected AI keys
       const payload: Partial<InventorySeed> = { 
         id: editFormData.id,
@@ -188,6 +194,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         row_spacing: editFormData.row_spacing,
         sunlight: editFormData.sunlight,
         lifecycle: editFormData.lifecycle,
+        scoville_rating: parsedScoville,
         thumbnail: newThumbnail 
       };
       
@@ -228,7 +235,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Vendor: ${editFormData.vendor || 'unknown'}, Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown).\n\nIMAGE SEARCH INSTRUCTIONS:\nUse the Google Search tool to find a direct image file URL (.jpg, .png, .webp). To find the best image, search exactly for: "images of the ${editFormData.variety_name} ${editFormData.category} sold by ${editFormData.vendor || 'seed vendors'}". Extract the direct raw image URL and put it in the "image_url" field. DO NOT put an HTML webpage URL. If you cannot find a direct image file, set it to null:\n{"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"image_url":null}` }]
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${editFormData.variety_name}" (Vendor: ${editFormData.vendor || 'unknown'}, Category: ${editFormData.category}, Species: ${editFormData.species || 'unknown'}). \n\n${JSON.stringify(cleanFormData)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). If it is a pepper, try to find the Scoville Heat Unit (SHU) rating and include it as a number in scoville_rating. \n\nIMAGE SEARCH INSTRUCTIONS:\nUse the Google Search tool to find a direct image file URL (.jpg, .png, .webp). To find the best image, search exactly for: "images of the ${editFormData.variety_name} ${editFormData.category} sold by ${editFormData.vendor || 'seed vendors'}". Extract the direct raw image URL and put it in the "image_url" field. DO NOT put an HTML webpage URL. If you cannot find a direct image file, set it to null:\n{"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"scoville_rating":null,"image_url":null}` }]
         }],
         tools: [{ google_search: {} }]
       };
@@ -236,8 +243,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
       const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
       
-      let fetchedExternalImage = false;
-
       if (textResponse) {
         const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
         const { image_url, ...restData } = parsedData; // Separate out the temporary image_url field
@@ -261,7 +266,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                
                // It successfully loaded! Attach it to the form
                setEditFormData(prev => ({ ...prev, images: [...(prev.images || []), image_url] }));
-               fetchedExternalImage = true;
             } catch (e) {
                console.warn("Failed to load external image found by AI. It may have been a dead link or a webpage.");
             }
@@ -271,6 +275,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     } catch (e: any) { alert("Auto-fill failed: " + e.message); } 
     finally { setIsAutoFilling(false); }
   };
+
+  const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
@@ -357,6 +363,18 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                 <div><label className="block text-[10px] font-medium text-emerald-800 mb-1">Prefix (1-2 char)</label><input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-white border border-emerald-300 rounded-md p-2 text-sm uppercase outline-none" /></div>
               </div>
             )}
+            
+            {/* Conditional Pepper Field */}
+            {isPepper && (
+               <div className="col-span-2 bg-red-50 p-3 rounded-lg border border-red-100 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-red-800">
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                     <label className="block text-xs font-bold mb-0">Scoville Rating (SHU)</label>
+                  </div>
+                  <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} placeholder="e.g. 50000" className="w-1/2 bg-white border border-red-200 rounded-md p-2 text-stone-800 font-bold outline-none focus:border-red-500" />
+               </div>
+            )}
+
             <div className="col-span-2"><label className="block text-xs font-medium text-stone-500 mb-1">Botanical Species</label><input type="text" value={editFormData.species} onChange={(e) => setEditFormData({ ...editFormData, species: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 italic outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Vendor / Source</label><input type="text" value={editFormData.vendor} onChange={(e) => setEditFormData({ ...editFormData, vendor: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-medium text-stone-500 mb-1">Life Cycle</label><input type="text" value={editFormData.lifecycle} onChange={(e) => setEditFormData({ ...editFormData, lifecycle: e.target.value })} className="w-full bg-stone-50 border border-stone-300 rounded-lg p-2.5 text-stone-800 outline-none focus:border-emerald-500" /></div>
