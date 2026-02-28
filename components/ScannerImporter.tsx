@@ -101,12 +101,13 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
         contents: [{ 
           role: "user", 
           parts: [
-            { text: "Analyze this seed packet image. Extract all details requested in the JSON schema. Map the category to a broad group." }, 
+            { text: "Analyze this seed packet image. Extract all details requested in the JSON schema. Map the category to a broad group. Use the Google Search tool to fill in any missing botanical gaps." }, 
             { inlineData: { mimeType: mimeType, data: base64Data } }
           ] 
         }],
         systemInstruction: aiSystemInstruction, 
-        generationConfig: aiGenerationConfig
+        generationConfig: aiGenerationConfig,
+        tools: [{ google_search: {} }] // Restored Auto-Fill search grounding
       };
       
       const modelToUse = await getBestModel();
@@ -172,7 +173,6 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
         } catch(e) {}
       }
       
-      // We set the image preview to the URL extracted. The SeedEdit component will handle resizing and uploading this.
       if (extractedImageUrl) setImagePreview(extractedImageUrl);
 
       doc.querySelectorAll('script, style, nav, footer, header, iframe').forEach(el => el.remove());
@@ -182,10 +182,49 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
       const payload = {
         contents: [{ 
           role: "user", 
-          parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group.\n\nWebsite Content:\n${cleanText}` }] 
+          parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. Use the Google Search tool to fill in any missing botanical gaps.\n\nWebsite Content:\n${cleanText}` }] 
         }],
         systemInstruction: aiSystemInstruction, 
-        generationConfig: aiGenerationConfig
+        generationConfig: aiGenerationConfig,
+        tools: [{ google_search: {} }] // Restored Auto-Fill search grounding
+      };
+      
+      const modelToUse = await getBestModel();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      const result = await fetchWithRetry(url, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      }, 3);
+      
+      processAiResult(result.candidates?.[0]?.content?.parts?.[0]?.text);
+    } catch (err: any) { 
+      setErrorMsg(`Error: ${err.message}`);
+    } finally { 
+      setIsAnalyzing(false); 
+    }
+  };
+
+  const handleAutoFill = async () => {
+    if (!analysisResult) return;
+    setIsAnalyzing(true); 
+    setErrorMsg(null);
+    
+    if (!apiKey) { 
+      setErrorMsg("Missing API Key!"); 
+      setIsAnalyzing(false); 
+      return; 
+    }
+    
+    try {
+      const payload = {
+        contents: [{ 
+          role: "user", 
+          parts: [{ text: `You are an expert horticulturist. Here is the current data extracted so far for a seed named "${analysisResult.variety_name || ''}" (Vendor: ${analysisResult.vendor || 'unknown'}, Category: ${analysisResult.category || ''}). \n\n${JSON.stringify(analysisResult)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.` }] 
+        }],
+        systemInstruction: aiSystemInstruction, 
+        generationConfig: aiGenerationConfig,
+        tools: [{ google_search: {} }]
       };
       
       const modelToUse = await getBestModel();
@@ -276,7 +315,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
           newSeedPayload.newCatPrefix = newCatPrefix;
       }
 
-      // Navigate to SeedEdit to finalize saving, bypassing direct insert here
+      // Navigate to SeedEdit to finalize saving
       navigateTo('seed_edit', newSeedPayload, true);
     }
   };
@@ -315,6 +354,14 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
 
         {analysisResult ? (
           <div className="w-full max-w-sm animate-in slide-in-from-bottom-4 duration-500 pb-10 space-y-4">
+            
+            <button 
+              onClick={handleAutoFill}
+              disabled={isAnalyzing}
+              className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75"
+            >
+              {isAnalyzing ? 'Gathering Data...' : '✨ Magic Auto-Fill (AI)'}
+            </button>
             
             {imagePreview && (
               <div className="rounded-2xl overflow-hidden border border-stone-700 h-24 relative shadow-lg">
