@@ -22,6 +22,9 @@ const Icons = {
   ImageIcon: ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
   ),
+  Zap: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 2L3 14h6l-3 8 9-12h-6l3-8z"></path></svg>
+  ),
 };
 
 interface SearchResult {
@@ -40,9 +43,9 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
   const [query, setQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; isPermission?: boolean } | null>(null);
 
-  const performSearch = async (e?: React.FormEvent) => {
+  const performSearch = async (e?: React.FormEvent, forceNoGrounding = false) => {
     if (e) e.preventDefault();
     if (!query.trim()) return;
 
@@ -53,27 +56,33 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     const apiKey = ""; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
-    // Moving all instructions into a single user message to maximize grounding tool compatibility
-    const promptText = `Find real-world botanical photos for the plant variety: "${query}". 
-    Use Google Search to find high-quality image URLs from reputable sources like seed catalogs (Baker Creek, Johnny's, Burpee), botanical gardens, or university extensions.
+    const promptText = forceNoGrounding 
+      ? `You are an elite horticulturist. Since live web search is restricted, use your internal knowledge to provide high-quality photographic references and catalog links for the variety: "${query}". 
+         Return a JSON object with an "images" array. Each item must have: "url" (a likely direct link or catalog page from Rare Seeds, Johnny's, or Burpee), "title", and "source".`
+      : `Find real-world botanical photos for the plant variety: "${query}". 
+         Use Google Search grounding to find high-quality image URLs from reputable sources like seed catalogs (Baker Creek, Johnny's, Burpee), botanical gardens, or university extensions.
     
-    Return the results ONLY as a valid JSON object in this format:
-    {
-      "images": [
-        {
-          "url": "direct_image_link_or_catalog_page",
-          "title": "descriptive_plant_name",
-          "source": "website_name"
-        }
-      ]
-    }`;
+         Return the results ONLY as a valid JSON object in this format:
+         {
+           "images": [
+             {
+               "url": "direct_image_link_or_catalog_page",
+               "title": "descriptive_plant_name",
+               "source": "website_name"
+             }
+           ]
+         }`;
 
-    const payload = {
+    const payload: any = {
       contents: [{ 
         parts: [{ text: promptText }] 
-      }],
-      tools: [{ "google_search": {} }]
+      }]
     };
+
+    // Only add tools if grounding isn't explicitly disabled
+    if (!forceNoGrounding) {
+      payload.tools = [{ "google_search": {} }];
+    }
 
     let retries = 0;
     const maxRetries = 5;
@@ -87,6 +96,15 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         });
 
         if (!response.ok) {
+          // If Grounding returns a 403, we flag it specifically
+          if (response.status === 403) {
+            setError({ 
+              message: "Grounding tool access forbidden. This environment may restrict external search grounding.",
+              isPermission: true 
+            });
+            return;
+          }
+
           if (response.status === 429 && retries < maxRetries) {
             const delay = Math.pow(2, retries) * 1000;
             retries++;
@@ -99,7 +117,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         const data = await response.json();
         const contentText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         
-        // Manual JSON extraction to handle model verbosity or markdown fences
         try {
           const jsonMatch = contentText.match(/\{[\s\S]*\}/);
           if (!jsonMatch) throw new Error("No JSON found in response");
@@ -111,7 +128,6 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
             throw new Error("Invalid response structure");
           }
         } catch (parseErr) {
-          // Fallback: If JSON parsing fails, check if grounding metadata contains URIs
           const grounding = data.candidates?.[0]?.groundingMetadata?.groundingAttributions;
           if (grounding && grounding.length > 0) {
             const fallbackResults = grounding.map((g: any) => ({
@@ -128,7 +144,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
           throw new Error("Could not extract botanical results from search.");
         }
       } catch (err: any) {
-        setError(err.message || "Failed to retrieve search results.");
+        setError({ message: err.message || "Failed to retrieve search results." });
       } finally {
         setIsSearching(false);
       }
@@ -147,7 +163,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
             </div>
             <div>
               <h3 className="text-lg font-bold text-white">Botanical Image Search</h3>
-              <p className="text-xs text-slate-400">Powered by Google Search Grounding</p>
+              <p className="text-xs text-slate-400">Grounding research via Google Search</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors">
@@ -156,7 +172,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         </div>
 
         <div className="p-5 bg-slate-900/50">
-          <form onSubmit={performSearch} className="relative">
+          <form onSubmit={(e) => performSearch(e)} className="relative">
             <input
               type="text"
               value={query}
@@ -192,10 +208,23 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
           {error && (
             <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
               <Icons.AlertCircle className="w-12 h-12 text-red-500/50 mb-3" />
-              <p className="text-red-400 text-sm font-medium mb-6">{error}</p>
-              <button onClick={() => performSearch()} className="px-6 py-3 bg-slate-800 text-white rounded-xl hover:bg-slate-700 font-bold">
-                Try Again
-              </button>
+              <p className="text-red-400 text-sm font-medium mb-6">{error.message}</p>
+              
+              <div className="flex flex-col gap-3 w-full max-w-xs">
+                {error.isPermission ? (
+                  <button 
+                    onClick={(e) => performSearch(e, true)}
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-all font-bold shadow-lg shadow-emerald-900/40"
+                  >
+                    <Icons.Zap className="w-4 h-4 text-white" />
+                    Use Internal Knowledge
+                  </button>
+                ) : (
+                  <button onClick={(e) => performSearch(e)} className="px-6 py-3 bg-slate-800 text-white rounded-xl hover:bg-slate-700 font-bold">
+                    Try Again
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
