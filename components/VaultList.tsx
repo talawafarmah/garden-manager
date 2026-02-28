@@ -1,17 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory, AppView } from '../types';
 
-export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack }: any) {
+export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0 }, setVaultState }: any) {
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("All");
   
-  // Pagination States
-  const [page, setPage] = useState(0);
+  // Bind directly to lifted state from App Router
+  const searchQuery = vaultState.searchQuery || "";
+  const activeFilter = vaultState.activeFilter || "All";
+  const page = vaultState.page || 0;
+
+  const updateVaultState = (updates: any) => {
+     if (setVaultState) {
+       setVaultState((prev: any) => ({ ...prev, ...updates }));
+     }
+  };
+
+  const handleSetSearchQuery = (val: string) => updateVaultState({ searchQuery: val });
+  const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); // Reset page on filter change
+  const handleSetPage = (val: number) => updateVaultState({ page: val });
+  
+  // Pagination & Loading States
   const [hasMore, setHasMore] = useState(true);
   const [isPagingDB, setIsPagingDB] = useState(false);
   const PAGE_SIZE = 10;
+  const [isInitialMount, setIsInitialMount] = useState(true);
 
   // Companion Modal States
   const [companionModalSeed, setCompanionModalSeed] = useState<InventorySeed | null>(null);
@@ -19,31 +32,64 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const [companionMatches, setCompanionMatches] = useState<InventorySeed[]>([]);
   const [isLoadingCompanions, setIsLoadingCompanions] = useState(false);
 
-  // Debounced Search & Filter Effect
+  // Initial Mount & Restore Effect
   useEffect(() => {
+    if (isInitialMount) {
+        const restoreVaultData = async () => {
+            setIsPagingDB(true);
+            let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
+
+            if (activeFilter !== "All") {
+              query = query.eq('category', activeFilter);
+            }
+            if (searchQuery.trim() !== "") {
+              query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
+            }
+
+            // Restore all pages up to where the user was previously
+            const to = ((page + 1) * PAGE_SIZE) - 1;
+            const { data, count, error } = await query.order('created_at', { ascending: false }).range(0, to);
+
+            if (!error && data) {
+                setSeeds(data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })) as InventorySeed[]);
+                setHasMore(count !== null && data.length < count);
+                
+                // Let the DOM render the restored seeds, then snap to the saved scroll position
+                setTimeout(() => {
+                  window.scrollTo({ top: vaultState.scrollY || 0, behavior: 'instant' });
+                }, 50);
+            }
+            setIsPagingDB(false);
+            setIsInitialMount(false);
+        };
+        restoreVaultData();
+    }
+  }, [isInitialMount]);
+
+  // Debounced Search & Filter Effect (Triggers ONLY after initial mount)
+  useEffect(() => {
+    if (isInitialMount) return;
+
     const timeoutId = setTimeout(() => {
-      setPage(0);
+      handleSetPage(0);
       fetchSeeds(0, true);
     }, 300); // Wait 300ms after typing stops to query DB
+    
     return () => clearTimeout(timeoutId);
   }, [searchQuery, activeFilter]);
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
-    // Added scoville_rating to the select query
     let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
 
-    // Apply Category Filter
     if (activeFilter !== "All") {
       query = query.eq('category', activeFilter);
     }
     
-    // Apply Search Query via DB
     if (searchQuery.trim() !== "") {
       query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
     }
 
-    // Apply Pagination Range
     const from = pageNumber * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
     
@@ -61,7 +107,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
         setSeeds(prev => [...prev, ...sanitizedData]);
       }
       
-      // Determine if there are more records to load
       setHasMore(count !== null && from + data.length < count);
     }
     setIsPagingDB(false);
@@ -69,8 +114,14 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const handleLoadMore = () => {
     const nextPage = page + 1;
-    setPage(nextPage);
+    handleSetPage(nextPage);
     fetchSeeds(nextPage);
+  };
+
+  const handleSeedClick = (seed: InventorySeed) => {
+    // Save exactly where the user is scrolled to right before navigating away
+    updateVaultState({ scrollY: window.scrollY });
+    navigateTo('seed_detail', seed);
   };
 
   const toggleOutOfStock = async (seed: InventorySeed, e: React.MouseEvent) => {
@@ -83,7 +134,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
     if (error) {
       alert("Failed to update stock status: " + error.message);
-      // Revert on error
       setSeeds(seeds.map((s: InventorySeed) => s.id === seed.id ? { ...s, out_of_stock: !newStatus } : s));
     }
   };
@@ -93,7 +143,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     setCompanionModalSeed(seed);
     setCompanionInStockOnly(false);
     
-    // Fetch companion matches dynamically so we don't need the whole DB loaded
     if (seed.companion_plants && seed.companion_plants.length > 0) {
       setIsLoadingCompanions(true);
       const orQuery = seed.companion_plants.map((c: string) => `category.ilike.%${c}%,variety_name.ilike.%${c}%`).join(',');
@@ -183,7 +232,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          {/* Explicitly call navigateTo('dashboard') to bypass history stack issues */}
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -202,7 +250,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
             type="text" 
             placeholder="Search by name, category, or code..." 
             value={searchQuery} 
-            onChange={(e) => setSearchQuery(e.target.value)} 
+            onChange={(e) => handleSetSearchQuery(e.target.value)} 
             className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all" 
           />
           <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -210,9 +258,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
         {/* Dynamic Filter Chips */}
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          <button onClick={() => setActiveFilter("All")} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === 'All' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>All</button>
+          <button onClick={() => handleSetActiveFilter("All")} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === 'All' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>All</button>
           {categories.map((cat: SeedCategory) => (
-            <button key={cat.name} onClick={() => setActiveFilter(cat.name)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat.name ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>{cat.name}</button>
+            <button key={cat.name} onClick={() => handleSetActiveFilter(cat.name)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat.name ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>{cat.name}</button>
           ))}
         </div>
 
@@ -242,7 +290,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                 }
 
                 return (
-                  <div key={seed.id} onClick={() => navigateTo('seed_detail', seed)} className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}>
+                  <div key={seed.id} onClick={() => handleSeedClick(seed)} className={`bg-white p-3 rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col gap-3 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer`}>
                     <div className="flex items-start gap-4">
                       <div className={`w-16 h-16 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 ${isOutOfStock ? 'grayscale' : ''}`}>
                         {thumb ? (
