@@ -46,7 +46,17 @@ export default function App() {
   const fetchTrays = async () => {
     const { data } = await supabase.from('seedling_trays').select('*').order('sown_date', { ascending: false });
     if (data) {
-       setTrays(data.map(t => ({ ...t, contents: t.contents || [], images: t.images || [], humidity_dome: t.humidity_dome || false, grow_light: t.grow_light || false, first_germination_date: t.first_germination_date || '', first_planted_date: t.first_planted_date || '', potting_mix: t.potting_mix || '', location: t.location || '' })));
+       setTrays(data.map(t => ({ 
+         ...t, 
+         contents: t.contents || [], 
+         images: t.images || [], 
+         humidity_dome: t.humidity_dome || false, 
+         grow_light: t.grow_light || false, 
+         first_germination_date: t.first_germination_date || '', 
+         first_planted_date: t.first_planted_date || '', 
+         potting_mix: t.potting_mix || '', 
+         location: t.location || '' 
+       })));
     }
   };
 
@@ -96,6 +106,7 @@ export default function App() {
         }
     };
     window.addEventListener('popstate', handlePopState);
+    
     const initialHash = window.location.hash.replace('#', '') as AppView;
     if (initialHash && ['vault', 'trays'].includes(initialHash)) {
          window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
@@ -113,14 +124,15 @@ export default function App() {
     case 'vault':
       return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} />;
     case 'seed_detail':
-      // PASSED CATEGORIES DOWN HERE
+      // Passes categories for ID generation during duplication
       return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'trays':
       return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'tray_detail':
-      return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
+      // Passes inventory list so tray contents can show thumbnails and link to seed details
+      return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'tray_edit':
       return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'dashboard':

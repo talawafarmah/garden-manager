@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SeedlingTray } from '../types';
+import { SeedlingTray, InventorySeed } from '../types';
 
-export default function TrayDetail({ tray, navigateTo, handleGoBack }: any) {
+export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }: any) {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -61,6 +61,16 @@ export default function TrayDetail({ tray, navigateTo, handleGoBack }: any) {
     // Navigate straight to the edit screen with the pre-filled copied data
     navigateTo('tray_edit', duplicatedTray);
     setIsDuplicating(false);
+  };
+
+  const handleSeedClick = (seedId: string) => {
+    // Find the full seed object from the global inventory to pass to the detail view
+    const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedId);
+    if (fullSeed) {
+      navigateTo('seed_detail', fullSeed);
+    } else {
+      alert("Seed details not found in current inventory.");
+    }
   };
 
   return (
@@ -126,26 +136,48 @@ export default function TrayDetail({ tray, navigateTo, handleGoBack }: any) {
 
          <h3 className="font-bold text-stone-800 px-1">Contents</h3>
          <div className="space-y-3">
-           {tray.contents.map((seed: any, idx: number) => (
-             <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
-               <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-2">
-                 <div>
-                   <h4 className="font-bold text-stone-800">{seed.variety_name}</h4>
-                   <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200">{seed.seed_id}</span>
+           {tray.contents.map((seedRecord: any, idx: number) => {
+             // Look up the full seed in inventory to get its thumbnail
+             const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedRecord.seed_id);
+             const thumb = fullSeed?.thumbnail || null;
+
+             return (
+               <div 
+                 key={idx} 
+                 onClick={() => handleSeedClick(seedRecord.seed_id)}
+                 className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all active:scale-95"
+               >
+                 <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200">
+                        {thumb ? (
+                          <img src={thumb} alt={seedRecord.variety_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-stone-300">
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-stone-800 leading-tight">{seedRecord.variety_name}</h4>
+                        <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200 mt-1 inline-block">{seedRecord.seed_id}</span>
+                      </div>
+                   </div>
+                   <div className="text-right">
+                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 flex items-center gap-1">
+                       {seedRecord.sown_count > 0 ? Math.round((seedRecord.germinated_count / seedRecord.sown_count) * 100) : 0}% Germ
+                       <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                     </span>
+                   </div>
                  </div>
-                 <div className="text-right">
-                   <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
-                     {seed.sown_count > 0 ? Math.round((seed.germinated_count / seed.sown_count) * 100) : 0}% Germ
-                   </span>
+                 <div className="flex justify-between text-sm px-1">
+                   <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-stone-400"></div> Sown: <span className="font-bold text-stone-900">{seedRecord.sown_count}</span></div>
+                   <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Sprouted: <span className="font-bold text-stone-900">{seedRecord.germinated_count}</span></div>
+                   <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Planted: <span className="font-bold text-stone-900">{seedRecord.planted_count}</span></div>
                  </div>
                </div>
-               <div className="flex justify-between text-sm">
-                 <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-stone-400"></div> Sown: <span className="font-bold text-stone-900">{seed.sown_count}</span></div>
-                 <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Sprouted: <span className="font-bold text-stone-900">{seed.germinated_count}</span></div>
-                 <div className="flex items-center gap-1.5 text-stone-600"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Planted: <span className="font-bold text-stone-900">{seed.planted_count}</span></div>
-               </div>
-             </div>
-           ))}
+             );
+           })}
          </div>
 
          {tray.images && tray.images.length > 0 && (
