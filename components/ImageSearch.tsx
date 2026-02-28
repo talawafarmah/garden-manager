@@ -3,45 +3,45 @@ import React, { useState } from 'react';
 // Inline SVG components to replace lucide-react and resolve module errors
 const Icons = {
   Search: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="11" cy="11" r="8"></circle>
       <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
     </svg>
   ),
   Loader2: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
     </svg>
   ),
   Globe: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="12" r="10"></circle>
       <line x1="2" y1="12" x2="22" y2="12"></line>
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
     </svg>
   ),
   X: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <line x1="18" y1="6" x2="6" y2="18"></line>
       <line x1="6" y1="6" x2="18" y2="18"></line>
     </svg>
   ),
   ExternalLink: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
       <polyline points="15 3 21 3 21 9"></polyline>
       <line x1="10" y1="14" x2="21" y2="3"></line>
     </svg>
   ),
   AlertCircle: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="12" r="10"></circle>
       <line x1="12" y1="8" x2="12" y2="12"></line>
       <line x1="12" y1="16" x2="12.01" y2="16"></line>
     </svg>
   ),
   ImageIcon: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
       <circle cx="8.5" cy="8.5" r="1.5"></circle>
       <polyline points="21 15 16 10 5 21"></polyline>
@@ -76,41 +76,32 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     setResults([]);
 
     const apiKey = ""; // Environment provides this at runtime
-    // Using gemini-2.5-flash-preview-09-2025 to avoid 403 Forbidden errors in this environment
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    // Switching to gemini-1.5-flash as it is more reliably permitted for google_search tool usage in most API tiers
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const systemPrompt = `You are a professional horticultural researcher. 
-    Find real-world images for the plant: "${query}". 
-    Use Google Search to find high-quality, direct image URLs from reputable sources (botanical gardens, seed companies, university extensions). 
-    Return a JSON object with an "images" array. Each item must have:
-    - "url": A direct link to the image (prioritize .jpg, .png).
-    - "title": A descriptive name of the plant variety or view.
-    - "source": The name of the website/organization.`;
+    const promptText = `Find real-world botanical images for the plant cultivar: "${query}". 
+    Use Google Search to locate high-quality, direct image URLs (.jpg, .png) from reputable sources like seed catalogs, university extensions, or botanical gardens. 
+    
+    Return the data as a valid JSON object with this exact structure:
+    {
+      "images": [
+        {
+          "url": "direct_image_link",
+          "title": "descriptive_plant_name",
+          "source": "website_name"
+        }
+      ]
+    }
+    
+    IMPORTANT: Provide ONLY the JSON. Do not include conversational text.`;
 
     const payload = {
-      contents: [{ parts: [{ text: `Search for real images of: ${query}` }] }],
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      tools: [{ google_search: {} }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            images: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  url: { type: "string" },
-                  title: { type: "string" },
-                  source: { type: "string" }
-                },
-                required: ["url", "title", "source"]
-              }
-            }
-          }
-        }
-      }
+      contents: [{ 
+        parts: [{ text: promptText }] 
+      }],
+      tools: [{ google_search: {} }]
+      // Note: We avoid responseMimeType: "application/json" here because it can conflict with search tools 
+      // on certain API keys/models, causing 403 or 400 errors. We will parse the text manually instead.
     };
 
     let retries = 0;
@@ -125,9 +116,8 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         });
 
         if (!response.ok) {
-          // Handle specific status codes
           if (response.status === 403) {
-            throw new Error("Access forbidden. This usually happens if the model string or search tool is not permitted for the current API key.");
+            throw new Error("Access forbidden. Your API key might not have permission for Google Search grounding with this model.");
           }
           
           if (response.status === 429 && retries < maxRetries) {
@@ -140,18 +130,22 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         }
 
         const data = await response.json();
-        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        let contentText = data.candidates?.[0]?.content?.parts?.[0]?.text;
         
-        if (content) {
+        if (contentText) {
           try {
-            const parsed = JSON.parse(content);
+            // Clean up Markdown formatting if present
+            const jsonString = contentText.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
+            const parsed = JSON.parse(jsonString);
+            
             if (parsed.images && Array.isArray(parsed.images)) {
               setResults(parsed.images);
             } else {
-              throw new Error("No images found for this search.");
+              throw new Error("No images found in the search results.");
             }
           } catch (parseErr) {
-            throw new Error("Failed to parse the search results.");
+            console.error("Parse Error:", contentText);
+            throw new Error("The search engine returned an invalid data format.");
           }
         } else {
           throw new Error("The search engine returned an empty response.");
@@ -172,12 +166,12 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 p-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
               <Icons.Globe className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white leading-tight">Web Image Search</h3>
-              <p className="text-xs text-slate-400">Powered by Gemini AI</p>
+              <h3 className="text-lg font-bold text-white leading-tight">Botanical Image Search</h3>
+              <p className="text-xs text-slate-400">Finding real-world references</p>
             </div>
           </div>
           <button 
@@ -195,13 +189,13 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search for plant photos (e.g. 'Aji Charapita pepper ripe')"
-              className="w-full rounded-2xl bg-slate-800 border-slate-700 py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+              placeholder="e.g. 'Golden Marconi Pepper ripe fruit'"
+              className="w-full rounded-2xl bg-slate-800 border-slate-700 py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all outline-none"
             />
             <button
               type="submit"
               disabled={isSearching || !query.trim()}
-              className="absolute right-2 top-2 rounded-xl bg-blue-600 p-2.5 text-white hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg"
+              className="absolute right-2 top-2 rounded-xl bg-emerald-600 p-2.5 text-white hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-lg"
             >
               {isSearching ? <Icons.Loader2 className="h-5 w-5 animate-spin" /> : <Icons.Search className="h-5 w-5" />}
             </button>
@@ -212,8 +206,8 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
           {isSearching && (
             <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">
-              <Icons.Loader2 className="h-10 w-10 animate-spin text-blue-500" />
-              <p className="animate-pulse text-sm font-medium">Scouring botanical databases...</p>
+              <Icons.Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
+              <p className="animate-pulse text-sm font-medium text-emerald-500/80">Connecting to botanical databases...</p>
             </div>
           )}
 
@@ -221,7 +215,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
             <div className="flex flex-col items-center justify-center py-20 text-slate-500">
               <Icons.ImageIcon className="h-16 w-16 mb-4 opacity-10" />
               <p className="text-sm text-center max-w-xs">
-                Enter a plant name to find real reference photos from around the web.
+                Enter a specific cultivar name to find real reference photos from seed catalogs and extensions.
               </p>
             </div>
           )}
@@ -244,7 +238,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
               {results.map((img, idx) => (
                 <div 
                   key={idx} 
-                  className="group relative flex flex-col rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden hover:border-blue-500/50 transition-all cursor-pointer"
+                  className="group relative flex flex-col rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden hover:border-emerald-500/50 transition-all cursor-pointer"
                   onClick={() => onSelect(img.url)}
                 >
                   <div className="aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden">
@@ -253,21 +247,21 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
                       alt={img.title}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/400x300?text=Image+Not+Accessible";
+                        (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(img.source)}`;
                       }}
                     />
                   </div>
                   <div className="p-3">
                     <h4 className="text-xs font-bold text-slate-200 line-clamp-1 mb-1">{img.title}</h4>
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1">
+                      <span className="text-[10px] uppercase tracking-wider text-emerald-500/70 font-bold flex items-center gap-1">
                         <Icons.Globe className="w-3 h-3" />
                         {img.source}
                       </span>
                       <Icons.ExternalLink className="w-3 h-3 text-slate-600" />
                     </div>
                   </div>
-                  <div className="absolute inset-0 bg-blue-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-0 bg-emerald-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               ))}
             </div>
@@ -277,7 +271,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         <div className="p-4 bg-slate-950/50 border-t border-slate-800/50 flex justify-between items-center">
           <p className="text-[10px] text-slate-500 flex items-center gap-1">
             <Icons.AlertCircle className="w-3 h-3" />
-            Some external images may have restrictions or be blocked by your browser.
+            Some external images may be blocked by source websites or browser security.
           </p>
         </div>
       </div>
