@@ -106,6 +106,11 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     setIsSaving(true);
     
     try {
+      // Check if the current ID exists in the inventory array.
+      // If it doesn't, it means we are saving a brand new duplicated record, not editing an existing one!
+      const isNewRecord = !inventory.some((s: InventorySeed) => s.id === seed.id);
+
+      // If the user changed the ID manually, make sure they didn't pick one that already exists
       if (editFormData.id !== seed.id) {
         const { data: duplicates } = await supabase.from('seed_inventory').select('id').eq('id', editFormData.id);
         if (duplicates && duplicates.length > 0) { alert(`Error: The shortcode '${editFormData.id}' is already assigned.`); return; }
@@ -194,12 +199,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
         thumbnail: newThumbnail 
       };
-      
-      // Check if this record already exists in the database (e.g., if it's a fresh Duplicate vs an Edit)
-      const { data: existingRecords } = await supabase.from('seed_inventory').select('id').eq('id', seed.id);
-      const isNewDuplicate = !existingRecords || existingRecords.length === 0;
 
-      if (isNewDuplicate) {
+      if (isNewRecord) {
         // It's a newly duplicated seed that doesn't exist yet, insert it!
         const { error } = await supabase.from('seed_inventory').insert([payloadToSave]);
         if (error) throw new Error("Failed to insert new duplicated seed: " + error.message);
@@ -217,6 +218,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          stratification_days: payloadToSave.stratification_days === null ? "" : payloadToSave.stratification_days,
          scoville_rating: payloadToSave.scoville_rating === null ? "" : payloadToSave.scoville_rating,
       };
+
+      // Add to local inventory state if it's new so it shows up in Vault immediately
+      if (isNewRecord) {
+         setInventory([savedSeed, ...inventory]);
+      } else {
+         setInventory(inventory.map((s: InventorySeed) => s.id === seed.id ? savedSeed : s));
+      }
 
       navigateTo('seed_detail', savedSeed); 
       
