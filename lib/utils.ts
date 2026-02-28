@@ -27,7 +27,7 @@ export const fetchWithRetry = async (url: string, options: RequestInit, retries 
 };
 
 export const getBestModel = async () => {
-  let modelToUse = "gemini-2.0-flash"; // Update the fallback default
+  let modelToUse = "gemini-2-flash"; // Update the fallback default
   if (!!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
     try {
       const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
