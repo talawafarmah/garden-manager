@@ -23,7 +23,7 @@ export default function App() {
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
-  // NEW: Lift vault state up here so it survives navigation unmounts
+  // Lift vault state up here so it survives navigation unmounts
   const [vaultState, setVaultState] = useState({
     searchQuery: "",
     activeFilter: "All",
@@ -36,10 +36,11 @@ export default function App() {
     if (data) setCategories(data);
   };
 
-  const fetchInventoryLightweight = async () => {
-    // Only grab what is absolutely necessary globally so we don't crash
-    const { data } = await supabase.from('seed_inventory').select('id, variety_name, category, out_of_stock').order('created_at', { ascending: false });
-    if (data) setInventory(data as InventorySeed[]);
+  const fetchInventory = async () => {
+    setIsLoadingDB(true);
+    const { data } = await supabase.from('seed_inventory').select('*').order('created_at', { ascending: false });
+    if (data) setInventory(data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })));
+    setIsLoadingDB(false);
   };
 
   const fetchTrays = async () => {
@@ -51,7 +52,7 @@ export default function App() {
 
   useEffect(() => {
     fetchCategories();
-    fetchInventoryLightweight();
+    fetchInventory();
     fetchTrays();
   }, []);
 
@@ -67,8 +68,8 @@ export default function App() {
     if (view === 'tray_detail' && payload) setSelectedTray(payload);
     if (view === 'tray_edit' && payload) setSelectedTray(payload);
     
-    // VaultList manages its own complex fetch logic now, so we just let it mount
-    if (view === 'trays') { fetchTrays(); fetchInventoryLightweight(); }
+    if (view === 'vault') fetchInventory();
+    if (view === 'trays') { fetchTrays(); fetchInventory(); }
   };
 
   const navigateTo = (view: AppView, payload: any = null) => {
@@ -112,11 +113,12 @@ export default function App() {
     case 'vault':
       return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} />;
     case 'seed_detail':
-      return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
+      // PASSED CATEGORIES DOWN HERE
+      return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'trays':
-      return <TrayList trays={trays} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+      return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'tray_detail':
       return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'tray_edit':
