@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeedlingTray, InventorySeed } from '../types';
 
+/**
+ * TrayDetail Component
+ * Displays the specific details, progress gallery, and variety contents of a tray.
+ */
 export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }: any) {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
 
-  // Resolve Signed URLs for private storage images in the tray gallery
+  // Resolve temporary Signed URLs for images stored in the private Supabase bucket
   useEffect(() => {
     const loadUrls = async () => {
       if (!tray || !tray.images || tray.images.length === 0) return;
@@ -34,13 +38,17 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
   const totalGerminated = tray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
+  /**
+   * Duplication Logic:
+   * Creates a new tray object copying the environmental setup and varieties,
+   * but resetting the historical counts and dates for a fresh seedling run.
+   */
   const handleDuplicateTray = () => {
     setIsDuplicating(true);
     
-    // Create a copy: strip ID, reset dates, and clear counts for a fresh run
     const duplicatedTray: SeedlingTray = {
       ...tray,
-      id: undefined,
+      id: undefined, // ID is removed so TrayEdit knows it's a new record
       name: `${tray.name} (Copy)`,
       sown_date: new Date().toISOString().split('T')[0],
       first_germination_date: "",
@@ -60,23 +68,34 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
     setIsDuplicating(false);
   };
 
+  /**
+   * Context-Aware Drilling:
+   * When a user clicks a seed variety in this tray, we navigate to the seed details
+   * but pass navigation metadata so the user can return exactly to this tray.
+   */
   const handleSeedClick = (seedId: string) => {
     const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedId);
     if (fullSeed) {
-      // Pass 'returnTo' context so SeedDetail knows to come back to this specific Tray
       navigateTo('seed_detail', { 
         ...fullSeed, 
         returnTo: 'tray_detail', 
         returnPayload: tray 
       });
     } else {
-      // If seed isn't in local state, navigate by ID (SeedDetail will fetch full data)
       navigateTo('seed_detail', { 
         id: seedId, 
         returnTo: 'tray_detail', 
         returnPayload: tray 
       });
     }
+  };
+
+  /**
+   * Explicit Back Navigation:
+   * Ensures the user always returns to the main tray list.
+   */
+  const onBack = () => {
+    navigateTo('trays');
   };
 
   return (
@@ -89,16 +108,16 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
 
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('trays')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
+          <button onClick={onBack} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <h1 className="text-xl font-bold truncate">Tray Details</h1>
         </div>
         <div className="flex items-center gap-2">
-           <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50 font-medium text-sm">
+           <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50 text-sm font-medium">
              {isDuplicating ? 'Copying...' : 'Copy'}
            </button>
-           <button onClick={() => navigateTo('tray_edit', tray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 font-medium text-sm">
+           <button onClick={() => navigateTo('tray_edit', tray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 text-sm font-medium">
              Edit
            </button>
         </div>
@@ -121,7 +140,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
             </div>
 
             <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-               <div className="text-center"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Total Sown</div><div className="text-xl font-black text-emerald-900">{totalSown}</div></div>
+               <div className="text-center"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Seeds</div><div className="text-xl font-black text-emerald-900">{totalSown}</div></div>
                <div className="text-center border-l border-emerald-200"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sprouted</div><div className="text-xl font-black text-emerald-900">{totalGerminated}</div></div>
                <div className="text-center border-l border-emerald-200"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Rate</div><div className="text-xl font-black text-emerald-900">{germRate}%</div></div>
             </div>
@@ -129,7 +148,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
 
          <section>
            <h3 className="font-bold text-stone-800 px-1 mb-3 flex items-center justify-between">
-             Tray Contents
+             Contents
              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{tray.contents.length} Varieties</span>
            </h3>
            <div className="space-y-3">
@@ -165,9 +184,9 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
                      </div>
                    </div>
                    <div className="flex justify-between text-xs px-1 text-stone-500 font-medium">
-                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-stone-300"></div> Sown: <span className="text-stone-800">{seedRecord.sown_count}</span></div>
-                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div> Sprouted: <span className="text-stone-800">{seedRecord.germinated_count}</span></div>
-                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Planted: <span className="text-stone-800">{seedRecord.planted_count}</span></div>
+                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-stone-300"></div> Sown: <span className="text-stone-800 font-bold">{seedRecord.sown_count}</span></div>
+                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div> Sprouted: <span className="text-stone-800 font-bold">{seedRecord.germinated_count}</span></div>
+                     <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Planted: <span className="text-stone-800 font-bold">{seedRecord.planted_count}</span></div>
                    </div>
                  </div>
                );
