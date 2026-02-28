@@ -76,30 +76,39 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     setResults([]);
 
     const apiKey = ""; // Environment provides this at runtime
-    // MUST use gemini-2.5-flash-preview-09-2025 as it is the only supported model for text generation in this environment
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
-    const promptText = `Find real-world botanical images for the plant: "${query}". 
-    Use Google Search to find high-quality, direct image URLs (.jpg, .png) from reputable sources like seed catalogs or botanical gardens. 
+    const systemPrompt = `You are an elite horticultural researcher.
+    Use Google Search to find high-quality botanical photographs of plant cultivars.
     
-    Return the data as a valid JSON object with this exact structure:
+    CRITICAL: Look for direct image links (.jpg, .png) or pages from reputable seed companies (e.g., Baker Creek, Burpee, Johnny's), botanical gardens, or university extensions.
+    
+    Output the results as a clean JSON object containing an array of image metadata:
     {
       "images": [
         {
-          "url": "direct_image_link",
-          "title": "descriptive_plant_name",
+          "url": "direct_link_to_image",
+          "title": "precise_variety_name",
           "source": "website_name"
         }
       ]
-    }
-    
-    IMPORTANT: Provide ONLY the JSON. Do not include conversational text or markdown code blocks.`;
+    }`;
 
+    // Structure payload according to Gemini 2.5 Preview requirements
     const payload = {
       contents: [{ 
-        parts: [{ text: promptText }] 
+        role: "user",
+        parts: [{ text: `Search for real images of: ${query}` }] 
       }],
-      tools: [{ "google_search": {} }]
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      tools: [{ "google_search": {} }],
+      generationConfig: {
+        // We avoid strict JSON mode here because it sometimes conflicts with search tools
+        // causing 403 or 400 errors. We'll parse the text output instead.
+        temperature: 0.2,
+      }
     };
 
     let retries = 0;
@@ -115,7 +124,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
 
         if (!response.ok) {
           if (response.status === 403) {
-            throw new Error("Access forbidden. Ensure Google Search tool is permitted for this environment.");
+            throw new Error("Access forbidden. This environment's API key may not permit the Google Search tool. Check if 'Google Search' is enabled in your Google AI Studio project settings.");
           }
           
           if (response.status === 429 && retries < maxRetries) {
@@ -128,23 +137,48 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         }
 
         const data = await response.json();
-        let contentText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const candidate = data.candidates?.[0];
+        const contentText = candidate?.content?.parts?.[0]?.text;
         
+        // Extract results from grounding metadata (the official way)
+        const attributions = candidate?.groundingMetadata?.groundingAttributions;
+        const groundingResults: SearchResult[] = [];
+        
+        if (attributions) {
+          attributions.forEach((attr: any) => {
+            if (attr.web?.uri && attr.web?.title) {
+              groundingResults.push({
+                url: attr.web.uri, // Note: these are often page links, but provide a solid fallback
+                title: attr.web.title,
+                source: new URL(attr.web.uri).hostname.replace('www.', '')
+              });
+            }
+          });
+        }
+
         if (contentText) {
           try {
-            // Clean up Markdown formatting if present
+            // Attempt to extract JSON from the text response
             const jsonString = contentText.replace(/```json\n?/, '').replace(/```\n?$/, '').trim();
             const parsed = JSON.parse(jsonString);
             
             if (parsed.images && Array.isArray(parsed.images)) {
               setResults(parsed.images);
+            } else if (groundingResults.length > 0) {
+              setResults(groundingResults);
             } else {
-              throw new Error("No images found in the search results.");
+              throw new Error("No specific images found for this search.");
             }
           } catch (parseErr) {
-            console.error("Parse Error Content:", contentText);
-            throw new Error("The search engine returned an invalid data format.");
+            // Fallback to grounding results if JSON parsing fails
+            if (groundingResults.length > 0) {
+              setResults(groundingResults);
+            } else {
+              throw new Error("The botanical database returned an unexpected response format.");
+            }
           }
+        } else if (groundingResults.length > 0) {
+          setResults(groundingResults);
         } else {
           throw new Error("The search engine returned an empty response.");
         }
@@ -187,7 +221,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. 'Golden Marconi Pepper ripe fruit'"
+              placeholder="e.g. 'Aji Charapita pepper ripe'"
               className="w-full rounded-2xl bg-slate-800 border-slate-700 py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all outline-none"
             />
             <button
@@ -245,6 +279,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
                       alt={img.title}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                       onError={(e) => {
+                        // Fallback to a styled placeholder if the hotlink is blocked
                         (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(img.source)}`;
                       }}
                     />
@@ -269,7 +304,7 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         <div className="p-4 bg-slate-950/50 border-t border-slate-800/50 flex justify-between items-center">
           <p className="text-[10px] text-slate-500 flex items-center gap-1">
             <Icons.AlertCircle className="w-3 h-3" />
-            Some external images may be blocked by source websites or browser security.
+            Some external images may be blocked by source websites.
           </p>
         </div>
       </div>
