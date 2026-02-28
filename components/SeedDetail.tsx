@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedlingTray } from '../types';
+import { generateNextId } from '../lib/utils'; // Import the ID generator
 
-export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: any) {
+export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack }: any) {
   const [fullSeed, setFullSeed] = useState<InventorySeed | null>(seed.images ? seed : null);
   const [isLoading, setIsLoading] = useState(!seed.images);
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   
   // Stores temporary signed URLs for viewing private bucket images in the UI
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -50,6 +52,44 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
     
     loadUrls();
   }, [fullSeed]);
+
+  const handleDuplicateSeed = async () => {
+    if (!fullSeed) return;
+    setIsDuplicating(true);
+    
+    try {
+      // Find the prefix for the current category to generate the next ID
+      let prefix = 'U';
+      if (categories && categories.length > 0) {
+        const found = categories.find((c: any) => c.name === fullSeed.category);
+        if (found) prefix = found.prefix;
+      } else {
+         // Fallback if categories aren't passed, try to extract letters from the current ID
+         const match = fullSeed.id.match(/^([A-Z]+)/i);
+         if (match) prefix = match[1];
+      }
+
+      const newId = await generateNextId(prefix);
+
+      // Create a copy but strip out the unique ID, Images, and Thumbnail
+      const duplicatedSeed: InventorySeed = {
+        ...fullSeed,
+        id: newId,
+        variety_name: `${fullSeed.variety_name} (Copy)`,
+        images: [],
+        primaryImageIndex: 0,
+        thumbnail: ""
+      };
+
+      // Navigate straight to the edit screen with the pre-filled copied data
+      navigateTo('seed_edit', duplicatedSeed);
+
+    } catch (error: any) {
+      alert("Failed to duplicate seed: " + error.message);
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
 
   if (isLoading || !fullSeed) {
     return (
@@ -98,10 +138,20 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: an
           <button onClick={() => { setFullScreenImage(null); navigateTo('vault'); }} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <h1 className="text-xl font-bold truncate">Seed Details</h1>
         </div>
-        <button onClick={() => navigateTo('seed_edit', fullSeed)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-          <span className="text-sm font-medium">Edit</span>
-        </button>
+        <div className="flex items-center gap-2">
+           <button onClick={handleDuplicateSeed} disabled={isDuplicating} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3 disabled:opacity-50">
+             {isDuplicating ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+             ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+             )}
+             <span className="text-sm font-medium">Copy</span>
+           </button>
+           <button onClick={() => navigateTo('seed_edit', fullSeed)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors flex items-center gap-1 px-3">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+             <span className="text-sm font-medium">Edit</span>
+           </button>
+        </div>
       </header>
 
       <div className="max-w-md mx-auto">

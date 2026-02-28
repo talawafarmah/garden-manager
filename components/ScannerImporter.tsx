@@ -13,11 +13,55 @@ interface Props {
   handleGoBack: (view: AppView) => void;
 }
 
+// Universal Resizer: Downscales huge files to an optimal size/quality to save bucket space
+const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!source) return resolve("");
+    
+    const img = new Image();
+    img.crossOrigin = "anonymous"; 
+    
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > height) {
+        if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+      } else {
+        if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      try {
+        resolve(canvas.toDataURL('image/jpeg', quality)); 
+      } catch (e) {
+        resolve(""); 
+      }
+    };
+    img.onerror = () => resolve("");
+    
+    let finalSrc = source;
+    if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('allorigins')) {
+       finalSrc = `https://api.allorigins.win/raw?url=${encodeURIComponent(source)}`;
+    } else if (!source.startsWith('http') && !source.startsWith('data:')) {
+       finalSrc = `data:image/jpeg;base64,${source}`;
+    }
+    
+    img.src = finalSrc;
+  });
+};
+
 export default function ScannerImporter({ isScanMode, categories, setCategories, inventory, setInventory, navigateTo, handleGoBack }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importUrl, setImportUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); 
+  const [isAutoFilling, setIsAutoFilling] = useState(false); // NEW: Auto-fill loading state
   const [analysisResult, setAnalysisResult] = useState<SeedData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +77,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
     responseSchema: {
       type: "OBJECT",
       properties: {
-        variety_name: { type: "STRING" }, vendor: { type: "STRING" }, days_to_maturity: { type: "INTEGER" }, species: { type: "STRING" }, category: { type: "STRING" }, notes: { type: "STRING" }, companion_plants: { type: "ARRAY", items: { type: "STRING" } }, seed_depth: { type: "STRING" }, plant_spacing: { type: "STRING" }, row_spacing: { type: "STRING" }, germination_days: { type: "STRING" }, sunlight: { type: "STRING" }, lifecycle: { type: "STRING" }, cold_stratification: { type: "BOOLEAN" }, stratification_days: { type: "INTEGER" }, light_required: { type: "BOOLEAN" }
+        variety_name: { type: "STRING" }, vendor: { type: "STRING" }, days_to_maturity: { type: "INTEGER" }, species: { type: "STRING" }, category: { type: "STRING" }, notes: { type: "STRING" }, companion_plants: { type: "ARRAY", items: { type: "STRING" } }, seed_depth: { type: "STRING" }, plant_spacing: { type: "STRING" }, row_spacing: { type: "STRING" }, germination_days: { type: "STRING" }, sunlight: { type: "STRING" }, lifecycle: { type: "STRING" }, cold_stratification: { type: "BOOLEAN" }, stratification_days: { type: "INTEGER" }, light_required: { type: "BOOLEAN" }, scoville_rating: { type: "INTEGER" }
       }
     }
   };
@@ -66,7 +110,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
       const base64Data = await fileToBase64(selectedFile);
       const mimeType = selectedFile.type || "image/jpeg";
       const payload = {
-        contents: [{ role: "user", parts: [{ text: "Analyze this seed packet image. Extract all details requested in the JSON schema. Map the category to a broad group." }, { inlineData: { mimeType: mimeType, data: base64Data } }] }],
+        contents: [{ role: "user", parts: [{ text: "Analyze this seed packet image. Extract all details requested in the JSON schema. Map the category to a broad group. If it is a hot pepper, estimate the scoville rating." }, { inlineData: { mimeType: mimeType, data: base64Data } }] }],
         systemInstruction: aiSystemInstruction, generationConfig: aiGenerationConfig
       };
       const modelToUse = await getBestModel();
@@ -112,7 +156,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
       const cleanText = rawText.replace(/\s+/g, ' ').substring(0, 20000);
 
       const payload = {
-        contents: [{ role: "user", parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group.\n\nWebsite Content:\n${cleanText}` }] }],
+        contents: [{ role: "user", parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. If it is a hot pepper, extract the scoville rating.\n\nWebsite Content:\n${cleanText}` }] }],
         systemInstruction: aiSystemInstruction, generationConfig: aiGenerationConfig
       };
       const modelToUse = await getBestModel();
@@ -134,40 +178,159 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
   };
 
   const handleSaveScannedToInventory = async () => {
-    if (analysisResult) {
+    if (!analysisResult) return;
+    
+    setIsSaving(true);
+    
+    try {
       const variety = analysisResult.variety_name?.trim() || 'Unknown Variety';
       const vendor = analysisResult.vendor?.trim() || 'Unknown Vendor';
-      const { data: duplicates, error: checkError } = await supabase.from('seed_inventory').select('id, variety_name, vendor').ilike('variety_name', variety).ilike('vendor', vendor);
+      
+      const { data: duplicates, error: checkError } = await supabase
+        .from('seed_inventory')
+        .select('id')
+        .ilike('variety_name', variety)
+        .ilike('vendor', vendor);
+        
       if (!checkError && duplicates && duplicates.length > 0) {
         const isConfirmed = confirm(`⚠️ Duplicate Detected!\n\nYou already have '${variety}' from '${vendor}'. Add anyway?`);
-        if (!isConfirmed) return; 
+        if (!isConfirmed) {
+          setIsSaving(false);
+          return; 
+        }
       }
+      
       let finalCatName = analysisResult.category || 'Uncategorized';
       let finalPrefix = 'U';
       if (showNewCatForm && newCatName.trim() !== '') {
         finalCatName = newCatName.trim();
         finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
         await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
-        setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a,b) => a.name.localeCompare(b.name)));
+        setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a: any,b: any) => a.name.localeCompare(b.name)));
       } else {
         const found = categories.find(c => c.name === finalCatName);
         if (found) finalPrefix = found.prefix;
       }
 
       const newId = await generateNextId(finalPrefix);
-      const newSeed: InventorySeed = {
-        id: newId, category: finalCatName, variety_name: analysisResult.variety_name || 'Unknown Variety', vendor: analysisResult.vendor || 'Unknown Vendor', days_to_maturity: Number(analysisResult.days_to_maturity) || 0, species: analysisResult.species || 'Unknown Species', notes: analysisResult.notes || '', images: imagePreview ? [imagePreview] : [], primaryImageIndex: 0, companion_plants: analysisResult.companion_plants || [], cold_stratification: analysisResult.cold_stratification || false, stratification_days: analysisResult.stratification_days || 0, light_required: analysisResult.light_required || false, germination_days: analysisResult.germination_days || '', seed_depth: analysisResult.seed_depth || '', plant_spacing: analysisResult.plant_spacing || '', row_spacing: analysisResult.row_spacing || '', out_of_stock: false, sunlight: analysisResult.sunlight || '', lifecycle: analysisResult.lifecycle || ''
+      
+      // Image Processing & Upload Logic
+      const uploadedImagePaths = [];
+      let newThumbnail = "";
+      
+      if (imagePreview) {
+        const folderName = btoa(newId).replace(/=/g, ''); 
+        
+        // 1. Upload Main Image
+        const optimizedBase64 = await resizeImage(imagePreview, 1600, 0.8);
+        if (optimizedBase64) {
+             const res = await fetch(optimizedBase64);
+             const blob = await res.blob();
+             const fileName = `${crypto.randomUUID()}.jpg`;
+             const filePath = `${folderName}/${fileName}`;
+             const { error: uploadErr } = await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
+             if (!uploadErr) uploadedImagePaths.push(filePath);
+        }
+        
+        // 2. Generate Thumbnail
+        newThumbnail = await resizeImage(imagePreview, 150, 0.6);
+      }
+
+      // Explicitly typed as any to safely pass nulls for numeric values
+      const payloadToSave: any = {
+        id: newId, 
+        category: finalCatName, 
+        variety_name: analysisResult.variety_name || 'Unknown Variety', 
+        vendor: analysisResult.vendor || 'Unknown Vendor', 
+        days_to_maturity: analysisResult.days_to_maturity === "" || analysisResult.days_to_maturity === undefined ? null : Number(analysisResult.days_to_maturity), 
+        species: analysisResult.species || 'Unknown Species', 
+        notes: analysisResult.notes || '', 
+        images: uploadedImagePaths, 
+        primaryImageIndex: 0, 
+        companion_plants: analysisResult.companion_plants || [], 
+        cold_stratification: analysisResult.cold_stratification || false, 
+        stratification_days: analysisResult.stratification_days === "" || analysisResult.stratification_days === undefined ? null : Number(analysisResult.stratification_days), 
+        light_required: analysisResult.light_required || false, 
+        germination_days: analysisResult.germination_days || '', 
+        seed_depth: analysisResult.seed_depth || '', 
+        plant_spacing: analysisResult.plant_spacing || '', 
+        row_spacing: analysisResult.row_spacing || '', 
+        out_of_stock: false, 
+        sunlight: analysisResult.sunlight || '', 
+        lifecycle: analysisResult.lifecycle || '',
+        scoville_rating: analysisResult.scoville_rating === "" || analysisResult.scoville_rating === undefined ? null : Number(analysisResult.scoville_rating),
+        thumbnail: newThumbnail
       };
 
-      const { error } = await supabase.from('seed_inventory').insert([newSeed]);
-      if (error) { alert("Failed to save to database: " + error.message);
+      const { error } = await supabase.from('seed_inventory').insert([payloadToSave]);
+      
+      if (error) { 
+        alert("Failed to save to database: " + error.message);
       } else {
-        setInventory([newSeed, ...inventory]);
-        alert(`Success! ${newSeed.variety_name} added as ${newSeed.id}`);
+        const savedSeed: InventorySeed = {
+           ...payloadToSave,
+           days_to_maturity: payloadToSave.days_to_maturity === null ? "" : payloadToSave.days_to_maturity,
+           stratification_days: payloadToSave.stratification_days === null ? "" : payloadToSave.stratification_days,
+           scoville_rating: payloadToSave.scoville_rating === null ? "" : payloadToSave.scoville_rating,
+        };
+        setInventory([savedSeed, ...inventory]);
+        alert(`Success! ${savedSeed.variety_name} added as ${savedSeed.id}`);
         navigateTo('vault');
       }
+    } catch (err: any) {
+      alert("An error occurred while saving: " + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const handleAutoFill = async () => {
+    if (!analysisResult) return;
+    setIsAutoFilling(true);
+    try {
+      if (!apiKey) throw new Error("Missing API Key!");
+
+      const modelToUse = await getBestModel();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+
+      const payload = {
+        contents: [{
+          role: "user",
+          parts: [{ text: `You are an expert horticulturist. Here is the current data for a seed named "${analysisResult.variety_name}" (Vendor: ${analysisResult.vendor || 'unknown'}, Category: ${analysisResult.category}, Species: ${analysisResult.species || 'unknown'}). \n\n${JSON.stringify(analysisResult)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.\n\nIMPORTANT: You must respond ONLY with a valid JSON object. Do not wrap it in markdown block quotes. The JSON must exactly match this structure (use null or defaults if unknown). If it is a pepper, try to find the Scoville Heat Unit (SHU) rating and include it as a number in scoville_rating. \n\nIMAGE SEARCH INSTRUCTIONS:\nUse the Google Search tool to find a direct image file URL (.jpg, .png, .webp). To find the best image, search exactly for: "images of the ${analysisResult.variety_name} ${analysisResult.category} sold by ${analysisResult.vendor || 'seed vendors'}". Extract the direct raw image URL and put it in the "image_url" field. DO NOT put an HTML webpage URL. If you cannot find a direct image file, set it to null:\n{"variety_name":"","vendor":"","days_to_maturity":0,"species":"","category":"","notes":"","companion_plants":[],"seed_depth":"","plant_spacing":"","row_spacing":"","germination_days":"","sunlight":"","lifecycle":"","cold_stratification":false,"stratification_days":0,"light_required":false,"scoville_rating":null,"image_url":null}` }]
+        }],
+        tools: [{ google_search: {} }]
+      };
+
+      const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);
+      const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (textResponse) {
+        const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+        const { image_url, ...restData } = parsedData; 
+        
+        setAnalysisResult(prev => ({ ...prev, ...restData }));
+
+        // Only attach the web image if the user hasn't already provided a camera scan image
+        if (!imagePreview && image_url && image_url.startsWith('http') && (image_url.includes('.jpg') || image_url.includes('.png') || image_url.includes('.jpeg') || image_url.includes('.webp'))) {
+            try {
+               await new Promise((resolve, reject) => {
+                   const img = new Image();
+                   const timer = setTimeout(() => reject(new Error("Timeout")), 5000);
+                   img.onload = () => { clearTimeout(timer); resolve(true); };
+                   img.onerror = () => { clearTimeout(timer); reject(new Error("Image load failed")); };
+                   img.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(image_url)}`;
+               });
+               setImagePreview(image_url);
+            } catch (e) {
+               console.warn("Failed to load external image found by AI.");
+            }
+        }
+      }
+    } catch (e: any) { alert("Auto-fill failed: " + e.message); } 
+    finally { setIsAutoFilling(false); }
+  };
+
+  const isPepper = analysisResult?.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
 
   return (
     <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col">
@@ -206,6 +369,27 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
                </div>
             )}
 
+            {/* MAGIC AUTO-FILL BUTTON */}
+            <div className="space-y-3">
+              <button 
+                onClick={handleAutoFill}
+                disabled={isAutoFilling || isSaving}
+                className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-500 transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
+              >
+                {isAutoFilling ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Gathering Data...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    ✨ Auto-Fill Missing Data (AI)
+                  </>
+                )}
+              </button>
+            </div>
+
             <div className="bg-stone-800 rounded-2xl p-5 shadow-xl border border-stone-700 space-y-4">
               <h3 className="text-sm font-bold text-emerald-400 border-b border-stone-700 pb-2">Basic Details</h3>
               <div>
@@ -233,6 +417,16 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
                     <input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} className="w-full bg-stone-900 border border-stone-700 rounded-md p-2 text-sm text-stone-100 font-mono uppercase outline-none" />
                   </div>
                 </div>
+              )}
+              
+              {isPepper && (
+                 <div className="bg-red-900/30 p-3 rounded-lg border border-red-800 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 text-red-400">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                       <label className="block text-xs font-bold mb-0">Scoville (SHU)</label>
+                    </div>
+                    <input type="number" value={analysisResult.scoville_rating || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, scoville_rating: e.target.value })} placeholder="e.g. 50000" className="w-1/2 bg-stone-900 border border-red-800 rounded-md p-2 text-stone-100 font-bold outline-none focus:border-red-500" />
+                 </div>
               )}
 
               <div>
@@ -273,8 +467,10 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button onClick={() => setAnalysisResult(null)} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors">Back</button>
-              <button onClick={handleSaveScannedToInventory} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 transition-all">Save to Database</button>
+              <button onClick={() => setAnalysisResult(null)} disabled={isSaving} className="flex-1 py-4 bg-stone-700 rounded-xl font-medium hover:bg-stone-600 transition-colors disabled:opacity-50">Back</button>
+              <button onClick={handleSaveScannedToInventory} disabled={isSaving} className="flex-[2] py-4 bg-emerald-600 rounded-xl font-bold text-white hover:bg-emerald-500 shadow-lg shadow-emerald-900/50 transition-all disabled:opacity-50">
+                {isSaving ? "Saving..." : "Save to Database"}
+              </button>
             </div>
           </div>
           
@@ -322,7 +518,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
               </div>
               <h2 className="text-xl font-bold text-center text-stone-100 mb-2">Import from Link</h2>
               <p className="text-sm text-stone-400 text-center mb-6 leading-relaxed">Paste a link to a seed product page. The AI will scrape the page and extract the botanical details automatically.</p>
-              <input type="url" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} placeholder="[https://www.bakercreek.com/](https://www.bakercreek.com/)..." className="w-full bg-stone-900 border border-stone-600 rounded-xl p-4 text-stone-100 focus:border-blue-500 outline-none mb-4 transition-colors placeholder:text-stone-600" />
+              <input type="url" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} placeholder="https://www.bakercreek.com/..." className="w-full bg-stone-900 border border-stone-600 rounded-xl p-4 text-stone-100 focus:border-blue-500 outline-none mb-4 transition-colors placeholder:text-stone-600" />
               <button onClick={analyzeUrl} disabled={isAnalyzing || !importUrl.trim()} className="w-full py-4 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 Extract Data
