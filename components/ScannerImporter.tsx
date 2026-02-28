@@ -28,41 +28,39 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
 
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
+  // We embed the JSON schema directly in the system instructions to bypass the API limitation
+  // that prevents using the Search Tool alongside a strict JSON MIME type response.
   const aiSystemInstruction = { 
     parts: [{ 
-      text: "You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.) so the database remains clean. Extract a list of companion plants. Infer common botanical requirements if they are missing." 
+      text: `You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.) so the database remains clean. Extract a list of companion plants. Infer common botanical requirements if they are missing.
+
+IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdown formatting wrappers like \`\`\`json. The JSON must exactly match this structure, substituting null for entirely unknown numeric values and empty strings for unknown text:
+{
+  "variety_name": "string",
+  "vendor": "string",
+  "days_to_maturity": number or null,
+  "species": "string",
+  "category": "string",
+  "notes": "string",
+  "companion_plants": ["string"],
+  "seed_depth": "string",
+  "plant_spacing": "string",
+  "row_spacing": "string",
+  "germination_days": "string",
+  "sunlight": "string",
+  "lifecycle": "string",
+  "cold_stratification": boolean,
+  "stratification_days": number or null,
+  "light_required": boolean,
+  "scoville_rating": number or null
+}`
     }] 
-  };
-  
-  const aiGenerationConfig = {
-    responseMimeType: "application/json",
-    responseSchema: {
-      type: "OBJECT",
-      properties: {
-        variety_name: { type: "STRING" }, 
-        vendor: { type: "STRING" }, 
-        days_to_maturity: { type: "INTEGER" }, 
-        species: { type: "STRING" }, 
-        category: { type: "STRING" }, 
-        notes: { type: "STRING" }, 
-        companion_plants: { type: "ARRAY", items: { type: "STRING" } }, 
-        seed_depth: { type: "STRING" }, 
-        plant_spacing: { type: "STRING" }, 
-        row_spacing: { type: "STRING" }, 
-        germination_days: { type: "STRING" }, 
-        sunlight: { type: "STRING" }, 
-        lifecycle: { type: "STRING" }, 
-        cold_stratification: { type: "BOOLEAN" }, 
-        stratification_days: { type: "INTEGER" }, 
-        light_required: { type: "BOOLEAN" }, 
-        scoville_rating: { type: "INTEGER" }
-      }
-    }
   };
 
   const processAiResult = (textResponse: string | undefined) => {
     if (textResponse) {
-      const parsedData = JSON.parse(textResponse.replace(/```json/g, '').replace(/```/g, '').trim());
+      // Robust regex to strip markdown in case the model includes it anyway
+      const parsedData = JSON.parse(textResponse.replace(/```json/gi, '').replace(/```/g, '').trim());
       const aiCat = parsedData.category;
       
       if (aiCat) {
@@ -106,8 +104,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
           ] 
         }],
         systemInstruction: aiSystemInstruction, 
-        generationConfig: aiGenerationConfig,
-        tools: [{ google_search: {} }] // Restored Auto-Fill search grounding
+        tools: [{ google_search: {} }] 
       };
       
       const modelToUse = await getBestModel();
@@ -185,8 +182,7 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
           parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Map the category to a broad group. Use the Google Search tool to fill in any missing botanical gaps.\n\nWebsite Content:\n${cleanText}` }] 
         }],
         systemInstruction: aiSystemInstruction, 
-        generationConfig: aiGenerationConfig,
-        tools: [{ google_search: {} }] // Restored Auto-Fill search grounding
+        tools: [{ google_search: {} }]
       };
       
       const modelToUse = await getBestModel();
@@ -223,7 +219,6 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
           parts: [{ text: `You are an expert horticulturist. Here is the current data extracted so far for a seed named "${analysisResult.variety_name || ''}" (Vendor: ${analysisResult.vendor || 'unknown'}, Category: ${analysisResult.category || ''}). \n\n${JSON.stringify(analysisResult)}\n\nPlease fill in any missing or empty fields with accurate botanical data. Use the Google Search tool if you are unsure. Keep existing populated data intact.` }] 
         }],
         systemInstruction: aiSystemInstruction, 
-        generationConfig: aiGenerationConfig,
         tools: [{ google_search: {} }]
       };
       
