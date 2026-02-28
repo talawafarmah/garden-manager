@@ -101,23 +101,26 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
   const handleSaveEdit = async () => {
     if (!editFormData.id.trim()) { alert("Shortcode ID is required."); return; }
-    if (editFormData.id !== seed.id) {
-      const { data: duplicates } = await supabase.from('seed_inventory').select('id').eq('id', editFormData.id);
-      if (duplicates && duplicates.length > 0) { alert(`Error: The shortcode '${editFormData.id}' is already assigned.`); return; }
-    }
     
-    let finalCatName = editFormData.category;
-    if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
-      finalCatName = newCatName.trim();
-      const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
-      await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
-      setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
-    } else if (editFormData.category === '__NEW__') {
-      alert("Please provide a name for the new category."); return;
-    }
-
+    // Disable the button INSTANTLY before any async network requests happen
     setIsSaving(true);
+    
     try {
+      if (editFormData.id !== seed.id) {
+        const { data: duplicates } = await supabase.from('seed_inventory').select('id').eq('id', editFormData.id);
+        if (duplicates && duplicates.length > 0) { alert(`Error: The shortcode '${editFormData.id}' is already assigned.`); return; }
+      }
+      
+      let finalCatName = editFormData.category;
+      if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
+        finalCatName = newCatName.trim();
+        const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
+        await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
+        setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      } else if (editFormData.category === '__NEW__') {
+        alert("Please provide a name for the new category."); return;
+      }
+
       const uploadedImagePaths = [];
       // Obfuscate the folder name using Base64 encoding of the Seed ID
       const folderName = btoa(editFormData.id).replace(/=/g, ''); 
@@ -167,26 +170,21 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
 
-      // Ensure SHU is a number or undefined
-      let parsedScoville: number | undefined = undefined;
-      if (editFormData.scoville_rating !== undefined && editFormData.scoville_rating !== null && editFormData.scoville_rating !== "") {
-         parsedScoville = Number(editFormData.scoville_rating);
-      }
-
-      // Explicitly construct the payload to prevent schema cache errors from unexpected AI keys
-      const payload: Partial<InventorySeed> = { 
+      // Explicitly construct the database payload, converting empty strings to actual nulls for numeric columns to prevent DB crashes
+      // Typed as 'any' to bypass strict TS interface temporarily just for the DB submission
+      const payloadToSave: any = { 
         id: editFormData.id,
         category: finalCatName, 
         variety_name: editFormData.variety_name,
         vendor: editFormData.vendor,
-        days_to_maturity: editFormData.days_to_maturity,
+        days_to_maturity: editFormData.days_to_maturity === "" ? null : Number(editFormData.days_to_maturity),
         species: editFormData.species,
         notes: editFormData.notes,
         images: uploadedImagePaths, 
         primaryImageIndex: editFormData.primaryImageIndex,
         companion_plants: editFormData.companion_plants,
         cold_stratification: editFormData.cold_stratification,
-        stratification_days: editFormData.stratification_days,
+        stratification_days: editFormData.stratification_days === "" ? null : Number(editFormData.stratification_days),
         light_required: editFormData.light_required,
         germination_days: editFormData.germination_days,
         seed_depth: editFormData.seed_depth,
@@ -194,18 +192,28 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         row_spacing: editFormData.row_spacing,
         sunlight: editFormData.sunlight,
         lifecycle: editFormData.lifecycle,
-        scoville_rating: parsedScoville,
+        scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
         thumbnail: newThumbnail 
       };
       
-      const { error } = await supabase.from('seed_inventory').update(payload).eq('id', seed.id);
+      const { error } = await supabase.from('seed_inventory').update(payloadToSave).eq('id', seed.id);
       if (error) throw new Error("Failed to update database: " + error.message);
       
-      navigateTo('seed_detail', payload); 
+      // Reconstruct local state with valid TS types to pass back to the UI seamlessly
+      const savedSeed: InventorySeed = {
+         ...editFormData,
+         ...payloadToSave,
+         days_to_maturity: payloadToSave.days_to_maturity === null ? "" : payloadToSave.days_to_maturity,
+         stratification_days: payloadToSave.stratification_days === null ? "" : payloadToSave.stratification_days,
+         scoville_rating: payloadToSave.scoville_rating === null ? "" : payloadToSave.scoville_rating,
+      };
+
+      navigateTo('seed_detail', savedSeed); 
       
     } catch (error: any) {
       alert(error.message);
     } finally {
+      // Always re-enable the button when done, even if it failed
       setIsSaving(false);
     }
   };

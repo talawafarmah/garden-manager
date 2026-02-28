@@ -25,13 +25,22 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
     if (!trayFormData.name.trim()) { alert("Tray name is required."); return; }
     const isNew = !trayFormData.id;
     let error;
-    let savedTray = { ...trayFormData };
+    
+    // Clean up empty strings to be actual nulls so Supabase date columns don't crash
+    const payloadToSave = {
+      ...trayFormData,
+      first_germination_date: trayFormData.first_germination_date || null,
+      first_planted_date: trayFormData.first_planted_date || null,
+    };
+    
+    // Explicitly type this as SeedlingTray so TypeScript doesn't lock it to the nulls above
+    let savedTray: SeedlingTray = { ...trayFormData };
 
     if (isNew) {
-      const { data, error: insertErr } = await supabase.from('seedling_trays').insert([trayFormData]).select();
-      error = insertErr; if (data) savedTray = data[0];
+      const { data, error: insertErr } = await supabase.from('seedling_trays').insert([payloadToSave]).select();
+      error = insertErr; if (data) savedTray = data[0] as SeedlingTray;
     } else {
-      const { error: updateErr } = await supabase.from('seedling_trays').update(trayFormData).eq('id', trayFormData.id);
+      const { error: updateErr } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', trayFormData.id);
       error = updateErr;
     }
 
