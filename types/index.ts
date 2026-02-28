@@ -15,7 +15,7 @@ export interface SeedData {
   row_spacing?: string;
   sunlight?: string;
   lifecycle?: string;
-  scoville_rating?: number | string; // NEW: Track pepper heat
+  scoville_rating?: number | string; 
 }
 
 export interface InventorySeed {
@@ -40,7 +40,7 @@ export interface InventorySeed {
   sunlight: string;
   lifecycle: string;
   thumbnail?: string; 
-  scoville_rating?: number | string; // NEW: Track pepper heat
+  scoville_rating?: number | string; 
 }
 
 export interface SeedCategory {
@@ -71,6 +71,7 @@ export interface SeedlingTray {
   location?: string;               
   notes: string;
   images: string[];
+  thumbnail?: string; // NEW: Thumbnail for the list view
   contents: TraySeedRecord[];
 }
 

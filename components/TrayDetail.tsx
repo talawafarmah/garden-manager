@@ -1,22 +1,96 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { SeedlingTray } from '../types';
 
 export default function TrayDetail({ tray, navigateTo, handleGoBack }: any) {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [isDuplicating, setIsDuplicating] = useState(false);
+
+  // Resolve Signed URLs for private bucket images in the tray
+  useEffect(() => {
+    const loadUrls = async () => {
+      if (!tray || !tray.images) return;
+      
+      const newUrls: Record<string, string> = { ...signedUrls };
+      let changed = false;
+
+      for (const img of tray.images) {
+        if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
+          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600);
+          if (data) {
+            newUrls[img] = data.signedUrl;
+            changed = true;
+          }
+        }
+      }
+      if (changed) setSignedUrls(newUrls);
+    };
+    
+    loadUrls();
+  }, [tray]);
+
   const totalSown = tray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
   const totalGerminated = tray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
+  const handleDuplicateTray = () => {
+    setIsDuplicating(true);
+    
+    // Create a copy but strip out the unique ID, Images, and reset dates/counts
+    const duplicatedContents = tray.contents.map((item: any) => ({
+      ...item,
+      sown_count: 0,
+      germinated_count: 0,
+      planted_count: 0,
+      germination_date: ""
+    }));
+
+    const duplicatedTray: SeedlingTray = {
+      ...tray,
+      id: undefined, // New trays don't have an ID yet
+      name: `${tray.name} (Copy)`,
+      sown_date: new Date().toISOString().split('T')[0],
+      first_germination_date: "",
+      first_planted_date: "",
+      images: [],
+      thumbnail: "",
+      contents: duplicatedContents
+    };
+
+    // Navigate straight to the edit screen with the pre-filled copied data
+    navigateTo('tray_edit', duplicatedTray);
+    setIsDuplicating(false);
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
+      {fullScreenImage && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out" onClick={() => setFullScreenImage(null)}>
+          <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+          <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('trays')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <h1 className="text-xl font-bold truncate">Tray Details</h1>
         </div>
-        <button onClick={() => navigateTo('tray_edit', tray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-          <span className="text-sm font-medium">Edit / Update</span>
-        </button>
+        <div className="flex items-center gap-2">
+           <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50">
+             {isDuplicating ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+             ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+             )}
+             <span className="text-sm font-medium">Copy</span>
+           </button>
+           <button onClick={() => navigateTo('tray_edit', tray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+             <span className="text-sm font-medium">Edit</span>
+           </button>
+        </div>
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-5">
@@ -78,11 +152,18 @@ export default function TrayDetail({ tray, navigateTo, handleGoBack }: any) {
            <>
              <h3 className="font-bold text-stone-800 px-1 pt-2">Gallery</h3>
              <div className="grid grid-cols-3 gap-2">
-               {tray.images.map((img: string, idx: number) => (
-                  <div key={idx} className="aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm">
-                    <img src={img} className="w-full h-full object-cover" alt="Tray Progress" />
-                  </div>
-               ))}
+               {tray.images.map((img: string, idx: number) => {
+                  const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
+                  return (
+                    <div key={idx} onClick={() => setFullScreenImage(displaySrc)} className="cursor-zoom-in aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm relative bg-stone-100">
+                      {displaySrc ? (
+                        <img src={displaySrc} className="w-full h-full object-cover" alt="Tray Progress" />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center"><svg className="w-5 h-5 text-stone-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+                      )}
+                    </div>
+                  );
+               })}
              </div>
            </>
          )}
