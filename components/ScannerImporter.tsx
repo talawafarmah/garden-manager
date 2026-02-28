@@ -14,11 +14,6 @@ interface Props {
   handleGoBack: (view: AppView) => void;
 }
 
-/**
- * ScannerImporter Component
- * Handles AI-powered seed packet scanning and URL product importing.
- * Includes a full review form and centralized image search.
- */
 export default function ScannerImporter({ isScanMode, categories, setCategories, inventory, setInventory, navigateTo, handleGoBack }: Props) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -36,7 +31,6 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
 
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
-  // The system instruction provides the JSON structure and botanical expertise constraints.
   const aiSystemInstruction = { 
     parts: [{ 
       text: `You are a master horticulturist AI. Extract accurate botanical data from seed packets or vendor text into structured JSON. Standardize categories to broad groups (Herb, Flower, Pea, Leafy Green, Root Vegetable, Brassica, Vine/Squash, Tomato, Pepper, etc.). Extract a list of companion plants. Infer common botanical requirements if they are missing.
@@ -67,7 +61,16 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
   const processAiResult = (textResponse: string | undefined) => {
     if (textResponse) {
       try {
-        const parsedData = JSON.parse(textResponse.replace(/```json/gi, '').replace(/```/g, '').trim());
+        const cleanJson = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsedData = JSON.parse(cleanJson);
+        
+        // Prevent 'null' from breaking TypeScript number|string bindings
+        for (const key in parsedData) {
+          if (parsedData[key] === null) {
+            parsedData[key] = "";
+          }
+        }
+
         const aiCat = parsedData.category;
         
         if (aiCat) {
@@ -84,7 +87,7 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         }
         setAnalysisResult(parsedData);
       } catch (e) {
-        throw new Error("Failed to parse AI response. Try again or check the image quality.");
+        throw new Error("Failed to parse AI response. Ensure the image or link is clear.");
       }
     } else {
       throw new Error("No data returned from AI.");
@@ -144,7 +147,7 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
       const payload = {
         contents: [{ 
           role: "user", 
-          parts: [{ text: `Analyze the following text scraped from a seed vendor's website. Extract all details requested in the JSON schema based on this text. Use the Google Search tool to fill in any missing botanical gaps.\n\nWebsite Content:\n${cleanText}` }] 
+          parts: [{ text: `Analyze the following text scraped from a website. Extract all details requested in the JSON schema. Use Google Search for gaps.\n\nWebsite Content:\n${cleanText}` }] 
         }],
         systemInstruction: aiSystemInstruction, 
         tools: [{ google_search: {} }]
@@ -169,7 +172,7 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
       const payload = {
         contents: [{ 
           role: "user", 
-          parts: [{ text: `I have a plant variety named "${analysisResult.variety_name}". Current partial data: ${JSON.stringify(analysisResult)}. Please fill in ALL missing fields with accurate botanical science. Use Google Search.` }] 
+          parts: [{ text: `Variety: "${analysisResult.variety_name}". Current data: ${JSON.stringify(analysisResult)}. Fill in ALL missing botanical fields accurately using Google Search.` }] 
         }],
         systemInstruction: aiSystemInstruction, 
         tools: [{ google_search: {} }]
@@ -214,9 +217,10 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
     }
   };
 
+  const isPepper = analysisResult?.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
+
   return (
     <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col font-sans">
-      {/* Centralized Image Search Modal */}
       {isImageSearchOpen && analysisResult && (
         <ImageSearch 
           query={`${analysisResult.variety_name} ${analysisResult.species || ''} plant`}
@@ -225,13 +229,13 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         />
       )}
 
-      <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950 sticky top-0 z-50">
+      <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950 sticky top-0 z-50 shadow-xl">
         <button onClick={() => handleGoBack('dashboard')} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors shadow-md">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <div>
           <h1 className="text-xl font-bold tracking-tight">{isScanMode ? 'Scan Packet' : 'Import Link'}</h1>
-          <p className="text-[10px] text-stone-500 font-black uppercase tracking-widest">Digital Seed Vault v2.4</p>
+          <p className="text-[10px] text-stone-500 font-black uppercase tracking-[0.2em]">Digital Seed Vault</p>
         </div>
       </header>
 
@@ -275,27 +279,38 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
             {imagePreview && (
               <div className="rounded-3xl overflow-hidden border border-stone-700 h-40 relative shadow-2xl bg-stone-800 group">
                 <img src={imagePreview} alt="Preview" className="object-cover w-full h-full opacity-60 group-hover:opacity-80 transition-opacity" />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                   <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest backdrop-blur-sm">Image Linked</span>
-                </div>
                 <button onClick={() => setImagePreview(null)} className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full shadow-lg active:scale-90 transition-transform">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
             )}
 
-            <div className="bg-stone-50 rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-5 text-stone-900">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 border-b border-stone-100 pb-3 flex items-center gap-2">
+            <div className="bg-stone-50 rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-6 text-stone-900">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-stone-400 border-b border-stone-100 pb-3 flex items-center gap-2">
                 <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                AI Extraction Review
+                Horticultural Data Review
               </h3>
               
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Variety Name</label>
-                <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3.5 text-stone-900 font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" />
-              </div>
+              <div className="space-y-4">
+                {/* 1. Variety Name */}
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Variety Name</label>
+                  <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" />
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                {/* 2. Species & Vendor */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Species</label>
+                    <input type="text" value={analysisResult.species || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, species: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-medium outline-none italic shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Vendor</label>
+                    <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* 3. Category */}
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Category</label>
                   <select 
@@ -305,26 +320,105 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                       setShowNewCatForm(val === '__NEW__');
                       setAnalysisResult({ ...analysisResult, category: val });
                     }} 
-                    className="w-full bg-white border border-stone-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm appearance-none"
+                    className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm appearance-none"
                   >
                     <option value="" disabled>Select...</option>
                     {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    <option value="__NEW__ font-bold text-emerald-600">+ New Category</option>
+                    <option value="__NEW__" className="font-bold text-emerald-600">+ New Category</option>
                   </select>
                 </div>
+
+                {showNewCatForm && (
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2">
+                    <div className="col-span-2 text-[9px] font-black text-emerald-800 uppercase mb-1">Define New Category</div>
+                    <div><input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Name" className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-xs outline-none" /></div>
+                    <div><input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} placeholder="Prefix" className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-xs outline-none uppercase" /></div>
+                  </div>
+                )}
+
+                {/* 4. DTM & Lifecycle */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Days to Maturity</label>
+                    <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value ? Number(e.target.value) : "" })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Lifecycle</label>
+                    <input type="text" value={analysisResult.lifecycle || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, lifecycle: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* 5. Scoville (Conditional) */}
+                {isPepper && (
+                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center justify-between shadow-sm">
+                    <label className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</label>
+                    <input type="number" value={analysisResult.scoville_rating || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, scoville_rating: e.target.value ? Number(e.target.value) : "" })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" />
+                  </div>
+                )}
+
+                {/* 6. Sunlight & Germination Days */}
+                <div className="grid grid-cols-2 gap-4">
+                   <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sunlight</label>
+                    <input type="text" value={analysisResult.sunlight || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, sunlight: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Germination Days</label>
+                    <input type="text" value={analysisResult.germination_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, germination_days: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* 7. Planting Dimensions */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seed Depth</label>
+                    <input type="text" value={analysisResult.seed_depth || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, seed_depth: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs outline-none shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Plant Space</label>
+                    <input type="text" value={analysisResult.plant_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, plant_spacing: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs outline-none shadow-sm" />
+                  </div>
+                   <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Row Space</label>
+                    <input type="text" value={analysisResult.row_spacing || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, row_spacing: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-2 text-xs outline-none shadow-sm" />
+                  </div>
+                </div>
+
+                {/* 8. Requirements Toggles */}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button 
+                    onClick={() => setAnalysisResult({...analysisResult, light_required: !analysisResult.light_required})}
+                    className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${analysisResult.light_required ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
+                  >
+                    Light Required
+                  </button>
+                  <button 
+                    onClick={() => setAnalysisResult({...analysisResult, cold_stratification: !analysisResult.cold_stratification})}
+                    className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${analysisResult.cold_stratification ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
+                  >
+                    Cold Strat
+                  </button>
+                </div>
+
+                {/* 9. Stratification Days (Conditional) */}
+                {analysisResult.cold_stratification && (
+                  <div className="animate-in slide-in-from-left-2 p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
+                    <label className="block text-[9px] font-black text-blue-800 uppercase tracking-widest mb-1 ml-1">Stratification Days</label>
+                    <input type="number" value={analysisResult.stratification_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value ? Number(e.target.value) : "" })} className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
+                  </div>
+                )}
+
+                {/* 10. Companions & Notes */}
                 <div>
-                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Vendor</label>
-                  <input type="text" value={analysisResult.vendor || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, vendor: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-xs font-bold outline-none shadow-sm" />
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Companion Plants (comma separated)</label>
+                  <input type="text" value={(analysisResult.companion_plants || []).join(', ')} onChange={(e) => setAnalysisResult({ ...analysisResult, companion_plants: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-medium outline-none shadow-sm" />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Growing Notes</label>
+                  <textarea value={analysisResult.notes || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, notes: e.target.value })} rows={4} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm outline-none shadow-sm resize-none" placeholder="Vendor tips, germination notes, etc..." />
                 </div>
               </div>
-
-              {showNewCatForm && (
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2">
-                  <div className="col-span-2 text-[9px] font-black text-emerald-800 uppercase mb-1">Define New Category</div>
-                  <div><input type="text" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Name" className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-xs outline-none" /></div>
-                  <div><input type="text" maxLength={2} value={newCatPrefix} onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())} placeholder="ID Prefix (TM)" className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-xs outline-none uppercase" /></div>
-                </div>
-              )}
             </div>
 
             <div className="flex gap-4 pt-2">
@@ -343,13 +437,13 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                       {isAnalyzing && (
                         <div className="absolute inset-0 bg-stone-950/80 flex flex-col items-center justify-center text-emerald-400 backdrop-blur-sm">
                           <svg className="w-14 h-14 animate-spin mb-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                          <span className="font-black text-white uppercase tracking-[0.3em] text-[10px] animate-pulse">Analyzing Botanical Data</span>
+                          <span className="font-black text-white uppercase tracking-[0.3em] text-[10px] animate-pulse">Running AI Extraction</span>
                         </div>
                       )}
                     </div>
                     <div className="flex gap-4">
                       <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-5 bg-stone-800 rounded-3xl font-black text-[10px] uppercase tracking-widest border border-stone-700 active:scale-95 transition-all">Retake</button>
-                      <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-5 bg-emerald-600 rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-2xl shadow-emerald-900/50 active:scale-95 transition-all">Run AI OCR</button>
+                      <button onClick={analyzeImage} disabled={isAnalyzing} className="flex-1 py-5 bg-emerald-600 rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-2xl shadow-emerald-900/50 active:scale-95 transition-all">Analyze Packet</button>
                     </div>
                   </div>
                 ) : (
