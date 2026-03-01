@@ -11,6 +11,7 @@ export async function GET(request: Request) {
 
   try {
     // 1. Construct a targeted site search
+    // Default to the big three heirloom/open-pollinated sources if no vendor is specified
     let siteQuery = 'site:rareseeds.com OR site:johnnyseeds.com OR site:burpee.com';
     
     if (vendor && vendor.trim() !== '') {
@@ -18,20 +19,15 @@ export async function GET(request: Request) {
       siteQuery = `site:${cleanVendor}.com OR site:${cleanVendor}.org OR site:${cleanVendor}.net OR "${vendor}"`;
     }
 
-    // 2. Fetch search results using DuckDuckGo Lite via POST (Stealthier, less rate-limiting)
-    const searchUrl = 'https://lite.duckduckgo.com/lite/';
-    const payloadQuery = `${siteQuery} ${query} seeds`;
+    // 2. Fetch search results using DuckDuckGo HTML via GET (Proven more reliable)
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${siteQuery} ${query} seeds`)}`;
     
     const searchResponse = await fetch(searchUrl, {
-      method: 'POST',
       headers: { 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Origin': 'https://lite.duckduckgo.com',
-        'Referer': 'https://lite.duckduckgo.com/'
-      },
-      body: `q=${encodeURIComponent(payloadQuery)}`
+        'Accept-Language': 'en-US,en;q=0.5'
+      }
     });
 
     if (!searchResponse.ok) {
@@ -41,7 +37,7 @@ export async function GET(request: Request) {
     const html = await searchResponse.text();
 
     // 3. Extract the actual target URLs from the search results
-    // Broadened regex to catch any href in the Lite HTML structure
+    // Broadened regex to catch varying link classes (result__url, result__snippet, etc.)
     const resultRegex = /<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/g;
     const pageUrls: {url: string, title: string}[] = [];
     let match;
@@ -49,7 +45,7 @@ export async function GET(request: Request) {
     while ((match = resultRegex.exec(html)) !== null && pageUrls.length < 5) {
       let url = match[1];
       
-      // DDG Lite wraps outgoing links in a redirect
+      // DDG wraps outgoing links in a redirect
       if (url.includes('uddg=')) {
         try {
           url = decodeURIComponent(new URLSearchParams(url.split('?')[1]).get('uddg') || url);
@@ -65,10 +61,14 @@ export async function GET(request: Request) {
         !url.toLowerCase().includes('/category/') &&
         !url.toLowerCase().includes('/collections/')
       ) {
-        pageUrls.push({ 
-          url, 
-          title: match[2].replace(/<[^>]+>/g, '').trim() // Strip HTML tags
-        });
+        const cleanTitle = match[2].replace(/<[^>]+>/g, '').trim();
+        // Ensure the link actually has text (skips structural/hidden anchors)
+        if (cleanTitle.length > 0) {
+          pageUrls.push({ 
+            url, 
+            title: cleanTitle 
+          });
+        }
       }
     }
 
