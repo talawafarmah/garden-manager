@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
 import { InventorySeed, WishlistSession } from '../../../types';
 
-// --- SUB-COMPONENT: Seed Card with Image Carousel & SHU Indicator ---
+// --- SUB-COMPONENT: Seed Card (Reverted to single fast thumbnail) ---
 const SeedCard = ({ 
   seed, 
   isSelected, 
@@ -15,22 +15,9 @@ const SeedCard = ({
   isSelected: boolean; 
   onToggle: (id: string) => void;
 }) => {
-  const [currentImageIdx, setCurrentImageIdx] = useState(0);
-  
-  const images = seed.images || [];
-  const showCarousel = images.length > 1;
-  const displayImage = images.length > 0 ? images[currentImageIdx] : seed.thumbnail;
+  // Use thumbnail first, fallback to first image in array, or null
+  const displayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
   const isOutOfStock = seed.out_of_stock;
-
-  const nextImage = (e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    setCurrentImageIdx((prev) => (prev + 1) % images.length);
-  };
-
-  const prevImage = (e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    setCurrentImageIdx((prev) => (prev - 1 + images.length) % images.length);
-  };
 
   return (
     <div 
@@ -44,46 +31,19 @@ const SeedCard = ({
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
       </div>
 
-      {/* Image Container */}
-      <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden border-b border-stone-100 group/img">
+      {/* Image Container - Back to fast single image */}
+      <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden border-b border-stone-100">
         {displayImage ? (
           <img 
             src={displayImage} 
             alt={seed.variety_name} 
-            className={`w-full h-full object-cover transition-transform duration-700 ${!showCarousel ? 'group-hover:scale-105' : ''} ${isOutOfStock ? 'grayscale opacity-70' : ''}`} 
+            loading="lazy"
+            className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} 
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-stone-400">
             <svg className="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
           </div>
-        )}
-
-        {/* Carousel Controls */}
-        {showCarousel && (
-          <>
-            <button 
-              onClick={prevImage} 
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/40 text-white rounded-full opacity-100 lg:opacity-0 group-hover/img:opacity-100 hover:bg-black/60 transition-all backdrop-blur-sm z-10"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <button 
-              onClick={nextImage} 
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/40 text-white rounded-full opacity-100 lg:opacity-0 group-hover/img:opacity-100 hover:bg-black/60 transition-all backdrop-blur-sm z-10"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
-            </button>
-            
-            {/* Dot Indicators */}
-            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">
-              {images.map((_, i) => (
-                <div 
-                  key={i} 
-                  className={`w-1.5 h-1.5 rounded-full shadow-sm transition-all duration-300 ${i === currentImageIdx ? 'bg-white scale-125' : 'bg-white/50'}`} 
-                />
-              ))}
-            </div>
-          </>
         )}
 
         {isOutOfStock && (
@@ -93,22 +53,21 @@ const SeedCard = ({
         )}
       </div>
 
-      {/* Card Info */}
+      {/* Card Info (Retained SHU Indicator) */}
       <div className="p-5 flex flex-col flex-1">
         <div className="flex justify-between items-start mb-2 gap-2">
           <p className="text-emerald-600 text-[10px] font-black uppercase tracking-widest mt-1">{seed.category}</p>
           
           <div className="flex flex-wrap justify-end gap-1.5">
-            {/* NEW: SHU Indicator */}
             {seed.scoville_rating != null && (
-              <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100 flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100 flex items-center gap-1 whitespace-nowrap shadow-sm">
                 <svg className="w-3 h-3 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M17.66 11.2C17.43 10.9 17.15 10.64 16.89 10.38C16.22 9.78 15.46 9.35 14.82 8.72C13.33 7.26 13 4.85 13.95 3C13 3.23 12.17 3.75 11.46 4.32C8.87 6.4 7.85 10.07 9.07 13.22C9.11 13.32 9.15 13.42 9.15 13.55C9.15 13.77 9 13.97 8.8 14.05C8.57 14.15 8.33 14.09 8.14 13.93C8.08 13.88 8.04 13.83 8 13.76C6.87 12.33 6.69 10.28 7.45 8.64C5.78 10 4.87 12.3 5 14.47C5.06 15.44 5.34 16.36 5.88 17.16C6.53 18.11 7.4 18.85 8.44 19.33C9.76 19.93 11.27 20 12.61 19.54C14.28 18.96 15.65 17.61 16.23 15.92C16.63 14.77 16.62 13.53 16.23 12.41C16.2 12.32 16.24 12.22 16.32 12.16C16.39 12.09 16.5 12.08 16.59 12.12C16.96 12.32 17.3 12.57 17.6 12.87C17.7 12.97 17.86 12.98 17.97 12.89C18.06 12.8 18.05 12.64 17.96 12.55C17.86 12.43 17.76 12.31 17.66 11.2Z"/></svg>
                 {seed.scoville_rating.toLocaleString()} SHU
               </span>
             )}
             
             {seed.days_to_maturity && (
-              <span className="text-[10px] font-black text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200 whitespace-nowrap">
+              <span className="text-[10px] font-black text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200 whitespace-nowrap shadow-sm">
                 {seed.days_to_maturity} Days
               </span>
             )}
