@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase } from '../../../lib/supabase'; // Adjust path to your supabase.ts if needed
+import { supabase } from '../../../lib/supabase';
 import { InventorySeed, WishlistSession } from '../../../types';
 
 export default function WishlistCatalog() {
@@ -13,9 +13,16 @@ export default function WishlistCatalog() {
   const [seasonName, setSeasonName] = useState("");
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   
+  // Selection State
   const [selectedSeedIds, setSelectedSeedIds] = useState<string[]>([]);
   const [customRequest, setCustomRequest] = useState("");
   
+  // Filter & Sort State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [sortBy, setSortBy] = useState("name_asc");
+
+  // Loading State
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -47,9 +54,7 @@ export default function WishlistCatalog() {
         // 3. Fetch Public Seed Inventory
         const { data: seedData, error: seedError } = await supabase
           .from('seed_inventory')
-          .select('*')
-          .order('category', { ascending: true })
-          .order('variety_name', { ascending: true });
+          .select('*');
 
         if (seedError) throw seedError;
         setSeeds(seedData as InventorySeed[]);
@@ -64,6 +69,54 @@ export default function WishlistCatalog() {
     fetchCatalogData();
   }, [token]);
 
+  // Derive unique categories dynamically from the loaded seeds
+  const availableCategories = useMemo(() => {
+    const cats = new Set(seeds.map(s => s.category));
+    return ['All', ...Array.from(cats)].sort();
+  }, [seeds]);
+
+  // Apply Search, Filters, and Sorting
+  const filteredAndSortedSeeds = useMemo(() => {
+    let result = [...seeds];
+
+    // 1. Filter by Category
+    if (activeCategory !== 'All') {
+      result = result.filter(s => s.category === activeCategory);
+    }
+
+    // 2. Filter by Search Query
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(s => 
+        s.variety_name.toLowerCase().includes(q) || 
+        (s.species && s.species.toLowerCase().includes(q)) ||
+        (s.notes && s.notes.toLowerCase().includes(q))
+      );
+    }
+
+    // 3. Apply Sorting
+    result.sort((a, b) => {
+      if (sortBy === 'name_asc') return a.variety_name.localeCompare(b.variety_name);
+      if (sortBy === 'name_desc') return b.variety_name.localeCompare(a.variety_name);
+      if (sortBy === 'category') return a.category.localeCompare(b.category) || a.variety_name.localeCompare(b.variety_name);
+      
+      // For DTM, push nulls to the bottom
+      if (sortBy === 'dtm_asc') {
+        const dtmA = a.days_to_maturity ?? 9999;
+        const dtmB = b.days_to_maturity ?? 9999;
+        return dtmA - dtmB;
+      }
+      if (sortBy === 'dtm_desc') {
+        const dtmA = a.days_to_maturity ?? -1;
+        const dtmB = b.days_to_maturity ?? -1;
+        return dtmB - dtmA;
+      }
+      return 0;
+    });
+
+    return result;
+  }, [seeds, searchQuery, activeCategory, sortBy]);
+
   const toggleSeedSelection = (seedId: string) => {
     setSelectedSeedIds(prev => 
       prev.includes(seedId) ? prev.filter(id => id !== seedId) : [...prev, seedId]
@@ -75,28 +128,24 @@ export default function WishlistCatalog() {
     setIsSubmitting(true);
 
     try {
-      // Create an array of database inserts for every selected seed
       const inserts = selectedSeedIds.map(seedId => ({
         session_id: session.id,
         seed_id: seedId,
       }));
 
-      // If they typed a custom request, add it as a separate row (seed_id is null)
       if (customRequest.trim() !== "") {
         inserts.push({
           session_id: session.id,
-          seed_id: undefined as any, // TypeScript bypass for optional
+          seed_id: undefined as any, 
           custom_request: customRequest.trim()
-        } as any); // Type cast to satisfy the DB schema allowing nulls
+        } as any); 
       }
 
-      // If they selected nothing and typed nothing, just exit
       if (inserts.length === 0) {
         setIsSuccess(true);
         return;
       }
 
-      // We do a raw insert without seed_id for custom requests
       const finalInserts = inserts.map(item => {
          const row: any = { session_id: item.session_id };
          if (item.seed_id) row.seed_id = item.seed_id;
@@ -163,7 +212,7 @@ export default function WishlistCatalog() {
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
       
       {/* Hero Header */}
-      <header className="bg-emerald-800 text-white pt-12 pb-20 px-6 rounded-b-[3rem] shadow-xl relative overflow-hidden">
+      <header className="bg-emerald-800 text-white pt-12 pb-24 px-6 rounded-b-[3rem] shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
         <div className="max-w-3xl mx-auto relative z-10 text-center">
           <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-4 shadow-sm backdrop-blur-sm">
@@ -178,59 +227,121 @@ export default function WishlistCatalog() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 -mt-10 relative z-20 space-y-6">
+      <div className="max-w-4xl mx-auto px-4 -mt-16 relative z-20 space-y-6">
         
-        {/* Seed Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {seeds.map((seed) => {
-            const isSelected = selectedSeedIds.includes(seed.id);
-            const isOutOfStock = seed.out_of_stock;
-
-            return (
-              <div 
-                key={seed.id} 
-                onClick={() => toggleSeedSelection(seed.id)}
-                className={`group relative bg-white rounded-3xl overflow-hidden shadow-sm transition-all duration-300 cursor-pointer flex flex-col h-full border-2 
-                  ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-xl scale-[1.02]' : 'border-transparent hover:border-emerald-200 hover:shadow-md'}`
-                }
+        {/* Search, Filter, and Sort Toolbar */}
+        <div className="bg-white/90 backdrop-blur-md p-4 rounded-3xl shadow-lg border border-stone-200 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <input 
+                type="text" 
+                placeholder="Search varieties, notes, or species..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl py-3 pl-10 pr-4 text-sm shadow-inner focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all" 
+              />
+              <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </div>
+            <div className="relative sm:w-48">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl py-3 pl-4 pr-10 text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none cursor-pointer text-stone-700"
               >
-                {/* Selection Checkmark */}
-                <div className={`absolute top-4 right-4 z-10 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 shadow-md ${isSelected ? 'bg-emerald-500 text-white scale-100' : 'bg-white/80 text-stone-300 scale-90 opacity-0 group-hover:opacity-100'}`}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                </div>
+                <option value="name_asc">Name (A-Z)</option>
+                <option value="name_desc">Name (Z-A)</option>
+                <option value="category">Category</option>
+                <option value="dtm_asc">Fastest Growing</option>
+                <option value="dtm_desc">Longest Growing</option>
+              </select>
+              <svg className="w-4 h-4 text-stone-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </div>
+          </div>
+          
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x">
+            {availableCategories.map(cat => (
+              <button 
+                key={cat} 
+                onClick={() => setActiveCategory(cat)}
+                className={`snap-start px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm ${activeCategory === cat ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200'}`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden">
-                  {seed.thumbnail || (seed.images && seed.images.length > 0) ? (
-                    <img src={seed.thumbnail || seed.images?.[0]} alt={seed.variety_name} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-stone-400">
-                      <svg className="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    </div>
-                  )}
-                  {isOutOfStock && (
-                     <div className="absolute inset-x-0 bottom-0 bg-stone-900/80 text-stone-200 text-[10px] font-black uppercase tracking-widest text-center py-1.5 backdrop-blur-sm">
-                       Currently Out of Stock - Will try to source
-                     </div>
-                  )}
-                </div>
+        {/* Results Count */}
+        <div className="text-right px-2">
+          <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">
+            Showing {filteredAndSortedSeeds.length} varieties
+          </p>
+        </div>
 
-                <div className="p-5 flex flex-col flex-1">
-                  <p className="text-emerald-600 text-[10px] font-black uppercase tracking-widest mb-1">{seed.category}</p>
-                  <h3 className="font-black text-lg text-stone-800 leading-tight mb-1">{seed.variety_name}</h3>
-                  <p className="text-stone-400 text-xs italic mb-4">{seed.species}</p>
-                  
-                  <div className="mt-auto">
-                    {seed.notes ? (
-                       <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed border-t border-stone-100 pt-3">{seed.notes}</p>
+        {/* Seed Grid */}
+        {filteredAndSortedSeeds.length === 0 ? (
+          <div className="bg-white p-10 rounded-3xl text-center border border-stone-200 shadow-sm">
+             <svg className="w-16 h-16 mx-auto text-stone-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+             <h3 className="text-lg font-black text-stone-800">No seeds found</h3>
+             <p className="text-stone-500 text-sm mt-1">Try adjusting your search or category filters.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredAndSortedSeeds.map((seed) => {
+              const isSelected = selectedSeedIds.includes(seed.id);
+              const isOutOfStock = seed.out_of_stock;
+
+              return (
+                <div 
+                  key={seed.id} 
+                  onClick={() => toggleSeedSelection(seed.id)}
+                  className={`group relative bg-white rounded-3xl overflow-hidden shadow-sm transition-all duration-300 cursor-pointer flex flex-col h-full border-2 
+                    ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-xl scale-[1.02]' : 'border-transparent hover:border-emerald-200 hover:shadow-md'}`
+                  }
+                >
+                  {/* Selection Checkmark */}
+                  <div className={`absolute top-4 right-4 z-10 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 shadow-md ${isSelected ? 'bg-emerald-500 text-white scale-100' : 'bg-white/80 text-stone-300 scale-90 opacity-0 group-hover:opacity-100'}`}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                  </div>
+
+                  <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden border-b border-stone-100">
+                    {seed.thumbnail || (seed.images && seed.images.length > 0) ? (
+                      <img src={seed.thumbnail || seed.images?.[0]} alt={seed.variety_name} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} />
                     ) : (
-                       <p className="text-sm text-stone-400 italic border-t border-stone-100 pt-3">A fantastic {seed.category.toLowerCase()} variety.</p>
+                      <div className="w-full h-full flex items-center justify-center text-stone-400">
+                        <svg className="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      </div>
+                    )}
+                    {isOutOfStock && (
+                       <div className="absolute inset-x-0 bottom-0 bg-stone-900/80 text-stone-200 text-[10px] font-black uppercase tracking-widest text-center py-1.5 backdrop-blur-sm">
+                         Currently Out of Stock - Will try to source
+                       </div>
                     )}
                   </div>
+
+                  <div className="p-5 flex flex-col flex-1">
+                    <div className="flex justify-between items-start mb-1">
+                      <p className="text-emerald-600 text-[10px] font-black uppercase tracking-widest">{seed.category}</p>
+                      {seed.days_to_maturity && (
+                        <span className="text-[10px] font-black text-stone-400 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">{seed.days_to_maturity} Days</span>
+                      )}
+                    </div>
+                    <h3 className="font-black text-lg text-stone-800 leading-tight mb-1">{seed.variety_name}</h3>
+                    <p className="text-stone-400 text-xs italic mb-4">{seed.species}</p>
+                    
+                    <div className="mt-auto">
+                      {seed.notes ? (
+                         <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed border-t border-stone-100 pt-3">{seed.notes}</p>
+                      ) : (
+                         <p className="text-sm text-stone-400 italic border-t border-stone-100 pt-3">A fantastic {seed.category.toLowerCase()} variety.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Custom Request Write-in */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 mt-8">
