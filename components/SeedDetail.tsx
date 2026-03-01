@@ -16,34 +16,45 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   /**
-   * SIGNED URL RESOLVER
-   * Fetches temporary access URLs for private Supabase Storage paths.
-   * Utilizes bulk fetching for performance with a robust sequential fallback.
+   * SIGNED URL RESOLVER WITH DIAGNOSTIC LOGGING
    */
   useEffect(() => {
     let isMounted = true;
     
     const loadSignedUrls = async () => {
+      console.log("[SeedDetail] Starting signed URL resolution. Raw seed.images:", seed.images);
       try {
-        if (!seed.images || !Array.isArray(seed.images) || seed.images.length === 0) return;
+        if (!seed.images || !Array.isArray(seed.images) || seed.images.length === 0) {
+           console.log("[SeedDetail] No images to process. Aborting resolution.");
+           return;
+        }
         
         const urlsToFetch = seed.images.filter((img: string) => img && typeof img === 'string' && !img.startsWith('http') && !img.startsWith('data:'));
+        console.log("[SeedDetail] Paths requiring signed URLs (filtered):", urlsToFetch);
+
         if (urlsToFetch.length === 0) return;
 
         const fetchedUrls: Record<string, string> = {};
 
-        // Attempt bulk URL fetch first for optimal performance
+        console.log("[SeedDetail] Calling Supabase createSignedUrls (Bulk)...");
         const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
+        console.log("[SeedDetail] Bulk response data:", data, "error:", error);
 
         if (data && !error) {
           data.forEach((item: any) => {
             const url = item.signedUrl || item.signedURL;
-            if (url) fetchedUrls[item.path] = url;
+            if (url) {
+              fetchedUrls[item.path] = url;
+            } else {
+              console.warn("[SeedDetail] Missing signed URL in returned item:", item);
+            }
           });
         } else {
+          console.warn("[SeedDetail] Bulk fetch failed, falling back to sequential fetch. Error:", error);
           // Fallback: Sequential fetching if bulk endpoint encounters an issue
           for (const imgPath of urlsToFetch) {
-            const { data: d } = await supabase.storage.from('talawa_media').createSignedUrl(imgPath, 3600);
+            const { data: d, error: seqErr } = await supabase.storage.from('talawa_media').createSignedUrl(imgPath, 3600);
+            console.log(`[SeedDetail] Sequential fetch for ${imgPath}:`, d, "error:", seqErr);
             const url = d?.signedUrl || (d as any)?.signedURL;
             if (url) {
               fetchedUrls[imgPath] = url;
@@ -51,11 +62,12 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
           }
         }
 
+        console.log("[SeedDetail] Final resolved signed URLs mapping:", fetchedUrls);
         if (isMounted && Object.keys(fetchedUrls).length > 0) {
           setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
         }
       } catch (err) {
-        console.error("Error in signed URL resolver:", err);
+        console.error("[SeedDetail] Caught an exception in signed URL resolver:", err);
       }
     };
 
@@ -115,6 +127,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
               onClick={() => setFullScreenImage(displayImg)}
               className="w-full h-full object-cover cursor-zoom-in" 
               alt={seed.variety_name} 
+              onError={(e) => console.error("[SeedDetail] Hero image failed to load in browser. Source URL:", displayImg)}
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-2">
@@ -144,7 +157,16 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
                   onClick={() => setViewingImageIndex(idx)}
                   className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${idx === viewingImageIndex ? 'border-emerald-500 scale-105 shadow-md' : 'border-transparent opacity-50'}`}
                 >
-                  {tSrc ? <img src={tSrc} className="w-full h-full object-cover" alt="Thumb" /> : <div className="w-full h-full bg-stone-100 animate-pulse" />}
+                  {tSrc ? (
+                    <img 
+                      src={tSrc} 
+                      className="w-full h-full object-cover" 
+                      alt={`Thumb ${idx}`} 
+                      onError={() => console.error(`[SeedDetail] Thumbnail ${idx} failed to load. Source:`, tSrc)}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-stone-100 animate-pulse" />
+                  )}
                 </button>
               );
             })}
