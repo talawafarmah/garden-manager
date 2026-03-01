@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory, AppView } from '../types';
 
-export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0, sortBy: 'created_at_desc' }, setVaultState }: any) {
+export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0, sortBy: 'created_at_desc' }, setVaultState, userRole }: any) {
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   
   const searchQuery = vaultState.searchQuery || "";
@@ -58,7 +58,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
         const restoreVaultData = async () => {
             setIsPagingDB(true);
             
-            // FIX: Changed specific columns to '*' so SeedDetail gets the images, notes, etc.
             let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
             if (activeFilter !== "All") query = query.eq('category', activeFilter);
@@ -90,7 +89,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
     
-    // FIX: Changed specific columns to '*' so SeedDetail gets the images, notes, etc.
     let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
     if (activeFilter !== "All") query = query.eq('category', activeFilter);
@@ -127,6 +125,8 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const toggleOutOfStock = async (seed: InventorySeed, e: React.MouseEvent) => {
     e.stopPropagation(); 
+    if (userRole !== 'admin') return; // Double protection
+
     const newStatus = !seed.out_of_stock;
     setSeeds(seeds.map((s: InventorySeed) => s.id === seed.id ? { ...s, out_of_stock: newStatus } : s));
     const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
@@ -231,7 +231,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
         </div>
       )}
 
-      {/* HEADER WITH NEW ADD/SCAN BUTTONS */}
+      {/* HEADER */}
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
@@ -243,17 +243,21 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
             <h1 className="text-xl font-bold truncate pr-2">Seed Vault</h1>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => navigateTo('scanner')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Scan Packet">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-          </button>
-          <button onClick={() => navigateTo('importer')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Import Link">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-          </button>
-          <button onClick={handleManualNew} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Manual Entry">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          </button>
-        </div>
+        
+        {/* ROLE CHECK: Only Admin sees the modify buttons */}
+        {userRole === 'admin' && (
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => navigateTo('scanner')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Scan Packet">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            </button>
+            <button onClick={() => navigateTo('importer')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Import Link">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+            </button>
+            <button onClick={handleManualNew} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Manual Entry">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
@@ -395,13 +399,16 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                     </div>
                     <div className="flex justify-between items-center border-t border-stone-100 pt-2">
                       <button onClick={(e) => openCompanionModal(seed, e)} className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Companions</button>
-                      <button onClick={(e) => toggleOutOfStock(seed, e)} className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border ${isOutOfStock ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100 hover:text-stone-800'}`}>{isOutOfStock ? 'Mark In Stock' : 'Mark Out of Stock'}</button>
+                      
+                      {/* ROLE CHECK: Only Admin sees the toggle stock button */}
+                      {userRole === 'admin' && (
+                        <button onClick={(e) => toggleOutOfStock(seed, e)} className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors border ${isOutOfStock ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100 hover:text-stone-800'}`}>{isOutOfStock ? 'Mark In Stock' : 'Mark Out of Stock'}</button>
+                      )}
                     </div>
                   </div>
                 );
               })}
 
-              {/* Load More Button */}
               {hasMore && (
                 <div className="col-span-full">
                   <button 

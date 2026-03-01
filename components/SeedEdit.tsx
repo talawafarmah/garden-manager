@@ -4,7 +4,6 @@ import { InventorySeed, SeedCategory } from '../types';
 import { fetchWithRetry, getBestModel } from '../lib/utils';
 import ImageSearch from './ImageSearch';
 
-// Fast, synchronous conversion of base64 to binary Blob
 const base64ToBlob = (base64: string, mimeType: string): Blob => {
   const byteString = atob(base64.split(',')[1]);
   const ab = new ArrayBuffer(byteString.length);
@@ -39,14 +38,16 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       try { 
         resolve(canvas.toDataURL('image/jpeg', quality)); 
       } catch (e) { 
+        // If canvas is tainted (CORS error), it will fall into this catch
         resolve(""); 
       }
     };
     img.onerror = () => resolve("");
     
     let finalSrc = source;
-    if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('allorigins')) {
-       finalSrc = `https://api.allorigins.win/raw?url=${encodeURIComponent(source)}`;
+    // FIX: Using corsproxy.io instead of allorigins, as it handles image binary streams much better
+    if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('corsproxy')) {
+       finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`;
     } else if (!source.startsWith('http') && !source.startsWith('data:')) {
        finalSrc = `data:image/jpeg;base64,${source}`;
     }
@@ -206,7 +207,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       const folderName = btoa(editFormData.id).replace(/=/g, ''); 
       
-      // OPTIMIZATION 1: Process images in parallel and SKIP existing bucket paths
       const uploadPromises = (editFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
@@ -218,15 +218,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
              return filePath;
           }
         }
-        return img; // Return the original path if it's already safely in the bucket
+        return img; 
       });
 
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
-      // OPTIMIZATION 2: Only generate thumbnail if it's missing or the primary image changed
       let newThumbnail = editFormData.thumbnail || "";
       const primaryIdx = editFormData.primaryImageIndex || 0;
-      
       const currentPrimaryImgSource = editFormData.images?.[primaryIdx]; 
       const originalPrimaryImgSource = seed.images?.[seed.primaryImageIndex || 0];
 
@@ -235,11 +233,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       if (needsNewThumbnail && currentPrimaryImgSource) {
         let sourceToResize = currentPrimaryImgSource;
         
-        // If it's a bucket path (not a raw base64 or external HTTP link), we need an accessible URL
         if (!sourceToResize.startsWith('data:') && !sourceToResize.startsWith('http')) {
            sourceToResize = signedUrls[sourceToResize];
-           
-           // Failsafe: If the state hasn't resolved the URL yet, fetch a temporary one instantly
            if (!sourceToResize) {
               const { data } = await supabase.storage.from('talawa_media').createSignedUrl(currentPrimaryImgSource, 60);
               if (data?.signedUrl) sourceToResize = data.signedUrl;
@@ -247,7 +242,17 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
 
         if (sourceToResize) {
-           newThumbnail = await resizeImage(sourceToResize, 150, 0.6);
+           const generatedThumb = await resizeImage(sourceToResize, 150, 0.6);
+           
+           // FAILSAFE FIX: If resizing fails (usually because CORS blocked the external HTTP link from being drawn to the canvas),
+           // we simply save the raw HTTP link as the thumbnail. It's better to load the full image than to show a blank space.
+           if (generatedThumb) {
+               newThumbnail = generatedThumb;
+           } else if (sourceToResize.startsWith('http') && !sourceToResize.includes('supabase.co')) {
+               newThumbnail = sourceToResize; 
+           } else if (sourceToResize.startsWith('data:')) {
+               newThumbnail = sourceToResize;
+           }
         }
       }
       

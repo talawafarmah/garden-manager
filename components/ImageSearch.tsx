@@ -171,10 +171,12 @@ export default function ImageSearch({ baseQuery = "", species = "", category = "
                       onClick={() => onSelect(img.url)}
                       className="group relative aspect-square rounded-xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 active:scale-95 bg-white"
                     >
-                      <img src={img.thumbnail || img.url} alt={img.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end text-left">
-                        <p className="text-white text-xs font-bold line-clamp-2 leading-tight">{img.title}</p>
-                        <p className="text-emerald-400 text-[9px] uppercase tracking-wider font-black mt-1 truncate">{img.source}</p>
+                      <img src={img.thumbnail || img.url} alt={img.title} className="w-full h-full object-cover" />
+                      
+                      {/* UI FIX: Text is always visible at the bottom of the image for mobile users */}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2 pt-8 flex flex-col justify-end text-left pointer-events-none">
+                        <p className="text-white text-[10px] font-bold line-clamp-2 leading-tight drop-shadow-md">{img.title}</p>
+                        <p className="text-emerald-400 text-[9px] uppercase tracking-wider font-black mt-0.5 truncate drop-shadow-md">{img.source}</p>
                       </div>
                     </button>
                   ))}

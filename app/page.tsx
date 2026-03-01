@@ -25,6 +25,23 @@ export default function App() {
 
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
 
+  // RESTORED: Role state defaults to viewer for safety
+  const [userRole, setUserRole] = useState<'admin' | 'viewer'>('viewer');
+
+  // RESTORED: Read the Role Cookie on initial load
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split('; ');
+      const roleCookie = cookies.find(row => row.startsWith('app_role='));
+      if (roleCookie) {
+        const role = roleCookie.split('=')[1];
+        if (role === 'admin') {
+          setUserRole('admin');
+        }
+      }
+    }
+  }, []);
+
   const fetchCategories = async () => {
     const { data } = await supabase.from('seed_categories').select('*').order('name');
     if (data) setCategories(data);
@@ -112,20 +129,21 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // RESTORED: Passing userRole down to VaultList, SeedDetail, TrayList, and TrayDetail
   switch (activeView) {
     case 'scanner':
     case 'importer':
       return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault':
-      return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} />;
+      return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;
     case 'seed_detail':
-      return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
+      return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'trays':
-      return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+      return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'tray_detail':
-      return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
+      return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} />;
     case 'tray_edit':
       return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} />;
     case 'dashboard':

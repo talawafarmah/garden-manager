@@ -8,14 +8,14 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any) => void;
   handleGoBack: (view: any) => void;
+  userRole?: string; // Passed from page.tsx to determine Admin/Viewer
 }
 
-export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: SeedDetailProps) {
+export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   
-  // State to hold parent names if this seed is a cross/descendant
   const [parents, setParents] = useState<{mother?: string, father?: string}>({});
 
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
       thumbnail: '', 
       scoville_rating: seed.scoville_rating, 
       tomato_type: seed.tomato_type,
-      parent_id_female: seed.id, // Set the current seed as the mother plant automatically
+      parent_id_female: seed.id, 
       generation: 'Gen 2'
     };
     navigateTo('seed_edit', nextGenSeed);
@@ -148,18 +148,22 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
           </svg>
         </button>
         <h1 className="text-lg font-bold truncate px-2">Seed Details</h1>
-        <div className="flex gap-2">
-           <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-             </svg>
-           </button>
-           <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-             </svg>
-           </button>
-        </div>
+        
+        {/* ROLE CHECK: Only Admins can edit or breed */}
+        {userRole === 'admin' && (
+          <div className="flex gap-2">
+             <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+               </svg>
+             </button>
+             <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+               </svg>
+             </button>
+          </div>
+        )}
       </header>
 
       <div className="max-w-md mx-auto">
