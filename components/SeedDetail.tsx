@@ -11,7 +11,6 @@ interface SeedDetailProps {
 }
 
 export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: SeedDetailProps) {
-  // Removed the local fullSeed state so this component immediately reacts to updated seed props
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
@@ -19,33 +18,44 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack }: Se
   /**
    * SIGNED URL RESOLVER
    * Fetches temporary access URLs for private Supabase Storage paths.
-   * Uses functional state updates to prevent stale closures during async loops.
+   * Utilizes bulk fetching for performance with a robust sequential fallback.
    */
   useEffect(() => {
     let isMounted = true;
     
     const loadSignedUrls = async () => {
-      if (!seed.images || seed.images.length === 0) return;
-      
-      const urlsToFetch = seed.images.filter(img => img && !img.startsWith('http') && !img.startsWith('data:'));
-      if (urlsToFetch.length === 0) return;
+      try {
+        if (!seed.images || !Array.isArray(seed.images) || seed.images.length === 0) return;
+        
+        const urlsToFetch = seed.images.filter((img: string) => img && typeof img === 'string' && !img.startsWith('http') && !img.startsWith('data:'));
+        if (urlsToFetch.length === 0) return;
 
-      const fetchedUrls: Record<string, string> = {};
+        const fetchedUrls: Record<string, string> = {};
 
-      for (const imgPath of urlsToFetch) {
-        const { data, error } = await supabase.storage
-          .from('talawa_media')
-          .createSignedUrl(imgPath, 3600); // 1 hour expiry
+        // Attempt bulk URL fetch first for optimal performance
+        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
 
-        if (data?.signedUrl) {
-          fetchedUrls[imgPath] = data.signedUrl;
-        } else if (error) {
-          console.error("Failed to load signed URL for image:", error);
+        if (data && !error) {
+          data.forEach((item: any) => {
+            const url = item.signedUrl || item.signedURL;
+            if (url) fetchedUrls[item.path] = url;
+          });
+        } else {
+          // Fallback: Sequential fetching if bulk endpoint encounters an issue
+          for (const imgPath of urlsToFetch) {
+            const { data: d } = await supabase.storage.from('talawa_media').createSignedUrl(imgPath, 3600);
+            const url = d?.signedUrl || (d as any)?.signedURL;
+            if (url) {
+              fetchedUrls[imgPath] = url;
+            }
+          }
         }
-      }
 
-      if (isMounted && Object.keys(fetchedUrls).length > 0) {
-        setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+        if (isMounted && Object.keys(fetchedUrls).length > 0) {
+          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+        }
+      } catch (err) {
+        console.error("Error in signed URL resolver:", err);
       }
     };
 

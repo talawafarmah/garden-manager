@@ -50,30 +50,44 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   /**
    * SIGNED URL RESOLVER
    * Ensures private Supabase paths are viewable in the edit form grid.
-   * Utilizes the same robust functional state updates to prevent stale closures.
+   * Utilizes robust bulk fetching and safe data URI checks.
    */
   useEffect(() => {
     let isMounted = true;
     
     const loadUrls = async () => {
-      if (!editFormData.images || editFormData.images.length === 0) return;
-      
-      const urlsToFetch = editFormData.images.filter((img: string) => img && !img.startsWith('data:image') && !img.startsWith('http'));
-      if (urlsToFetch.length === 0) return;
+      try {
+        if (!editFormData.images || !Array.isArray(editFormData.images) || editFormData.images.length === 0) return;
+        
+        const urlsToFetch = editFormData.images.filter((img: string) => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
+        if (urlsToFetch.length === 0) return;
 
-      const fetchedUrls: Record<string, string> = {};
+        const fetchedUrls: Record<string, string> = {};
 
-      for (const path of urlsToFetch) {
-        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrl(path, 3600);
-        if (data?.signedUrl) {
-          fetchedUrls[path] = data.signedUrl;
-        } else if (error) {
-          console.error("Failed to fetch signed URL:", error);
+        // Attempt bulk fetch first
+        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
+        
+        if (data && !error) {
+          data.forEach((item: any) => {
+            const url = item.signedUrl || item.signedURL;
+            if (url) fetchedUrls[item.path] = url;
+          });
+        } else {
+          // Sequential fallback
+          for (const path of urlsToFetch) {
+            const { data: d } = await supabase.storage.from('talawa_media').createSignedUrl(path, 3600);
+            const url = d?.signedUrl || (d as any)?.signedURL;
+            if (url) {
+              fetchedUrls[path] = url;
+            }
+          }
         }
-      }
 
-      if (isMounted && Object.keys(fetchedUrls).length > 0) {
-        setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+        if (isMounted && Object.keys(fetchedUrls).length > 0) {
+          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+        }
+      } catch (err) {
+        console.error("Error fetching signed URLs in SeedEdit:", err);
       }
     };
     
@@ -153,7 +167,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const uploadedImagePaths = [];
       const folderName = btoa(editFormData.id).replace(/=/g, ''); 
       for (const img of (editFormData.images || [])) {
-        if (img.startsWith('data:image') || img.startsWith('http')) {
+        if (img.startsWith('data:') || img.startsWith('http')) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           if (optimizedBase64) {
              const res = await fetch(optimizedBase64);
@@ -170,7 +184,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       if (uploadedImagePaths.length > 0) {
         const primaryIdx = editFormData.primaryImageIndex || 0;
         const primaryImgSource = editFormData.images[primaryIdx];
-        let sourceToResize = primaryImgSource.startsWith('data:image') || primaryImgSource.startsWith('http') ? primaryImgSource : signedUrls[primaryImgSource];
+        let sourceToResize = primaryImgSource.startsWith('data:') || primaryImgSource.startsWith('http') ? primaryImgSource : signedUrls[primaryImgSource];
         if (sourceToResize) newThumbnail = await resizeImage(sourceToResize, 150, 0.6);
       }
       
@@ -266,7 +280,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </div>
           <div className="grid grid-cols-3 gap-3">
             {(editFormData.images || []).map((img: string, idx: number) => {
-              const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
+              const displaySrc = img.startsWith('data:') || img.startsWith('http') ? img : signedUrls[img] || '';
               return (
                 <div key={idx} className={`relative aspect-square rounded-2xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200 bg-stone-100'}`}>
                   {displaySrc ? (
