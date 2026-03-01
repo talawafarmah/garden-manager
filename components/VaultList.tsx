@@ -8,6 +8,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const searchQuery = vaultState.searchQuery || "";
   const activeFilter = vaultState.activeFilter || "All";
   const page = vaultState.page || 0;
+  const viewMode = vaultState.viewMode || "list";
 
   const updateVaultState = (updates: any) => {
      if (setVaultState) {
@@ -18,6 +19,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const handleSetSearchQuery = (val: string) => updateVaultState({ searchQuery: val });
   const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); 
   const handleSetPage = (val: number) => updateVaultState({ page: val });
+  const handleSetViewMode = (val: 'list' | 'gallery') => updateVaultState({ viewMode: val });
   
   const [hasMore, setHasMore] = useState(true);
   const [isPagingDB, setIsPagingDB] = useState(false);
@@ -120,7 +122,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     }
   };
 
-  // ADDED: Launch a blank editor from the vault
   const handleManualNew = () => {
     const newSeed: any = {
       id: '', category: '', variety_name: '', vendor: '', days_to_maturity: '',
@@ -226,16 +227,34 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
-        {/* Search Bar */}
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="Search by name, category, or code..." 
-            value={searchQuery} 
-            onChange={(e) => handleSetSearchQuery(e.target.value)} 
-            className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all" 
-          />
-          <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        {/* Search Bar & View Toggle */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input 
+              type="text" 
+              placeholder="Search by name, category, or code..." 
+              value={searchQuery} 
+              onChange={(e) => handleSetSearchQuery(e.target.value)} 
+              className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all" 
+            />
+            <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          <div className="flex bg-white rounded-xl border border-stone-200 p-1 shadow-sm shrink-0">
+            <button 
+              onClick={() => handleSetViewMode('list')}
+              className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
+              title="List View"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+            <button 
+              onClick={() => handleSetViewMode('gallery')}
+              className={`p-2 rounded-lg transition-all ${viewMode === 'gallery' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
+              title="Gallery View"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            </button>
+          </div>
         </div>
 
         {/* Dynamic Filter Chips */}
@@ -247,9 +266,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
         </div>
 
         {/* Seed List */}
-        <div className="space-y-3">
+        <div className={viewMode === 'gallery' ? "grid grid-cols-2 gap-3" : "space-y-3"}>
           {isPagingDB && page === 0 ? (
-            <div className="flex justify-center items-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+            <div className="flex justify-center items-center py-10 text-emerald-600 col-span-full"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
           ) : seeds.length > 0 ? (
             <>
               {seeds.map((seed: InventorySeed) => {
@@ -269,6 +288,24 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                   else if (shu < 100000) { spiceColor = "bg-orange-100 text-orange-700 border-orange-200"; spiceLabel = "Hot"; }
                   else if (shu < 300000) { spiceColor = "bg-red-100 text-red-700 border-red-200"; spiceLabel = "X-Hot"; }
                   else { spiceColor = "bg-red-900 text-red-100 border-red-800"; spiceLabel = "Superhot"; }
+                }
+
+                if (viewMode === 'gallery') {
+                  return (
+                    <div key={seed.id} onClick={() => handleSeedClick(seed)} className={`bg-white rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer overflow-hidden`}>
+                      <div className={`aspect-square w-full bg-stone-100 border-b border-stone-100 relative ${isOutOfStock ? 'grayscale' : ''}`}>
+                        {thumb ? (
+                          <img src={thumb} alt={seed.variety_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                        )}
+                      </div>
+                      <div className="p-2.5">
+                        <h3 className={`font-bold text-sm leading-tight truncate ${isOutOfStock ? 'text-stone-500 line-through decoration-stone-300' : 'text-stone-800'}`}>{seed.variety_name}</h3>
+                        <div className="text-[10px] text-emerald-600 font-semibold truncate mt-0.5">{seed.category}</div>
+                      </div>
+                    </div>
+                  );
                 }
 
                 return (
@@ -314,26 +351,28 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
               {/* Load More Button */}
               {hasMore && (
-                <button 
-                  onClick={handleLoadMore} 
-                  disabled={isPagingDB}
-                  className="w-full py-4 mt-2 bg-white text-emerald-600 font-bold rounded-xl border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isPagingDB ? (
-                     <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                  ) : "Load More"}
-                </button>
+                <div className="col-span-full">
+                  <button 
+                    onClick={handleLoadMore} 
+                    disabled={isPagingDB}
+                    className="w-full py-4 mt-2 bg-white text-emerald-600 font-bold rounded-xl border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isPagingDB ? (
+                       <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    ) : "Load More"}
+                  </button>
+                </div>
               )}
             </>
           ) : !isPagingDB ? (
-            <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
+            <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm col-span-full">
               <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <p>No seeds found matching your filters.</p>
             </div>
           ) : null}
           
           {isPagingDB && page > 0 && (
-             <div className="flex justify-center items-center py-4 text-emerald-600"><svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+             <div className="flex justify-center items-center py-4 text-emerald-600 col-span-full"><svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
           )}
         </div>
       </div>
