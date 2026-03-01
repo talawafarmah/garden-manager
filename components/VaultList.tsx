@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory, AppView } from '../types';
 
-export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0 }, setVaultState }: any) {
+export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0, sortBy: 'created_at_desc' }, setVaultState }: any) {
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   
   const searchQuery = vaultState.searchQuery || "";
   const activeFilter = vaultState.activeFilter || "All";
   const page = vaultState.page || 0;
   const viewMode = vaultState.viewMode || "list";
+  const sortBy = vaultState.sortBy || "created_at_desc";
 
   const updateVaultState = (updates: any) => {
      if (setVaultState) {
@@ -20,6 +21,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); 
   const handleSetPage = (val: number) => updateVaultState({ page: val });
   const handleSetViewMode = (val: 'list' | 'gallery') => updateVaultState({ viewMode: val });
+  const handleSetSortBy = (val: string) => updateVaultState({ sortBy: val, page: 0 });
   
   const [hasMore, setHasMore] = useState(true);
   const [isPagingDB, setIsPagingDB] = useState(false);
@@ -31,6 +33,27 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
   const [companionMatches, setCompanionMatches] = useState<InventorySeed[]>([]);
   const [isLoadingCompanions, setIsLoadingCompanions] = useState(false);
 
+  const applySort = (query: any, sortOption: string) => {
+    switch (sortOption) {
+      case 'variety_name_asc':
+        return query.order('variety_name', { ascending: true });
+      case 'variety_name_desc':
+        return query.order('variety_name', { ascending: false });
+      case 'id_asc':
+        return query.order('id', { ascending: true });
+      case 'id_desc':
+        return query.order('id', { ascending: false });
+      case 'vendor_asc':
+        // Primary sort by vendor, secondary sort by variety name
+        return query.order('vendor', { ascending: true, nullsFirst: false }).order('variety_name', { ascending: true });
+      case 'created_at_asc':
+        return query.order('created_at', { ascending: true });
+      case 'created_at_desc':
+      default:
+        return query.order('created_at', { ascending: false });
+    }
+  };
+
   useEffect(() => {
     if (isInitialMount) {
         const restoreVaultData = async () => {
@@ -40,8 +63,10 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
             if (activeFilter !== "All") query = query.eq('category', activeFilter);
             if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
+            query = applySort(query, sortBy);
+
             const to = ((page + 1) * PAGE_SIZE) - 1;
-            const { data, count, error } = await query.order('created_at', { ascending: false }).range(0, to);
+            const { data, count, error } = await query.range(0, to);
 
             if (!error && data) {
                 setSeeds(data.map(s => ({ ...s, companion_plants: s.companion_plants || [] })) as InventorySeed[]);
@@ -59,7 +84,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (isInitialMount) return;
     const timeoutId = setTimeout(() => { handleSetPage(0); fetchSeeds(0, true); }, 300); 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, activeFilter]);
+  }, [searchQuery, activeFilter, sortBy]);
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
@@ -68,10 +93,12 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (activeFilter !== "All") query = query.eq('category', activeFilter);
     if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
+    query = applySort(query, sortBy);
+
     const from = pageNumber * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
     
-    const { data, error, count } = await query.order('created_at', { ascending: false }).range(from, to);
+    const { data, error, count } = await query.range(from, to);
 
     if (error) {
       alert("Failed to load inventory: " + error.message);
@@ -227,8 +254,8 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
-        {/* Search Bar & View Toggle */}
-        <div className="flex gap-2">
+        {/* Search Bar, Sort & View Toggle */}
+        <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <input 
               type="text" 
@@ -239,21 +266,40 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
             />
             <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-          <div className="flex bg-white rounded-xl border border-stone-200 p-1 shadow-sm shrink-0">
-            <button 
-              onClick={() => handleSetViewMode('list')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
-              title="List View"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
-            <button 
-              onClick={() => handleSetViewMode('gallery')}
-              className={`p-2 rounded-lg transition-all ${viewMode === 'gallery' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
-              title="Gallery View"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-            </button>
+          
+          <div className="flex gap-2">
+            <div className="relative flex-1 sm:flex-none">
+              <select
+                value={sortBy}
+                onChange={(e) => handleSetSortBy(e.target.value)}
+                className="w-full h-full appearance-none bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 cursor-pointer font-medium"
+              >
+                <option value="created_at_desc">Newest First</option>
+                <option value="created_at_asc">Oldest First</option>
+                <option value="variety_name_asc">Name (A-Z)</option>
+                <option value="variety_name_desc">Name (Z-A)</option>
+                <option value="vendor_asc">Vendor</option>
+                <option value="id_asc">Shortcode</option>
+              </select>
+              <svg className="w-4 h-4 text-stone-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </div>
+
+            <div className="flex bg-white rounded-xl border border-stone-200 p-1 shadow-sm shrink-0">
+              <button 
+                onClick={() => handleSetViewMode('list')}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
+                title="List View"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              </button>
+              <button 
+                onClick={() => handleSetViewMode('gallery')}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'gallery' ? 'bg-emerald-100 text-emerald-700' : 'text-stone-400 hover:text-stone-600'}`}
+                title="Gallery View"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              </button>
+            </div>
           </div>
         </div>
 
