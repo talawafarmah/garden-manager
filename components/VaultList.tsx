@@ -44,7 +44,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       case 'id_desc':
         return query.order('id', { ascending: false });
       case 'vendor_asc':
-        // Primary sort by vendor, secondary sort by variety name
         return query.order('vendor', { ascending: true, nullsFirst: false }).order('variety_name', { ascending: true });
       case 'created_at_asc':
         return query.order('created_at', { ascending: true });
@@ -58,7 +57,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (isInitialMount) {
         const restoreVaultData = async () => {
             setIsPagingDB(true);
-            let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating, tomato_type', { count: 'exact' });
+            
+            // FIX: Changed specific columns to '*' so SeedDetail gets the images, notes, etc.
+            let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
             if (activeFilter !== "All") query = query.eq('category', activeFilter);
             if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
@@ -88,7 +89,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
-    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating, tomato_type', { count: 'exact' });
+    
+    // FIX: Changed specific columns to '*' so SeedDetail gets the images, notes, etc.
+    let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
     if (activeFilter !== "All") query = query.eq('category', activeFilter);
     if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);

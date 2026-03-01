@@ -48,34 +48,45 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
   /**
-   * SIGNED URL RESOLVER
-   * Ensures private Supabase paths are viewable in the edit form grid.
-   * Utilizes robust bulk fetching and safe data URI checks.
+   * SIGNED URL RESOLVER WITH DIAGNOSTIC LOGGING
    */
   useEffect(() => {
     let isMounted = true;
     
     const loadUrls = async () => {
+      console.log("[SeedEdit] Starting signed URL resolution. Raw images:", editFormData.images);
       try {
-        if (!editFormData.images || !Array.isArray(editFormData.images) || editFormData.images.length === 0) return;
+        if (!editFormData.images || !Array.isArray(editFormData.images) || editFormData.images.length === 0) {
+           console.log("[SeedEdit] No images to process. Aborting resolution.");
+           return;
+        }
         
         const urlsToFetch = editFormData.images.filter((img: string) => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
+        console.log("[SeedEdit] Paths requiring signed URLs (filtered):", urlsToFetch);
+
         if (urlsToFetch.length === 0) return;
 
         const fetchedUrls: Record<string, string> = {};
 
-        // Attempt bulk fetch first
+        console.log("[SeedEdit] Calling Supabase createSignedUrls (Bulk)...");
         const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
+        console.log("[SeedEdit] Bulk response data:", data, "error:", error);
         
         if (data && !error) {
           data.forEach((item: any) => {
             const url = item.signedUrl || item.signedURL;
-            if (url) fetchedUrls[item.path] = url;
+            if (url) {
+               fetchedUrls[item.path] = url;
+            } else {
+               console.warn("[SeedEdit] Missing signed URL in returned item:", item);
+            }
           });
         } else {
+          console.warn("[SeedEdit] Bulk fetch failed, falling back to sequential fetch. Error:", error);
           // Sequential fallback
           for (const path of urlsToFetch) {
-            const { data: d } = await supabase.storage.from('talawa_media').createSignedUrl(path, 3600);
+            const { data: d, error: seqErr } = await supabase.storage.from('talawa_media').createSignedUrl(path, 3600);
+            console.log(`[SeedEdit] Sequential fetch for ${path}:`, d, "error:", seqErr);
             const url = d?.signedUrl || (d as any)?.signedURL;
             if (url) {
               fetchedUrls[path] = url;
@@ -83,11 +94,12 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           }
         }
 
+        console.log("[SeedEdit] Final resolved signed URLs mapping:", fetchedUrls);
         if (isMounted && Object.keys(fetchedUrls).length > 0) {
           setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
         }
       } catch (err) {
-        console.error("Error fetching signed URLs in SeedEdit:", err);
+        console.error("[SeedEdit] Caught an exception in signed URL resolver:", err);
       }
     };
     
@@ -284,7 +296,12 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               return (
                 <div key={idx} className={`relative aspect-square rounded-2xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200 bg-stone-100'}`}>
                   {displaySrc ? (
-                    <img src={displaySrc} alt="Seed" className="w-full h-full object-cover" />
+                    <img 
+                      src={displaySrc} 
+                      alt="Seed" 
+                      className="w-full h-full object-cover" 
+                      onError={() => console.error(`[SeedEdit] Grid image ${idx} failed to load in browser. Source:`, displaySrc)}
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-stone-300">
                       <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
