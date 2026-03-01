@@ -1,309 +1,216 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-// Inline SVG components to ensure portability
-const Icons = {
-  Search: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-  ),
-  Loader2: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
-  ),
-  Globe: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-  ),
-  X: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-  ),
-  ExternalLink: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-  ),
-  AlertCircle: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-  ),
-  ImageIcon: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-  ),
-  BookOpen: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-  ),
-  Leaf: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M11 20A7 7 0 0 1 14 6h7v7a7 7 0 0 1-7 7h-3Z"></path><path d="M14 6v6a3 3 0 0 1-3 3h-3a3 3 0 0 1-3-3V6h6Z"></path></svg>
-  ),
-  Link: ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-  )
-};
+interface ImageSearchProps {
+  query?: string;
+  onSelect: (url: string) => void;
+  onClose: () => void;
+}
 
 interface SearchResult {
   url: string;
+  thumbnail: string;
   title: string;
   source: string;
 }
 
-interface ImageSearchProps {
-  query?: string;
-  onSelect: (imageUrl: string) => void;
-  onClose: () => void;
-}
-
-type SearchMode = 'direct' | 'wiki' | 'catalogs';
-
-const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onSelect, onClose }) => {
-  const [query, setQuery] = useState(initialQuery);
-  // Default to Direct mode if opening blank, otherwise default to Wiki for text searches
-  const [searchMode, setSearchMode] = useState<SearchMode>(initialQuery ? 'wiki' : 'direct');
-  const [vendor, setVendor] = useState('');
+export default function ImageSearch({ query = "", onSelect, onClose }: ImageSearchProps) {
+  const [activeTab, setActiveTab] = useState<'search' | 'link'>('search');
   
-  const [isSearching, setIsSearching] = useState(false);
+  // Search State
+  const [searchQuery, setSearchQuery] = useState(query);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  const performSearch = async (e?: React.FormEvent) => {
+  // Direct Link State
+  const [urlInput, setUrlInput] = useState("");
+  const [previewError, setPreviewError] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+
+  // Auto-search on initial open if a query is provided
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      handleSearch();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!query.trim()) return;
+    if (!searchQuery.trim()) return;
 
     setIsSearching(true);
-    setError(null);
-    setResults([]);
-
-    if (searchMode === 'direct') {
-      try {
-        new URL(query); // Basic URL validation
-        setResults([{
-          url: query.trim(),
-          title: "Direct Image Link",
-          source: "Custom URL"
-        }]);
-      } catch {
-        setError("Please enter a valid URL (starting with http:// or https://).");
-      }
-      setIsSearching(false);
-      return;
-    }
+    setSearchError(null);
 
     try {
-      if (searchMode === 'wiki') {
-        // Direct Wikipedia API fetch (Fast, CORS-safe, highly reliable)
-        const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=8&prop=pageimages&pithumbsize=800&origin=*`;
-        const response = await fetch(url);
-        
-        if (!response.ok) throw new Error(`Wikipedia search failed: ${response.status}`);
-        
-        const data = await response.json();
-        const pages = data.query?.pages;
+      const res = await fetch(`/api/images?q=${encodeURIComponent(searchQuery)}`);
+      const data = await res.json();
 
-        if (pages) {
-          const fetchedResults: SearchResult[] = [];
-          Object.values(pages).forEach((page: any) => {
-            if (page.thumbnail?.source) {
-              fetchedResults.push({
-                url: page.thumbnail.source,
-                title: page.title,
-                source: "Wikimedia Commons"
-              });
-            }
-          });
-
-          if (fetchedResults.length > 0) {
-            setResults(fetchedResults);
-          } else {
-            throw new Error("No botanical images found on Wikipedia for this query.");
-          }
-        } else {
-          throw new Error("No Wikipedia articles found matching this plant variety.");
-        }
-      } else {
-        // Custom Next.js API Route for scraping Seed Catalogs
-        const params = new URLSearchParams({ q: query });
-        if (vendor.trim()) params.append('vendor', vendor.trim());
-
-        const response = await fetch(`/api/seed-images?${params.toString()}`);
-        
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error || `Catalog search failed (${response.status})`);
-        }
-
-        const data = await response.json();
-        
-        if (data.images && data.images.length > 0) {
-          setResults(data.images);
-        } else {
-          throw new Error("No images successfully extracted from catalogs.");
-        }
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch images');
       }
+
+      setResults(data.items || []);
     } catch (err: any) {
-      setError(err.message || "Failed to retrieve search results.");
+      setSearchError(err.message);
     } finally {
       setIsSearching(false);
     }
   };
 
+  // Direct Link Handlers
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUrlInput(e.target.value);
+    setPreviewError(false);
+    setIsValidating(true);
+  };
+
+  const handleLinkSubmit = () => {
+    if (urlInput && !previewError) {
+      onSelect(urlInput);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
-      <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-              <Icons.Globe className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white">Botanical Image Search</h3>
-              <p className="text-xs text-slate-400">Multiple source databases</p>
-            </div>
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        
+        {/* Header & Tabs */}
+        <div className="bg-stone-50 border-b border-stone-200 flex flex-col">
+          <div className="p-4 flex justify-between items-center">
+            <h3 className="font-black text-stone-800 text-lg flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              Add Photo
+            </h3>
+            <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200 rounded-full transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors">
-            <Icons.X className="h-6 w-6" />
-          </button>
+          <div className="flex px-4 gap-4">
+            <button 
+              onClick={() => setActiveTab('search')}
+              className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'search' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+            >
+              Google Web Search
+            </button>
+            <button 
+              onClick={() => setActiveTab('link')}
+              className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'link' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+            >
+              Direct URL Link
+            </button>
+          </div>
         </div>
 
-        {/* Search Configuration */}
-        <div className="p-5 bg-slate-900/50 border-b border-slate-800/50">
-          
-          {/* Mode Toggles */}
-          <div className="flex gap-2 mb-4 bg-slate-950 p-1 rounded-xl overflow-x-auto custom-scrollbar">
-            <button 
-              type="button"
-              onClick={() => setSearchMode('direct')}
-              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'direct' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Icons.Link className="w-4 h-4" />
-              Direct Link
-            </button>
-            <button 
-              type="button"
-              onClick={() => setSearchMode('wiki')}
-              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'wiki' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Icons.BookOpen className="w-4 h-4" />
-              Wikipedia
-            </button>
-            <button 
-              type="button"
-              onClick={() => setSearchMode('catalogs')}
-              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'catalogs' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              <Icons.Leaf className="w-4 h-4" />
-              Catalogs
-            </button>
-          </div>
-
-          <form onSubmit={performSearch} className="space-y-3">
-            <div className="relative">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  searchMode === 'direct' ? "Paste direct image URL (https://...)" :
-                  searchMode === 'wiki' ? "e.g. 'Jalapeno plant', 'Solanum lycopersicum'" : 
-                  "e.g. 'Cherokee Purple Tomato'"
-                }
-                className="w-full rounded-2xl bg-slate-800 border-slate-700 py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-              />
-              <button
-                type="submit"
-                disabled={isSearching || !query.trim()}
-                className="absolute right-2 top-2 rounded-xl bg-emerald-600 p-2.5 text-white hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {isSearching ? <Icons.Loader2 className="h-5 w-5 animate-spin" /> : <Icons.Search className="h-5 w-5" />}
-              </button>
-            </div>
-
-            {/* Optional Vendor Input for Catalog Mode */}
-            {searchMode === 'catalogs' && (
-              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                <input
-                  type="text"
-                  value={vendor}
-                  onChange={(e) => setVendor(e.target.value)}
-                  placeholder="Optional: Specific Vendor (e.g., Baker Creek, Johnny's)"
-                  className="w-full rounded-xl bg-slate-800/50 border border-slate-700/50 py-3 px-5 text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 outline-none"
+        {/* Tab Content: Google Search */}
+        {activeTab === 'search' && (
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="p-4 border-b border-stone-100">
+              <form onSubmit={handleSearch} className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="e.g., Cherokee Purple Tomato plant"
+                  className="flex-1 bg-stone-100 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 transition-colors"
                 />
-              </div>
-            )}
-          </form>
-        </div>
+                <button type="submit" disabled={isSearching} className="bg-emerald-600 text-white px-5 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
+                  {isSearching ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : 'Search'}
+                </button>
+              </form>
+            </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar min-h-[300px]">
-          {isSearching && (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">
-              <Icons.Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
-              <p className="animate-pulse text-sm font-medium text-emerald-500/80">
-                {searchMode === 'wiki' ? 'Accessing Wikimedia Commons...' : 'Scraping seed catalogs...'}
-              </p>
-              {searchMode === 'catalogs' && (
-                <p className="text-xs text-slate-500">This may take a few seconds as we process external pages.</p>
+            <div className="flex-1 overflow-y-auto p-4 bg-stone-50 scrollbar-hide">
+              {isSearching ? (
+                <div className="h-full flex items-center justify-center text-stone-400 flex-col gap-3 py-10">
+                  <svg className="w-8 h-8 animate-spin text-emerald-500" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span className="text-xs font-bold uppercase tracking-widest">Searching Google...</span>
+                </div>
+              ) : searchError ? (
+                <div className="text-center py-10 px-4 text-red-600 bg-red-50 rounded-2xl border border-red-100">
+                  <svg className="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <p className="font-bold text-sm">Search Failed</p>
+                  <p className="text-xs mt-1 opacity-80">{searchError}</p>
+                </div>
+              ) : results.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {results.map((img, idx) => (
+                    <button 
+                      key={idx} 
+                      onClick={() => onSelect(img.url)}
+                      className="group relative aspect-square rounded-xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 active:scale-95 bg-white"
+                    >
+                      <img src={img.thumbnail || img.url} alt={img.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end text-left">
+                        <p className="text-white text-xs font-bold line-clamp-2 leading-tight">{img.title}</p>
+                        <p className="text-emerald-400 text-[9px] uppercase tracking-wider font-black mt-1 truncate">{img.source}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-stone-400">
+                  <svg className="w-12 h-12 mx-auto mb-3 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  <p className="text-sm font-medium">No results found.</p>
+                </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {!isSearching && results.length === 0 && !error && (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500 text-center">
-              <Icons.ImageIcon className="h-16 w-16 mb-4 opacity-10" />
-              <p className="text-sm max-w-xs">
-                {searchMode === 'direct' 
-                  ? "Paste a direct link to an image and click search to grab it."
-                  : searchMode === 'wiki' 
-                  ? "Enter a plant variety to search the world's largest open botanical database."
-                  : "Search across top heirloom catalogs or target a specific seed vendor."}
-              </p>
+        {/* Tab Content: Direct Link */}
+        {activeTab === 'link' && (
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Paste Image URL (.jpg, .png)</label>
+              <input 
+                type="url" 
+                value={urlInput}
+                onChange={handleUrlChange}
+                placeholder="https://example.com/tomato.jpg"
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 transition-colors shadow-sm"
+              />
             </div>
-          )}
 
-          {error && (
-            <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
-              <Icons.AlertCircle className="w-12 h-12 text-amber-500/50 mb-3" />
-              <p className="text-amber-400 text-sm font-medium mb-6">{error}</p>
-              <button onClick={(e) => performSearch(e as any)} className="px-6 py-3 bg-slate-800 text-white rounded-xl hover:bg-slate-700 font-bold">
-                Try Again
-              </button>
-            </div>
-          )}
-
-          {results.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {results.map((img, idx) => (
-                <div 
-                  key={idx} 
-                  className="group relative flex flex-col rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden hover:border-emerald-500 transition-all cursor-pointer shadow-lg"
-                  onClick={() => onSelect(img.url)}
-                >
-                  <div className="aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden relative">
-                    {/* Placeholder shown while image loads or if it fails */}
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900 text-slate-700">
-                      <Icons.ImageIcon className="w-8 h-8 opacity-50" />
+            <div className="w-full aspect-video bg-stone-100 rounded-2xl border-2 border-dashed border-stone-200 overflow-hidden relative flex items-center justify-center">
+              {!urlInput ? (
+                 <div className="text-stone-400 flex flex-col items-center gap-2">
+                   <svg className="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                   <span className="text-xs font-medium">Image Preview</span>
+                 </div>
+              ) : previewError ? (
+                 <div className="text-red-400 flex flex-col items-center gap-2 p-4 text-center">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   <span className="text-xs font-bold text-red-600 mt-1">Failed to load image.</span>
+                   <span className="text-[10px] text-red-500/80 leading-tight">Link may be invalid, or the host server is blocking direct embeds (CORS).</span>
+                 </div>
+              ) : (
+                <>
+                  {isValidating && (
+                    <div className="absolute inset-0 bg-stone-100/80 backdrop-blur-sm flex items-center justify-center z-10">
+                       <svg className="w-6 h-6 animate-spin text-emerald-500" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </div>
-                    <img
-                      src={img.url}
-                      alt={img.title}
-                      className="w-full h-full object-cover relative z-10 transition-transform group-hover:scale-105"
-                      onError={(e) => {
-                        // Hide the broken image to reveal the placeholder underneath
-                        (e.target as HTMLImageElement).style.opacity = '0';
-                      }}
-                    />
-                  </div>
-                  <div className="p-3 bg-slate-800 relative z-20">
-                    <h4 className="text-xs font-bold text-slate-200 line-clamp-1 mb-1">{img.title}</h4>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-wider text-emerald-500 font-bold flex items-center gap-1">
-                        <Icons.Globe className="w-3 h-3" /> {img.source}
-                      </span>
-                      <Icons.ExternalLink className="w-3 h-3 text-slate-600" />
-                    </div>
-                  </div>
-                  <div className="absolute inset-0 bg-emerald-600/10 opacity-0 group-hover:opacity-100 transition-opacity z-30 pointer-events-none" />
-                </div>
-              ))}
+                  )}
+                  <img 
+                    src={urlInput} 
+                    alt="Preview" 
+                    onLoad={() => { setPreviewError(false); setIsValidating(false); }}
+                    onError={() => { setPreviewError(true); setIsValidating(false); }}
+                    className="w-full h-full object-contain bg-black/5"
+                  />
+                </>
+              )}
             </div>
-          )}
-        </div>
+
+            <button 
+              onClick={handleLinkSubmit}
+              disabled={!urlInput || previewError || isValidating}
+              className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-sm disabled:opacity-50 transition-colors hover:bg-emerald-700 active:scale-95"
+            >
+              Add Image to Seed
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
-};
-
-export default ImageSearch;
+}
