@@ -258,12 +258,13 @@ export default function WishlistCatalog() {
             </div>
           </div>
           
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x">
+          {/* CATEGORY BUTTONS - Now using flex-wrap */}
+          <div className="flex flex-wrap gap-2 pt-1 pb-1">
             {availableCategories.map(cat => (
               <button 
                 key={cat} 
                 onClick={() => setActiveCategory(cat)}
-                className={`snap-start px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm ${activeCategory === cat ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200'}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm ${activeCategory === cat ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200'}`}
               >
                 {cat}
               </button>
