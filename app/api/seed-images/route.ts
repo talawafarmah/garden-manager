@@ -11,12 +11,13 @@ export async function GET(request: Request) {
 
   try {
     // 1. Construct a targeted site search
-    // Default to the big three heirloom/open-pollinated sources if no vendor is specified
-    let siteQuery = 'site:rareseeds.com OR site:johnnyseeds.com OR site:burpee.com';
+    // Expanded to include major US and Canadian seed suppliers
+    let siteQuery = 'site:rareseeds.com OR site:johnnyseeds.com OR site:burpee.com OR site:westcoastseeds.com OR site:oscseeds.com OR site:mckenzieseeds.com OR site:richters.com OR site:incredibleseeds.ca OR site:veseys.com OR site:scovillecanada.com';
     
     if (vendor && vendor.trim() !== '') {
       const cleanVendor = vendor.replace(/[^a-zA-Z0-9.-]/g, '').toLowerCase();
-      siteQuery = `site:${cleanVendor}.com OR site:${cleanVendor}.org OR site:${cleanVendor}.net OR "${vendor}"`;
+      // Added .ca to the domain guesser for Canadian vendors
+      siteQuery = `site:${cleanVendor}.com OR site:${cleanVendor}.ca OR site:${cleanVendor}.org OR site:${cleanVendor}.net OR "${vendor}"`;
     }
 
     // 2. Fetch search results using Yahoo Search via GET 
