@@ -19,8 +19,9 @@ export async function GET(request: Request) {
       siteQuery = `site:${cleanVendor}.com OR site:${cleanVendor}.org OR site:${cleanVendor}.net OR "${vendor}"`;
     }
 
-    // 2. Fetch search results using DuckDuckGo HTML via GET (Proven more reliable)
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${siteQuery} ${query} seeds`)}`;
+    // 2. Fetch search results using Yahoo Search via GET 
+    // Yahoo is significantly more tolerant of serverless/datacenter IP addresses than DDG/Google
+    const searchUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(`${siteQuery} ${query} seeds`)}`;
     
     const searchResponse = await fetch(searchUrl, {
       headers: { 
@@ -31,13 +32,12 @@ export async function GET(request: Request) {
     });
 
     if (!searchResponse.ok) {
-      throw new Error(`Upstream search engine rate limit reached (${searchResponse.status}). Try Wikipedia mode.`);
+      throw new Error(`Upstream search engine blocked the request (${searchResponse.status}). Try Wikipedia mode.`);
     }
 
     const html = await searchResponse.text();
 
     // 3. Extract the actual target URLs from the search results
-    // Broadened regex to catch varying link classes (result__url, result__snippet, etc.)
     const resultRegex = /<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/g;
     const pageUrls: {url: string, title: string}[] = [];
     let match;
@@ -45,19 +45,22 @@ export async function GET(request: Request) {
     while ((match = resultRegex.exec(html)) !== null && pageUrls.length < 5) {
       let url = match[1];
       
-      // DDG wraps outgoing links in a redirect
-      if (url.includes('uddg=')) {
-        try {
-          url = decodeURIComponent(new URLSearchParams(url.split('?')[1]).get('uddg') || url);
-        } catch (e) {
-          continue; // Skip if we can't parse the URL
+      // Yahoo wraps outgoing links in a tracking redirect. The actual URL is encoded in the 'RU=' parameter.
+      if (url.includes('RU=')) {
+        const ruMatch = url.match(/RU=([^/]+)/);
+        if (ruMatch) {
+          try {
+            url = decodeURIComponent(ruMatch[1]);
+          } catch (e) {
+            continue; // Skip if URL decoding fails
+          }
         }
       }
       
-      // Filter out internal DDG links, generic category pages, and ensure it's a real HTTP link
+      // Basic horticultural filter: skip generic category pages, ensure it's a real HTTP link
       if (
         url.startsWith('http') && 
-        !url.includes('duckduckgo.com') && 
+        !url.includes('yahoo.com') && 
         !url.toLowerCase().includes('/category/') &&
         !url.toLowerCase().includes('/collections/')
       ) {
@@ -73,7 +76,7 @@ export async function GET(request: Request) {
     }
 
     if (pageUrls.length === 0) {
-      return NextResponse.json({ error: 'No catalog pages found. The search engine may be temporarily blocking requests.' }, { status: 404 });
+      return NextResponse.json({ error: 'No catalog pages found. The upstream engine returned zero matches.' }, { status: 404 });
     }
 
     // 4. Concurrently fetch the product pages and scrape their Open Graph images
