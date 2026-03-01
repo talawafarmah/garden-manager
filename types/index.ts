@@ -75,11 +75,17 @@ export interface InventorySeed {
   newCatPrefix?: string;
 }
 
+// RESTORED: Required by TrayEdit.tsx
+export interface TraySeedRecord {
+  cell: number;
+  seed_id: string;
+}
+
 export interface SeedlingTray {
   id: string;
   sown_date: string;
   cell_count: number;
-  contents: { cell: number; seed_id: string }[];
+  contents: TraySeedRecord[]; // Uses the restored interface
   notes?: string;
   images?: string[];
   humidity_dome?: boolean;
