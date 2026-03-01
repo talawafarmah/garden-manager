@@ -8,39 +8,47 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
   }
 
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
+  const apiKey = process.env.SERPER_API_KEY;
 
-  if (!apiKey || !cx) {
+  if (!apiKey) {
     return NextResponse.json({ 
-      error: 'Google Search API is not configured on the server. Please add GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID to your environment variables.' 
+      error: 'SERPER_API_KEY is missing from environment variables.' 
     }, { status: 500 });
   }
 
   try {
-    // Call the official Google Custom Search JSON API
-    const searchUrl = `https://customsearch.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&searchType=image&num=10&safe=active`;
-    
-    const res = await fetch(searchUrl);
-    const data = await res.json();
+    const res = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q: query,
+        num: 12 // Number of images to return
+      })
+    });
 
-    if (data.error) {
-      return NextResponse.json({ error: data.error.message }, { status: res.status });
+    if (!res.ok) {
+      return NextResponse.json({ error: 'Failed to fetch from Serper API' }, { status: res.status });
     }
 
-    if (!data.items) {
+    const data = await res.json();
+
+    if (!data.images || data.images.length === 0) {
       return NextResponse.json({ items: [] });
     }
 
-    // Format the results into a clean, predictable array for the frontend
-    const items = data.items.map((item: any) => ({
-      url: item.link,                 // The full resolution image
-      thumbnail: item.image.thumbnailLink, // A lightweight thumbnail for the grid
-      title: item.title,
-      source: item.displayLink
+    // Format the Serper results to match our frontend component's expectations
+    const items = data.images.map((img: any) => ({
+      url: img.imageUrl,
+      thumbnail: img.thumbnailUrl || img.imageUrl,
+      title: img.title,
+      source: img.source
     }));
 
     return NextResponse.json({ items });
+    
   } catch (e: any) {
     return NextResponse.json({ error: `Internal Server Error: ${e.message}` }, { status: 500 });
   }
