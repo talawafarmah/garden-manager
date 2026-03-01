@@ -1,3 +1,4 @@
+/* Component: ScannerImporter.tsx */
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { fileToBase64, fetchWithRetry, getBestModel, generateNextId } from '../lib/utils';
@@ -26,7 +27,6 @@ export default function ScannerImporter({ isScanMode, categories, setCategories,
   const [showNewCatForm, setShowNewCatForm] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatPrefix, setNewCatPrefix] = useState("");
-
   const [isImageSearchOpen, setIsImageSearchOpen] = useState(false);
 
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
@@ -42,6 +42,7 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
   "days_to_maturity": number or null,
   "species": "string",
   "category": "string",
+  "tomato_type": "string (Determinate, Indeterminate, Semi-Determinate, or Dwarf/Micro)",
   "notes": "string",
   "companion_plants": ["string"],
   "seed_depth": "string",
@@ -64,7 +65,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         const cleanJson = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
         const parsedData = JSON.parse(cleanJson);
         
-        // Prevent 'null' from breaking TypeScript number|string bindings
         for (const key in parsedData) {
           if (parsedData[key] === null) {
             parsedData[key] = "";
@@ -72,7 +72,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         }
 
         const aiCat = parsedData.category;
-        
         if (aiCat) {
           const matched = categories.find(c => c.name.toLowerCase() === aiCat.toLowerCase());
           if (matched) {
@@ -218,6 +217,7 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
   };
 
   const isPepper = analysisResult?.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
+  const isTomato = analysisResult?.category?.toLowerCase().includes('tomato') || newCatName.toLowerCase().includes('tomato');
 
   return (
     <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col font-sans">
@@ -292,13 +292,11 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
               </h3>
               
               <div className="space-y-4">
-                {/* 1. Variety Name */}
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Variety Name</label>
                   <input type="text" value={analysisResult.variety_name || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, variety_name: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" />
                 </div>
 
-                {/* 2. Species & Vendor */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Species</label>
@@ -310,7 +308,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 </div>
 
-                {/* 3. Category */}
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Category</label>
                   <select 
@@ -336,7 +333,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 )}
 
-                {/* 4. DTM & Lifecycle */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Days to Maturity</label>
@@ -348,7 +344,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 </div>
 
-                {/* 5. Scoville (Conditional) */}
                 {isPepper && (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center justify-between shadow-sm">
                     <label className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</label>
@@ -356,7 +351,23 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 )}
 
-                {/* 6. Sunlight & Germination Days */}
+                {isTomato && (
+                  <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-center justify-between shadow-sm">
+                    <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest">Tomato Type</label>
+                    <select 
+                      value={analysisResult.tomato_type || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, tomato_type: e.target.value })} 
+                      className="w-32 bg-white border border-rose-200 rounded-lg p-2 text-xs font-black text-rose-700 outline-none"
+                    >
+                      <option value="">Select...</option>
+                      <option value="Determinate">Determinate</option>
+                      <option value="Indeterminate">Indeterminate</option>
+                      <option value="Semi-Determinate">Semi-Determinate</option>
+                      <option value="Dwarf/Micro">Dwarf/Micro</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                    <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sunlight</label>
@@ -368,7 +379,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 </div>
 
-                {/* 7. Planting Dimensions */}
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seed Depth</label>
@@ -384,7 +394,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 </div>
 
-                {/* 8. Requirements Toggles */}
                 <div className="flex flex-wrap gap-2 pt-2">
                   <button 
                     onClick={() => setAnalysisResult({...analysisResult, light_required: !analysisResult.light_required})}
@@ -400,7 +409,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </button>
                 </div>
 
-                {/* 9. Stratification Days (Conditional) */}
                 {analysisResult.cold_stratification && (
                   <div className="animate-in slide-in-from-left-2 p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
                     <label className="block text-[9px] font-black text-blue-800 uppercase tracking-widest mb-1 ml-1">Stratification Days</label>
@@ -408,7 +416,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                   </div>
                 )}
 
-                {/* 10. Companions & Notes */}
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Companion Plants (comma separated)</label>
                   <input type="text" value={(analysisResult.companion_plants || []).join(', ')} onChange={(e) => setAnalysisResult({ ...analysisResult, companion_plants: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-medium outline-none shadow-sm" />

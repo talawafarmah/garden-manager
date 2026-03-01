@@ -1,3 +1,4 @@
+/* Component: SeedEdit.tsx */
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory } from '../types';
@@ -81,9 +82,29 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const payload = {
         contents: [{
           role: "user",
-          parts: [{ text: `Variety: "${editFormData.variety_name}". Current data: ${JSON.stringify(editFormData)}. Fill in ALL missing botanical details.` }]
+          parts: [{ text: `Variety: "${editFormData.variety_name}". Current data: ${JSON.stringify(editFormData)}. Fill in ALL missing botanical details (Days to maturity, sunlight, spacing, etc.) accurately. If it is a tomato, determine if it is Determinate or Indeterminate.` }]
         }],
-        systemInstruction: { parts: [{ text: "Respond ONLY with a valid JSON object matching the standard schema structure." }] },
+        systemInstruction: { parts: [{ text: `You are a master horticulturist AI. Extract accurate botanical data into structured JSON. Respond ONLY with a valid JSON object matching this structure exactly (use null for unknown numbers, "" for unknown strings):
+        {
+          "variety_name": "string",
+          "vendor": "string",
+          "days_to_maturity": number or null,
+          "species": "string",
+          "category": "string",
+          "tomato_type": "string (Determinate, Indeterminate, Semi-Determinate, or Dwarf/Micro)",
+          "notes": "string",
+          "companion_plants": ["string"],
+          "seed_depth": "string",
+          "plant_spacing": "string",
+          "row_spacing": "string",
+          "germination_days": "string",
+          "sunlight": "string",
+          "lifecycle": "string",
+          "cold_stratification": boolean,
+          "stratification_days": number or null,
+          "light_required": boolean,
+          "scoville_rating": number or null
+        }` }] },
         tools: [{ google_search: {} }]
       };
       const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 3);

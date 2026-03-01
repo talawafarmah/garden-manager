@@ -16,6 +16,7 @@ export interface SeedData {
   sunlight?: string;
   lifecycle?: string;
   scoville_rating?: number | string; 
+  tomato_type: string;
 }
 
 export interface InventorySeed {
