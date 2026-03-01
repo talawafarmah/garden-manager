@@ -28,6 +28,9 @@ const Icons = {
   ),
   Leaf: ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M11 20A7 7 0 0 1 14 6h7v7a7 7 0 0 1-7 7h-3Z"></path><path d="M14 6v6a3 3 0 0 1-3 3h-3a3 3 0 0 1-3-3V6h6Z"></path></svg>
+  ),
+  Link: ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
   )
 };
 
@@ -43,11 +46,12 @@ interface ImageSearchProps {
   onClose: () => void;
 }
 
-type SearchMode = 'wiki' | 'catalogs';
+type SearchMode = 'direct' | 'wiki' | 'catalogs';
 
 const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onSelect, onClose }) => {
   const [query, setQuery] = useState(initialQuery);
-  const [searchMode, setSearchMode] = useState<SearchMode>('wiki');
+  // Default to Direct mode if opening blank, otherwise default to Wiki for text searches
+  const [searchMode, setSearchMode] = useState<SearchMode>(initialQuery ? 'wiki' : 'direct');
   const [vendor, setVendor] = useState('');
   
   const [isSearching, setIsSearching] = useState(false);
@@ -61,6 +65,21 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
     setIsSearching(true);
     setError(null);
     setResults([]);
+
+    if (searchMode === 'direct') {
+      try {
+        new URL(query); // Basic URL validation
+        setResults([{
+          url: query.trim(),
+          title: "Direct Image Link",
+          source: "Custom URL"
+        }]);
+      } catch {
+        setError("Please enter a valid URL (starting with http:// or https://).");
+      }
+      setIsSearching(false);
+      return;
+    }
 
     try {
       if (searchMode === 'wiki') {
@@ -143,22 +162,30 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
         <div className="p-5 bg-slate-900/50 border-b border-slate-800/50">
           
           {/* Mode Toggles */}
-          <div className="flex gap-2 mb-4 bg-slate-950 p-1 rounded-xl">
+          <div className="flex gap-2 mb-4 bg-slate-950 p-1 rounded-xl overflow-x-auto custom-scrollbar">
+            <button 
+              type="button"
+              onClick={() => setSearchMode('direct')}
+              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'direct' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              <Icons.Link className="w-4 h-4" />
+              Direct Link
+            </button>
             <button 
               type="button"
               onClick={() => setSearchMode('wiki')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'wiki' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'wiki' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
             >
               <Icons.BookOpen className="w-4 h-4" />
-              Wikipedia (Fast)
+              Wikipedia
             </button>
             <button 
               type="button"
               onClick={() => setSearchMode('catalogs')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'catalogs' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+              className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${searchMode === 'catalogs' ? 'bg-slate-800 text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
             >
               <Icons.Leaf className="w-4 h-4" />
-              Seed Catalogs (Deep)
+              Catalogs
             </button>
           </div>
 
@@ -168,7 +195,11 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={searchMode === 'wiki' ? "e.g. 'Jalapeno plant', 'Solanum lycopersicum'" : "e.g. 'Cherokee Purple Tomato'"}
+                placeholder={
+                  searchMode === 'direct' ? "Paste direct image URL (https://...)" :
+                  searchMode === 'wiki' ? "e.g. 'Jalapeno plant', 'Solanum lycopersicum'" : 
+                  "e.g. 'Cherokee Purple Tomato'"
+                }
                 className="w-full rounded-2xl bg-slate-800 border-slate-700 py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
               />
               <button
@@ -213,7 +244,9 @@ const ImageSearch: React.FC<ImageSearchProps> = ({ query: initialQuery = '', onS
             <div className="flex flex-col items-center justify-center py-20 text-slate-500 text-center">
               <Icons.ImageIcon className="h-16 w-16 mb-4 opacity-10" />
               <p className="text-sm max-w-xs">
-                {searchMode === 'wiki' 
+                {searchMode === 'direct' 
+                  ? "Paste a direct link to an image and click search to grab it."
+                  : searchMode === 'wiki' 
                   ? "Enter a plant variety to search the world's largest open botanical database."
                   : "Search across top heirloom catalogs or target a specific seed vendor."}
               </p>
