@@ -11,59 +11,69 @@ export async function GET(request: Request) {
 
   try {
     // 1. Construct a targeted site search
-    // Default to the big three heirloom/open-pollinated sources if no vendor is specified
     let siteQuery = 'site:rareseeds.com OR site:johnnyseeds.com OR site:burpee.com';
     
     if (vendor && vendor.trim() !== '') {
-      // Clean the vendor string and target it specifically
       const cleanVendor = vendor.replace(/[^a-zA-Z0-9.-]/g, '').toLowerCase();
-      // Try to guess the domain structure or do a strict keyword match
       siteQuery = `site:${cleanVendor}.com OR site:${cleanVendor}.org OR site:${cleanVendor}.net OR "${vendor}"`;
     }
 
-    // 2. Fetch search results from a non-JS search engine (DuckDuckGo HTML)
-    // We append "seeds" to ensure we get product pages and not blog posts
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${siteQuery} ${query} seeds`)}`;
+    // 2. Fetch search results using DuckDuckGo Lite via POST (Stealthier, less rate-limiting)
+    const searchUrl = 'https://lite.duckduckgo.com/lite/';
+    const payloadQuery = `${siteQuery} ${query} seeds`;
     
     const searchResponse = await fetch(searchUrl, {
+      method: 'POST',
       headers: { 
-        // Spoof a standard user agent so we don't get blocked by bot protection
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Origin': 'https://lite.duckduckgo.com',
+        'Referer': 'https://lite.duckduckgo.com/'
+      },
+      body: `q=${encodeURIComponent(payloadQuery)}`
     });
 
     if (!searchResponse.ok) {
-      throw new Error('Upstream search engine rate limit reached. Try Wikipedia mode.');
+      throw new Error(`Upstream search engine rate limit reached (${searchResponse.status}). Try Wikipedia mode.`);
     }
 
     const html = await searchResponse.text();
 
     // 3. Extract the actual target URLs from the search results
-    // FIXED: Removed the /s flag and used [\s\S] to support older TS compilation targets
-    const resultRegex = /<a class="result__url" href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/g;
+    // Broadened regex to catch any href in the Lite HTML structure
+    const resultRegex = /<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/g;
     const pageUrls: {url: string, title: string}[] = [];
     let match;
 
     while ((match = resultRegex.exec(html)) !== null && pageUrls.length < 5) {
       let url = match[1];
-      // DDG wraps URLs in a redirect; we need to extract the actual destination
+      
+      // DDG Lite wraps outgoing links in a redirect
       if (url.includes('uddg=')) {
-        url = decodeURIComponent(new URLSearchParams(url.split('?')[1]).get('uddg') || url);
+        try {
+          url = decodeURIComponent(new URLSearchParams(url.split('?')[1]).get('uddg') || url);
+        } catch (e) {
+          continue; // Skip if we can't parse the URL
+        }
       }
       
-      // Basic horticultural filter: skip generic category pages, prioritize product pages
-      if (!url.toLowerCase().includes('/category/')) {
+      // Filter out internal DDG links, generic category pages, and ensure it's a real HTTP link
+      if (
+        url.startsWith('http') && 
+        !url.includes('duckduckgo.com') && 
+        !url.toLowerCase().includes('/category/') &&
+        !url.toLowerCase().includes('/collections/')
+      ) {
         pageUrls.push({ 
           url, 
-          title: match[2].replace(/<[^>]+>/g, '').trim() // Strip HTML tags from title
+          title: match[2].replace(/<[^>]+>/g, '').trim() // Strip HTML tags
         });
       }
     }
 
     if (pageUrls.length === 0) {
-      return NextResponse.json({ error: 'No catalog pages found for this variety.' }, { status: 404 });
+      return NextResponse.json({ error: 'No catalog pages found. The search engine may be temporarily blocking requests.' }, { status: 404 });
     }
 
     // 4. Concurrently fetch the product pages and scrape their Open Graph images
@@ -104,7 +114,7 @@ export async function GET(request: Request) {
           
           return {
             url: imgUrl,
-            // Clean up the title (e.g., "Tomato Cherokee Purple Seeds - Baker Creek" -> "Tomato Cherokee Purple Seeds")
+            // Clean up the title (e.g., "Tomato Cherokee Purple Seeds - Baker Creek" -> "Tomato Cherokee Purple")
             title: page.title.split('|')[0].split('-')[0].trim(),
             source: new URL(page.url).hostname.replace('www.', ''),
           };
