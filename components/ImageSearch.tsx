@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
 interface ImageSearchProps {
-  query?: string;
+  baseQuery?: string;
+  species?: string;
+  category?: string;
   onSelect: (url: string) => void;
   onClose: () => void;
 }
@@ -13,11 +15,11 @@ interface SearchResult {
   source: string;
 }
 
-export default function ImageSearch({ query = "", onSelect, onClose }: ImageSearchProps) {
+export default function ImageSearch({ baseQuery = "", species = "", category = "", onSelect, onClose }: ImageSearchProps) {
   const [activeTab, setActiveTab] = useState<'search' | 'link'>('search');
   
   // Search State
-  const [searchQuery, setSearchQuery] = useState(query);
+  const [searchQuery, setSearchQuery] = useState(baseQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -54,6 +56,12 @@ export default function ImageSearch({ query = "", onSelect, onClose }: ImageSear
       setSearchError(err.message);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const appendToQuery = (text: string) => {
+    if (text && !searchQuery.toLowerCase().includes(text.toLowerCase())) {
+      setSearchQuery(prev => `${prev} ${text}`.trim());
     }
   };
 
@@ -104,19 +112,43 @@ export default function ImageSearch({ query = "", onSelect, onClose }: ImageSear
         {/* Tab Content: Google Search */}
         {activeTab === 'search' && (
           <div className="flex flex-col flex-1 min-h-0">
-            <div className="p-4 border-b border-stone-100">
+            <div className="p-4 border-b border-stone-100 bg-white">
               <form onSubmit={handleSearch} className="flex gap-2">
                 <input 
                   type="text" 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="e.g., Cherokee Purple Tomato plant"
-                  className="flex-1 bg-stone-100 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 transition-colors"
+                  className="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 transition-colors"
                 />
                 <button type="submit" disabled={isSearching} className="bg-emerald-600 text-white px-5 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
                   {isSearching ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : 'Search'}
                 </button>
               </form>
+              
+              {/* Quick Append Chips */}
+              <div className="flex items-center gap-2 mt-3 overflow-x-auto scrollbar-hide pb-1">
+                <span className="text-[10px] font-black text-stone-400 uppercase flex-shrink-0 tracking-widest">Quick Add:</span>
+                {species && (
+                  <button type="button" onClick={() => appendToQuery(species)} className="flex-shrink-0 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[11px] rounded-lg font-bold border border-emerald-200 hover:bg-emerald-100 transition-colors active:scale-95">
+                    + {species}
+                  </button>
+                )}
+                {category && category !== '__NEW__' && (
+                  <button type="button" onClick={() => appendToQuery(category)} className="flex-shrink-0 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[11px] rounded-lg font-bold border border-emerald-200 hover:bg-emerald-100 transition-colors active:scale-95">
+                    + {category}
+                  </button>
+                )}
+                <button type="button" onClick={() => appendToQuery('Plant')} className="flex-shrink-0 px-2.5 py-1 bg-stone-100 text-stone-600 text-[11px] rounded-lg font-bold border border-stone-200 hover:bg-stone-200 transition-colors active:scale-95">
+                  + Plant
+                </button>
+                <button type="button" onClick={() => appendToQuery('Seeds')} className="flex-shrink-0 px-2.5 py-1 bg-stone-100 text-stone-600 text-[11px] rounded-lg font-bold border border-stone-200 hover:bg-stone-200 transition-colors active:scale-95">
+                  + Seeds
+                </button>
+                <button type="button" onClick={() => appendToQuery('Packet')} className="flex-shrink-0 px-2.5 py-1 bg-stone-100 text-stone-600 text-[11px] rounded-lg font-bold border border-stone-200 hover:bg-stone-200 transition-colors active:scale-95">
+                  + Packet
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 bg-stone-50 scrollbar-hide">

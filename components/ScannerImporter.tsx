@@ -221,9 +221,12 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
 
   return (
     <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col font-sans">
+      {/* UPDATE: Replaced `query` with `baseQuery`, `species`, and `category` props */}
       {isImageSearchOpen && analysisResult && (
         <ImageSearch 
-          query={`${analysisResult.variety_name} ${analysisResult.species || ''} plant`}
+          baseQuery={`${analysisResult.vendor || ''} ${analysisResult.variety_name || ''}`.trim()}
+          species={analysisResult.species}
+          category={analysisResult.category}
           onSelect={(url) => { setImagePreview(url); setIsImageSearchOpen(false); }}
           onClose={() => setIsImageSearchOpen(false)}
         />

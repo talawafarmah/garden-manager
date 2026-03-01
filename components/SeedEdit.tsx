@@ -4,6 +4,17 @@ import { InventorySeed, SeedCategory } from '../types';
 import { fetchWithRetry, getBestModel } from '../lib/utils';
 import ImageSearch from './ImageSearch';
 
+// Fast, synchronous conversion of base64 to binary Blob
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+  const byteString = atob(base64.split(',')[1]);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new Blob([ab], { type: mimeType });
+};
+
 const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
   return new Promise((resolve) => {
     if (!source) return resolve("");
@@ -180,6 +191,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const handleSaveEdit = async () => {
     if (!editFormData.id.trim()) { alert("ID is required."); return; }
     setIsSaving(true);
+    
     try {
       const isNewRecord = !inventory.some((s: InventorySeed) => s.id === seed.id);
       
@@ -192,34 +204,50 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
       }
 
-      const uploadedImagePaths = [];
       const folderName = btoa(editFormData.id).replace(/=/g, ''); 
       
-      for (const img of (editFormData.images || [])) {
+      // OPTIMIZATION 1: Process images in parallel and SKIP existing bucket paths
+      const uploadPromises = (editFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           if (optimizedBase64) {
-             const res = await fetch(optimizedBase64);
-             const blob = await res.blob();
+             const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
              const fileName = `${crypto.randomUUID()}.jpg`;
              const filePath = `${folderName}/${fileName}`;
              await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
-             uploadedImagePaths.push(filePath);
-          } else { 
-            uploadedImagePaths.push(img); 
+             return filePath;
           }
-        } else { 
-          uploadedImagePaths.push(img); 
         }
-      }
+        return img; // Return the original path if it's already safely in the bucket
+      });
+
+      const uploadedImagePaths = await Promise.all(uploadPromises);
       
+      // OPTIMIZATION 2: Only generate thumbnail if it's missing or the primary image changed
       let newThumbnail = editFormData.thumbnail || "";
-      if (uploadedImagePaths.length > 0) {
-        const primaryIdx = editFormData.primaryImageIndex || 0;
-        const primaryImgSource = editFormData.images[primaryIdx];
-        let sourceToResize = primaryImgSource.startsWith('data:') || primaryImgSource.startsWith('http') ? primaryImgSource : signedUrls[primaryImgSource];
+      const primaryIdx = editFormData.primaryImageIndex || 0;
+      
+      const currentPrimaryImgSource = editFormData.images?.[primaryIdx]; 
+      const originalPrimaryImgSource = seed.images?.[seed.primaryImageIndex || 0];
+
+      const needsNewThumbnail = !newThumbnail || currentPrimaryImgSource !== originalPrimaryImgSource;
+
+      if (needsNewThumbnail && currentPrimaryImgSource) {
+        let sourceToResize = currentPrimaryImgSource;
+        
+        // If it's a bucket path (not a raw base64 or external HTTP link), we need an accessible URL
+        if (!sourceToResize.startsWith('data:') && !sourceToResize.startsWith('http')) {
+           sourceToResize = signedUrls[sourceToResize];
+           
+           // Failsafe: If the state hasn't resolved the URL yet, fetch a temporary one instantly
+           if (!sourceToResize) {
+              const { data } = await supabase.storage.from('talawa_media').createSignedUrl(currentPrimaryImgSource, 60);
+              if (data?.signedUrl) sourceToResize = data.signedUrl;
+           }
+        }
+
         if (sourceToResize) {
-          newThumbnail = await resizeImage(sourceToResize, 150, 0.6);
+           newThumbnail = await resizeImage(sourceToResize, 150, 0.6);
         }
       }
       
@@ -252,10 +280,11 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         if (error) throw new Error("Update Error: " + error.message);
       }
       
-      const statePayload = { ...cleanPayloadToSave, returnTo: seed.returnTo, returnPayload: seed.returnPayload };
-      const updatedInventory = isNewRecord ? [statePayload, ...inventory] : inventory.map((s: InventorySeed) => s.id === seed.id ? statePayload : s);
+      const updatedInventory = isNewRecord ? [cleanPayloadToSave, ...inventory] : inventory.map((s: InventorySeed) => s.id === seed.id ? cleanPayloadToSave : s);
       setInventory(updatedInventory);
-      navigateTo('seed_detail', statePayload, true);
+      
+      navigateTo('vault');
+      
     } catch (e: any) { 
       alert(e.message); 
     } finally { 
@@ -274,11 +303,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   };
 
   const handleCancel = () => { 
-    if (seed.id && inventory.some((s: InventorySeed) => s.id === seed.id)) {
-      navigateTo('seed_detail', seed, true);
-    } else {
-      handleGoBack('vault');
-    }
+    handleGoBack('vault');
   };
 
   const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
@@ -288,7 +313,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       {isImageSearchOpen && (
         <ImageSearch 
-          query={`${editFormData.variety_name} ${editFormData.species || ''} plant`}
+          baseQuery={`${editFormData.vendor || ''} ${editFormData.variety_name || ''}`.trim()}
+          species={editFormData.species}
+          category={editFormData.category}
           onSelect={(url: string) => { 
             setEditFormData({ ...editFormData, images: [...(editFormData.images || []), url] }); 
             setIsImageSearchOpen(false); 
