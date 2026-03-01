@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(req: NextRequest) {
+  // NEW: The Express Lane for Guests (Wishlist Catalog)
+  // If the URL starts with /wishlist, bypass the password prompt completely
+  if (req.nextUrl.pathname.startsWith('/wishlist')) {
+    return NextResponse.next();
+  }
+
   const basicAuth = req.headers.get('authorization');
 
   if (basicAuth) {
@@ -19,9 +25,8 @@ export function middleware(req: NextRequest) {
     const viewerUser = process.env.AUTH_VIEWER_USER?.trim();
     const viewerPass = process.env.AUTH_VIEWER_PASS?.trim();
 
-    // DEBUG LOGGING: Look at your terminal (where npm run dev is running) to see this output
+    // DEBUG LOGGING: Look at your terminal to see this output
     console.log(`[Auth Attempt] User: "${user}" | Pass: "${pwd}"`);
-    console.log(`[Env Loaded] Admin: "${adminUser}" | Viewer: "${viewerUser}"`);
 
     // Check if it's the Admin
     if (user === adminUser && pwd === adminPass) {

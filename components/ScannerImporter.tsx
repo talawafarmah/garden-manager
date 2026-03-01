@@ -65,9 +65,14 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         const cleanJson = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
         const parsedData = JSON.parse(cleanJson);
         
+        // FIX: Route numbers to undefined, text to empty string
         for (const key in parsedData) {
           if (parsedData[key] === null) {
-            parsedData[key] = "";
+            if (['days_to_maturity', 'stratification_days', 'scoville_rating'].includes(key)) {
+               parsedData[key] = undefined;
+            } else {
+               parsedData[key] = "";
+            }
           }
         }
 
@@ -221,7 +226,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
 
   return (
     <main className="min-h-screen bg-stone-900 text-stone-50 flex flex-col font-sans">
-      {/* UPDATE: Replaced `query` with `baseQuery`, `species`, and `category` props */}
       {isImageSearchOpen && analysisResult && (
         <ImageSearch 
           baseQuery={`${analysisResult.vendor || ''} ${analysisResult.variety_name || ''}`.trim()}
@@ -339,7 +343,12 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Days to Maturity</label>
-                    <input type="number" value={analysisResult.days_to_maturity || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value ? Number(e.target.value) : "" })} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none shadow-sm" />
+                    <input 
+                      type="number" 
+                      value={analysisResult.days_to_maturity || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, days_to_maturity: e.target.value ? Number(e.target.value) : undefined })} 
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none shadow-sm" 
+                    />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Lifecycle</label>
@@ -350,7 +359,12 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                 {isPepper && (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center justify-between shadow-sm">
                     <label className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</label>
-                    <input type="number" value={analysisResult.scoville_rating || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, scoville_rating: e.target.value ? Number(e.target.value) : "" })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" />
+                    <input 
+                      type="number" 
+                      value={analysisResult.scoville_rating || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, scoville_rating: e.target.value ? Number(e.target.value) : undefined })} 
+                      className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" 
+                    />
                   </div>
                 )}
 
@@ -415,7 +429,12 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
                 {analysisResult.cold_stratification && (
                   <div className="animate-in slide-in-from-left-2 p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
                     <label className="block text-[9px] font-black text-blue-800 uppercase tracking-widest mb-1 ml-1">Stratification Days</label>
-                    <input type="number" value={analysisResult.stratification_days || ''} onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value ? Number(e.target.value) : "" })} className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
+                    <input 
+                      type="number" 
+                      value={analysisResult.stratification_days || ''} 
+                      onChange={(e) => setAnalysisResult({ ...analysisResult, stratification_days: e.target.value ? Number(e.target.value) : undefined })} 
+                      className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm outline-none shadow-sm" 
+                    />
                   </div>
                 )}
 

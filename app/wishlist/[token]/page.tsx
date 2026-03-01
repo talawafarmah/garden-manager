@@ -1,0 +1,270 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { supabase } from '../../../lib/supabase'; // Adjust path to your supabase.ts if needed
+import { InventorySeed, WishlistSession } from '../../../types';
+
+export default function WishlistCatalog() {
+  const params = useParams();
+  const token = params.token as string;
+
+  const [session, setSession] = useState<WishlistSession | null>(null);
+  const [seasonName, setSeasonName] = useState("");
+  const [seeds, setSeeds] = useState<InventorySeed[]>([]);
+  
+  const [selectedSeedIds, setSelectedSeedIds] = useState<string[]>([]);
+  const [customRequest, setCustomRequest] = useState("");
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCatalogData = async () => {
+      if (!token) return;
+      setIsLoading(true);
+
+      try {
+        // 1. Validate the Magic Link Token
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('wishlist_sessions')
+          .select('*, seasons(name, status)')
+          .eq('id', token)
+          .single();
+
+        if (sessionError || !sessionData) throw new Error("Invalid or expired link.");
+        
+        // 2. Check Expiration
+        if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
+          throw new Error("This wishlist link has expired.");
+        }
+
+        setSession(sessionData);
+        setSeasonName(sessionData.seasons?.name || "the upcoming season");
+
+        // 3. Fetch Public Seed Inventory
+        const { data: seedData, error: seedError } = await supabase
+          .from('seed_inventory')
+          .select('*')
+          .order('category', { ascending: true })
+          .order('variety_name', { ascending: true });
+
+        if (seedError) throw seedError;
+        setSeeds(seedData as InventorySeed[]);
+
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCatalogData();
+  }, [token]);
+
+  const toggleSeedSelection = (seedId: string) => {
+    setSelectedSeedIds(prev => 
+      prev.includes(seedId) ? prev.filter(id => id !== seedId) : [...prev, seedId]
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (!session) return;
+    setIsSubmitting(true);
+
+    try {
+      // Create an array of database inserts for every selected seed
+      const inserts = selectedSeedIds.map(seedId => ({
+        session_id: session.id,
+        seed_id: seedId,
+      }));
+
+      // If they typed a custom request, add it as a separate row (seed_id is null)
+      if (customRequest.trim() !== "") {
+        inserts.push({
+          session_id: session.id,
+          seed_id: undefined as any, // TypeScript bypass for optional
+          custom_request: customRequest.trim()
+        } as any); // Type cast to satisfy the DB schema allowing nulls
+      }
+
+      // If they selected nothing and typed nothing, just exit
+      if (inserts.length === 0) {
+        setIsSuccess(true);
+        return;
+      }
+
+      // We do a raw insert without seed_id for custom requests
+      const finalInserts = inserts.map(item => {
+         const row: any = { session_id: item.session_id };
+         if (item.seed_id) row.seed_id = item.seed_id;
+         if ((item as any).custom_request) row.custom_request = (item as any).custom_request;
+         return row;
+      });
+
+      const { error } = await supabase.from('wishlist_selections').insert(finalInserts);
+      if (error) throw error;
+
+      setIsSuccess(true);
+    } catch (err: any) {
+      alert("Failed to save wishlist: " + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-emerald-600">
+           <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+           <span className="font-bold tracking-widest uppercase text-xs">Loading Catalog...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !session) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-stone-200">
+          <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <h1 className="text-xl font-black text-stone-800 mb-2">Link Unavailable</h1>
+          <p className="text-stone-500 text-sm leading-relaxed">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-stone-200 animate-in zoom-in-95 duration-500">
+          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+          </div>
+          <h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Sent!</h1>
+          <p className="text-stone-500 text-sm leading-relaxed mb-6">
+            Thank you, {session.list_name}! Your garden requests for {seasonName} have been locked in. We will review your list and start planning the nursery trays.
+          </p>
+          <div className="bg-stone-50 p-4 rounded-xl border border-stone-100 text-xs font-bold text-stone-400 uppercase tracking-widest">
+            You selected {selectedSeedIds.length} items
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
+      
+      {/* Hero Header */}
+      <header className="bg-emerald-800 text-white pt-12 pb-20 px-6 rounded-b-[3rem] shadow-xl relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
+        <div className="max-w-3xl mx-auto relative z-10 text-center">
+          <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-4 shadow-sm backdrop-blur-sm">
+            {seasonName} Catalog
+          </span>
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-4">
+            Welcome, {session.list_name}!
+          </h1>
+          <p className="text-emerald-100 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+            Browse the seed vault and select the varieties you'd like us to grow for you this season. 
+          </p>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-4 -mt-10 relative z-20 space-y-6">
+        
+        {/* Seed Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {seeds.map((seed) => {
+            const isSelected = selectedSeedIds.includes(seed.id);
+            const isOutOfStock = seed.out_of_stock;
+
+            return (
+              <div 
+                key={seed.id} 
+                onClick={() => toggleSeedSelection(seed.id)}
+                className={`group relative bg-white rounded-3xl overflow-hidden shadow-sm transition-all duration-300 cursor-pointer flex flex-col h-full border-2 
+                  ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-xl scale-[1.02]' : 'border-transparent hover:border-emerald-200 hover:shadow-md'}`
+                }
+              >
+                {/* Selection Checkmark */}
+                <div className={`absolute top-4 right-4 z-10 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 shadow-md ${isSelected ? 'bg-emerald-500 text-white scale-100' : 'bg-white/80 text-stone-300 scale-90 opacity-0 group-hover:opacity-100'}`}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                </div>
+
+                <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden">
+                  {seed.thumbnail || (seed.images && seed.images.length > 0) ? (
+                    <img src={seed.thumbnail || seed.images?.[0]} alt={seed.variety_name} className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-stone-400">
+                      <svg className="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </div>
+                  )}
+                  {isOutOfStock && (
+                     <div className="absolute inset-x-0 bottom-0 bg-stone-900/80 text-stone-200 text-[10px] font-black uppercase tracking-widest text-center py-1.5 backdrop-blur-sm">
+                       Currently Out of Stock - Will try to source
+                     </div>
+                  )}
+                </div>
+
+                <div className="p-5 flex flex-col flex-1">
+                  <p className="text-emerald-600 text-[10px] font-black uppercase tracking-widest mb-1">{seed.category}</p>
+                  <h3 className="font-black text-lg text-stone-800 leading-tight mb-1">{seed.variety_name}</h3>
+                  <p className="text-stone-400 text-xs italic mb-4">{seed.species}</p>
+                  
+                  <div className="mt-auto">
+                    {seed.notes ? (
+                       <p className="text-sm text-stone-600 line-clamp-3 leading-relaxed border-t border-stone-100 pt-3">{seed.notes}</p>
+                    ) : (
+                       <p className="text-sm text-stone-400 italic border-t border-stone-100 pt-3">A fantastic {seed.category.toLowerCase()} variety.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Custom Request Write-in */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 mt-8">
+          <h3 className="font-black text-stone-800 mb-2 flex items-center gap-2">
+            <span className="text-emerald-500">✨</span> Custom Requests
+          </h3>
+          <p className="text-sm text-stone-500 mb-4">Don't see what you're looking for? Leave a note and we'll see if we can source it for you.</p>
+          <textarea 
+            value={customRequest}
+            onChange={(e) => setCustomRequest(e.target.value)}
+            placeholder="e.g., I'd love a really hot yellow pepper, or maybe some marigolds!"
+            rows={4}
+            className="w-full bg-stone-50 border border-stone-200 rounded-xl p-4 text-sm outline-none focus:border-emerald-500 transition-colors resize-none shadow-inner"
+          />
+        </div>
+      </div>
+
+      {/* Sticky Bottom Checkout Bar */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-stone-200 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Your List</span>
+            <span className="font-black text-emerald-700">{selectedSeedIds.length} Items Selected</span>
+          </div>
+          <button 
+            onClick={handleSubmit}
+            disabled={isSubmitting || (selectedSeedIds.length === 0 && customRequest.trim() === "")}
+            className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+          >
+            {isSubmitting ? 'Sending...' : 'Submit Wishlist'}
+          </button>
+        </div>
+      </div>
+
+    </main>
+  );
+}
