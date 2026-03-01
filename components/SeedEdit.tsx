@@ -1,4 +1,3 @@
-/* Component: SeedEdit.tsx */
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory } from '../types';
@@ -48,20 +47,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
+  /**
+   * SIGNED URL RESOLVER
+   * Ensures private Supabase paths are viewable in the edit form grid.
+   * Utilizes the same robust functional state updates to prevent stale closures.
+   */
   useEffect(() => {
+    let isMounted = true;
+    
     const loadUrls = async () => {
-      const newUrls: Record<string, string> = { ...signedUrls };
-      let changed = false;
-      const images = editFormData.images || [];
-      for (const img of images) {
-        if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
-          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600);
-          if (data) { newUrls[img] = data.signedUrl; changed = true; }
+      if (!editFormData.images || editFormData.images.length === 0) return;
+      
+      const urlsToFetch = editFormData.images.filter((img: string) => img && !img.startsWith('data:image') && !img.startsWith('http'));
+      if (urlsToFetch.length === 0) return;
+
+      const fetchedUrls: Record<string, string> = {};
+
+      for (const path of urlsToFetch) {
+        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrl(path, 3600);
+        if (data?.signedUrl) {
+          fetchedUrls[path] = data.signedUrl;
+        } else if (error) {
+          console.error("Failed to fetch signed URL:", error);
         }
       }
-      if (changed) setSignedUrls(newUrls);
+
+      if (isMounted && Object.keys(fetchedUrls).length > 0) {
+        setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+      }
     };
+    
     loadUrls();
+    
+    return () => { isMounted = false; };
   }, [editFormData.images]);
 
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,7 +269,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
               return (
                 <div key={idx} className={`relative aspect-square rounded-2xl overflow-hidden border-2 shadow-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'border-emerald-500' : 'border-stone-200 bg-stone-100'}`}>
-                  {displaySrc && <img src={displaySrc} alt="Seed" className="w-full h-full object-cover" />}
+                  {displaySrc ? (
+                    <img src={displaySrc} alt="Seed" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-stone-300">
+                      <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                  )}
                   <div className="absolute top-1 right-1 flex flex-col gap-1">
                      <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'}`}><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></button>
                      <button onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>

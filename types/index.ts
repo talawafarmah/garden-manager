@@ -17,6 +17,8 @@ export interface SeedData {
   lifecycle?: string;
   scoville_rating?: number | string; 
   tomato_type: string;
+  returnTo?: string;
+  returnPayload?: any;
 }
 
 export interface InventorySeed {
@@ -43,6 +45,8 @@ export interface InventorySeed {
   thumbnail?: string; 
   scoville_rating?: number | string; 
   tomato_type: string;
+  returnTo?: string;
+  returnPayload?: any;
 }
 
 export interface SeedCategory {
