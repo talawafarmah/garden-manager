@@ -51,7 +51,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
     const loadUrls = async () => {
       const newUrls: Record<string, string> = { ...signedUrls };
       let changed = false;
-      for (const img of (editFormData.images || [])) {
+      const images = editFormData.images || [];
+      for (const img of images) {
         if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
           const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600);
           if (data) { newUrls[img] = data.signedUrl; changed = true; }
@@ -142,9 +143,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         days_to_maturity: editFormData.days_to_maturity === "" ? null : Number(editFormData.days_to_maturity),
         stratification_days: editFormData.stratification_days === "" ? null : Number(editFormData.stratification_days),
         scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
+        tomato_type: editFormData.tomato_type || null,
       };
 
-      // Destructure away UI-only and Routing properties before sending to Supabase schema
       const { 
         newCatName: _newCatName, 
         newCatPrefix: _newCatPrefix, 
@@ -161,9 +162,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         if (error) throw new Error("Update Error: " + error.message);
       }
       
-      // Reattach routing metadata to ensure seamless back navigation
       const statePayload = { ...cleanPayloadToSave, returnTo: seed.returnTo, returnPayload: seed.returnPayload };
-      
       const updatedInventory = isNewRecord ? [statePayload, ...inventory] : inventory.map((s: InventorySeed) => s.id === seed.id ? statePayload : s);
       setInventory(updatedInventory);
       navigateTo('seed_detail', statePayload, true);
@@ -194,13 +193,14 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   };
 
   const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
+  const isTomato = editFormData.category?.toLowerCase().includes('tomato') || newCatName.toLowerCase().includes('tomato');
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       {isImageSearchOpen && (
         <ImageSearch 
           query={`${editFormData.variety_name} ${editFormData.species || ''} plant`}
-          onSelect={(url) => { setEditFormData({ ...editFormData, images: [...(editFormData.images || []), url] }); setIsImageSearchOpen(false); }}
+          onSelect={(url: string) => { setEditFormData({ ...editFormData, images: [...(editFormData.images || []), url] }); setIsImageSearchOpen(false); }}
           onClose={() => setIsImageSearchOpen(false)}
         />
       )}
@@ -233,8 +233,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                   {displaySrc && <img src={displaySrc} alt="Seed" className="w-full h-full object-cover" />}
                   <div className="absolute top-1 right-1 flex flex-col gap-1">
                      <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'}`}><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></button>
-                     {/* Fixed: Explicitly typed the _ parameter as string */}
-                     <button onClick={() => setEditFormData({ ...editFormData, images: editFormData.images.filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                     <button onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                   </div>
                 </div>
               );
@@ -285,9 +284,26 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           )}
 
           {isPepper && (
-             <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center justify-between shadow-sm">
+             <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center justify-between shadow-sm mt-3 animate-in fade-in zoom-in-95">
                 <span className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</span>
-                <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" />
+                <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" placeholder="SHU" />
+             </div>
+          )}
+
+          {isTomato && (
+             <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 flex items-center justify-between shadow-sm mt-3 animate-in fade-in zoom-in-95">
+                <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest">Tomato Type</span>
+                <select 
+                  value={editFormData.tomato_type || ''} 
+                  onChange={(e) => setEditFormData({ ...editFormData, tomato_type: e.target.value })} 
+                  className="bg-white border border-rose-200 rounded-lg p-2 text-sm font-black text-rose-700 outline-none cursor-pointer"
+                >
+                  <option value="">Select Type...</option>
+                  <option value="Determinate">Determinate</option>
+                  <option value="Indeterminate">Indeterminate</option>
+                  <option value="Semi-Determinate">Semi-Determinate</option>
+                  <option value="Dwarf/Micro">Dwarf/Micro</option>
+                </select>
              </div>
           )}
         </section>

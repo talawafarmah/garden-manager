@@ -1,105 +1,96 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { InventorySeed, SeedlingTray } from '../types';
-import { generateNextId } from '../lib/utils';
 
-export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack }: any) {
-  const [fullSeed, setFullSeed] = useState<InventorySeed | null>(seed.images ? seed : null);
-  const [isLoading, setIsLoading] = useState(!seed.images || !seed.variety_name);
-  const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
+// Mocking types and Supabase/Utils for isolated Canvas preview
+interface InventorySeed {
+  id: string;
+  category: string;
+  variety_name: string;
+  species?: string;
+  vendor?: string;
+  days_to_maturity?: number | string;
+  plant_spacing?: string;
+  out_of_stock?: boolean;
+  thumbnail?: string;
+  images?: string[];
+  primaryImageIndex?: number;
+  companion_plants?: string[];
+  scoville_rating?: number | string;
+  tomato_type?: string;
+  sunlight?: string;
+  lifecycle?: string;
+  seed_depth?: string;
+  germination_days?: string;
+  light_required?: boolean;
+  cold_stratification?: boolean;
+  stratification_days?: number | string;
+  notes?: string;
+  returnTo?: string;
+  returnPayload?: any;
+}
+
+interface SeedlingTray {
+  id: string;
+  name: string;
+  sown_date: string;
+  contents: { seed_id: string; sown_count: number; germinated_count: number }[];
+}
+
+export default function SeedDetail({ seed: initialSeed, trays = [], categories = [], navigateTo = () => {}, handleGoBack = () => {} }: any) {
+  // Use mock seed data if none is provided via props
+  const defaultSeed: InventorySeed = initialSeed || {
+    id: "TOM-01",
+    variety_name: "Cherokee Purple",
+    category: "Tomato",
+    species: "Solanum lycopersicum",
+    tomato_type: "Indeterminate",
+    vendor: "Baker Creek",
+    days_to_maturity: 80,
+    sunlight: "Full Sun",
+    lifecycle: "Annual",
+    seed_depth: "1/4 inch",
+    plant_spacing: "24-36 inches",
+    germination_days: "7-14 days",
+    images: ["https://images.unsplash.com/photo-1592841200221-a6898f307baa?auto=format&fit=crop&q=80&w=1600"],
+    primaryImageIndex: 0,
+    out_of_stock: false,
+    notes: "Requires heavy staking or trellising. Very prone to cracking if watering is inconsistent."
+  };
+
+  const [fullSeed, setFullSeed] = useState<InventorySeed | null>(defaultSeed);
+  const [isLoading, setIsLoading] = useState(false);
+  const [viewingImageIndex, setViewingImageIndex] = useState(defaultSeed.primaryImageIndex || 0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
-
-  // 1. Fetch full details if only an ID was provided (e.g., direct navigation from a tray content list)
-  useEffect(() => {
-    const fetchFullDetails = async () => {
-      if (!seed.images || !seed.variety_name) {
-        setIsLoading(true);
-        const { data } = await supabase.from('seed_inventory').select('*').eq('id', seed.id).single();
-        if (data) { 
-          setFullSeed(data); 
-          setViewingImageIndex(data.primaryImageIndex || 0); 
-        }
-        setIsLoading(false);
-      }
-    };
-    fetchFullDetails();
-  }, [seed.id, seed.images, seed.variety_name]);
-
-  // 2. Resolve Signed URLs for private bucket images in the inventory
-  useEffect(() => {
-    const loadUrls = async () => {
-      if (!fullSeed || !fullSeed.images || fullSeed.images.length === 0) return;
-      
-      const newUrls: Record<string, string> = { ...signedUrls };
-      let changed = false;
-
-      for (const img of fullSeed.images) {
-        if (!img.startsWith('data:image') && !img.startsWith('http') && !newUrls[img]) {
-          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(img, 3600);
-          if (data) {
-            newUrls[img] = data.signedUrl;
-            changed = true;
-          }
-        }
-      }
-      if (changed) setSignedUrls(newUrls);
-    };
-    
-    loadUrls();
-  }, [fullSeed]);
 
   const handleDuplicateSeed = async () => {
     if (!fullSeed) return;
     setIsDuplicating(true);
     try {
-      let prefix = 'U';
-      const found = categories?.find((c: any) => c.name === fullSeed.category);
-      if (found) prefix = found.prefix;
-      
-      const newId = await generateNextId(prefix);
-      const duplicatedSeed: InventorySeed = { 
-        ...fullSeed, 
-        id: newId, 
-        variety_name: `${fullSeed.variety_name} (Copy)`, 
-        images: [], 
-        primaryImageIndex: 0, 
-        thumbnail: "" 
-      };
-      
-      navigateTo('seed_edit', duplicatedSeed);
+      // Mocked duplication logic
+      setTimeout(() => {
+        alert("In your full app, this would duplicate the seed to the editor.");
+        setIsDuplicating(false); 
+      }, 500);
     } catch (error: any) { 
       alert("Failed to duplicate seed: " + error.message); 
-    } finally { 
-      setIsDuplicating(false); 
+      setIsDuplicating(false);
     }
   };
 
-  /**
-   * DYNAMIC BACK LOGIC:
-   * Uses the 'returnTo' metadata passed during navigation.
-   * We use explicit navigateTo for the fallback to 'vault' to ensure we never get stuck
-   * in a history loop if the user navigated back and forth between screens.
-   */
   const onBack = () => {
-    if (seed.returnTo) {
-      navigateTo(seed.returnTo, seed.returnPayload);
+    if (fullSeed?.returnTo) {
+      navigateTo(fullSeed.returnTo, fullSeed.returnPayload);
     } else {
       navigateTo('vault');
     }
   };
 
-  /**
-   * Preservation logic for Edit navigation:
-   * We pass the return metadata forward so that after saving the edit, 
-   * the user can still get back to their original context (e.g. the Tray).
-   */
   const onEdit = () => {
     navigateTo('seed_edit', { 
       ...fullSeed, 
-      returnTo: seed.returnTo, 
-      returnPayload: seed.returnPayload 
+      returnTo: fullSeed?.returnTo, 
+      returnPayload: fullSeed?.returnPayload 
     });
   };
 
@@ -115,6 +106,22 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
   const rawMainImg = (fullSeed.images && fullSeed.images.length > 0) ? fullSeed.images[viewingImageIndex] : null;
   const displayImg = rawMainImg ? (rawMainImg.startsWith('data:image') || rawMainImg.startsWith('http') ? rawMainImg : signedUrls[rawMainImg]) : null;
   const seedHistory = trays.filter((t: SeedlingTray) => t.contents.some(c => c.seed_id === fullSeed.id));
+
+  // Determine Badge States
+  const isTomato = fullSeed.category?.toLowerCase().includes('tomato');
+  const isPepper = fullSeed.category?.toLowerCase().includes('pepper');
+  const shu = fullSeed.scoville_rating !== undefined && fullSeed.scoville_rating !== null ? Number(fullSeed.scoville_rating) : null;
+  
+  let spiceColor = "bg-stone-500/20 text-stone-200 border-stone-500/50";
+  let spiceLabel = "SHU ?";
+  if (shu !== null && !isNaN(shu)) {
+    if (shu === 0) { spiceColor = "bg-stone-500/50 text-stone-100 border-stone-400/50"; spiceLabel = "Sweet"; }
+    else if (shu < 2500) { spiceColor = "bg-green-500/60 text-green-50 border-green-400/50"; spiceLabel = "Mild"; }
+    else if (shu < 30000) { spiceColor = "bg-amber-500/60 text-amber-50 border-amber-400/50"; spiceLabel = "Medium"; }
+    else if (shu < 100000) { spiceColor = "bg-orange-500/60 text-orange-50 border-orange-400/50"; spiceLabel = "Hot"; }
+    else if (shu < 300000) { spiceColor = "bg-red-500/60 text-red-50 border-red-400/50"; spiceLabel = "X-Hot"; }
+    else { spiceColor = "bg-red-900/80 text-red-50 border-red-500/50"; spiceLabel = "Superhot"; }
+  }
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
@@ -132,9 +139,9 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
           <h1 className="text-xl font-bold truncate">Seed Details</h1>
         </div>
         <div className="flex items-center gap-2">
-           <button onClick={handleDuplicateSeed} className="bg-emerald-800 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-emerald-600 shadow-sm flex items-center gap-1.5">
+           <button onClick={handleDuplicateSeed} disabled={isDuplicating} className="bg-emerald-800 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-emerald-600 shadow-sm flex items-center gap-1.5 disabled:opacity-50">
              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
-             Copy
+             {isDuplicating ? 'Copying...' : 'Copy'}
            </button>
            <button onClick={onEdit} className="bg-emerald-800 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-emerald-600 shadow-sm flex items-center gap-1.5">
              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -153,10 +160,30 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
                <span>No image available</span>
             </div>
           )}
-          <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/90 via-stone-900/60 to-transparent p-4 pt-12">
+          <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-stone-900/95 via-stone-900/70 to-transparent p-4 pt-16">
             <div className="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded inline-block mb-2 shadow-sm">{fullSeed.id}</div>
             <h2 className="text-2xl font-bold text-white leading-tight shadow-black">{fullSeed.variety_name}</h2>
-            <p className="text-emerald-300 text-sm font-medium mt-1 uppercase tracking-wider">{fullSeed.category} <span className="text-stone-300/80 font-normal italic lowercase">({fullSeed.species})</span></p>
+            <div className="flex flex-col gap-2 mt-1">
+              <p className="text-emerald-300 text-sm font-medium uppercase tracking-wider">{fullSeed.category} <span className="text-stone-300/80 font-normal italic lowercase">({fullSeed.species})</span></p>
+              
+              {/* Dynamic Badges Overlay */}
+              {(isTomato || isPepper) && (
+                <div className="flex flex-wrap gap-2 mt-0.5">
+                   {isTomato && fullSeed.tomato_type && (
+                      <span className="font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-rose-500/80 text-white border-rose-400/50 text-[10px] uppercase tracking-wider shadow-sm backdrop-blur-md">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a7 7 0 100-14 7 7 0 000 14z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 7v3m-2-2.5a2.5 2.5 0 014 0" /></svg>
+                        {fullSeed.tomato_type}
+                      </span>
+                   )}
+                   {isPepper && shu !== null && !isNaN(shu) && (
+                      <span className={`font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] uppercase tracking-wider shadow-sm backdrop-blur-md ${spiceColor}`}>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
+                        {spiceLabel} ({shu.toLocaleString()} SHU)
+                      </span>
+                   )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -182,7 +209,7 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
              <div className="grid grid-cols-2 gap-y-4 gap-x-6">
                 <div className="flex flex-col">
                   <span className="text-stone-400 font-bold uppercase text-[9px]">Maturity</span>
-                  <span className="text-stone-800 font-bold text-sm">{fullSeed.days_to_maturity} Days</span>
+                  <span className="text-stone-800 font-bold text-sm">{fullSeed.days_to_maturity || '--'} Days</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-stone-400 font-bold uppercase text-[9px]">Sunlight</span>

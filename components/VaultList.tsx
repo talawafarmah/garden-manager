@@ -58,7 +58,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (isInitialMount) {
         const restoreVaultData = async () => {
             setIsPagingDB(true);
-            let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
+            let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating, tomato_type', { count: 'exact' });
 
             if (activeFilter !== "All") query = query.eq('category', activeFilter);
             if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
@@ -88,7 +88,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
-    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating', { count: 'exact' });
+    let query = supabase.from('seed_inventory').select('id, category, variety_name, vendor, days_to_maturity, species, plant_spacing, out_of_stock, thumbnail, companion_plants, scoville_rating, tomato_type', { count: 'exact' });
 
     if (activeFilter !== "All") query = query.eq('category', activeFilter);
     if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
@@ -155,7 +155,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
       species: '', notes: '', images: [], primaryImageIndex: 0, companion_plants: [],
       cold_stratification: false, stratification_days: '', light_required: false,
       germination_days: '', seed_depth: '', plant_spacing: '', row_spacing: '',
-      out_of_stock: false, sunlight: '', lifecycle: '', thumbnail: '', scoville_rating: ''
+      out_of_stock: false, sunlight: '', lifecycle: '', thumbnail: '', scoville_rating: '', tomato_type: ''
     };
     navigateTo('seed_edit', newSeed);
   };
@@ -336,6 +336,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                   else { spiceColor = "bg-red-900 text-red-100 border-red-800"; spiceLabel = "Superhot"; }
                 }
 
+                // Tomato Indicator Logic
+                const isTomato = seed.category?.toLowerCase().includes('tomato');
+
                 if (viewMode === 'gallery') {
                   return (
                     <div key={seed.id} onClick={() => handleSeedClick(seed)} className={`aspect-square rounded-xl border ${isOutOfStock ? 'border-red-100 opacity-75 grayscale' : 'border-stone-200'} shadow-sm hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer overflow-hidden bg-stone-100 relative`}>
@@ -374,6 +377,12 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
                               <span className={`font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded border ${spiceColor}`} title={shu !== null && !isNaN(shu) ? `${shu.toLocaleString()} SHU` : 'Unknown Scoville'}>
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>
                                 {spiceLabel}
+                              </span>
+                            )}
+                            {isTomato && seed.tomato_type && (
+                              <span className="font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200" title="Tomato Type">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a7 7 0 100-14 7 7 0 000 14z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 7v3m-2-2.5a2.5 2.5 0 014 0" /></svg>
+                                {seed.tomato_type}
                               </span>
                             )}
                           </div>
