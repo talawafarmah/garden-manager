@@ -292,18 +292,12 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
                 if (viewMode === 'gallery') {
                   return (
-                    <div key={seed.id} onClick={() => handleSeedClick(seed)} className={`bg-white rounded-xl border ${isOutOfStock ? 'border-red-100 bg-stone-50/50 opacity-75' : 'border-stone-100'} shadow-sm flex flex-col hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer overflow-hidden`}>
-                      <div className={`aspect-square w-full bg-stone-100 border-b border-stone-100 relative ${isOutOfStock ? 'grayscale' : ''}`}>
-                        {thumb ? (
-                          <img src={thumb} alt={seed.variety_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
-                        )}
-                      </div>
-                      <div className="p-2.5">
-                        <h3 className={`font-bold text-sm leading-tight truncate ${isOutOfStock ? 'text-stone-500 line-through decoration-stone-300' : 'text-stone-800'}`}>{seed.variety_name}</h3>
-                        <div className="text-[10px] text-emerald-600 font-semibold truncate mt-0.5">{seed.category}</div>
-                      </div>
+                    <div key={seed.id} onClick={() => handleSeedClick(seed)} className={`aspect-square rounded-xl border ${isOutOfStock ? 'border-red-100 opacity-75 grayscale' : 'border-stone-200'} shadow-sm hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer overflow-hidden bg-stone-100 relative`}>
+                      {thumb ? (
+                        <img src={thumb} alt={seed.variety_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                      )}
                     </div>
                   );
                 }
