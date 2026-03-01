@@ -45,6 +45,9 @@ export interface InventorySeed {
   thumbnail?: string; 
   scoville_rating?: number | string; 
   tomato_type: string;
+  generation?: string;
+  parent_id_female?: string;
+  parent_id_male?: string;
   returnTo?: string;
   returnPayload?: any;
 }
