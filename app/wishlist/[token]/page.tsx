@@ -20,27 +20,38 @@ const SeedModal = ({
   seed, 
   isSelected, 
   onClose, 
-  onToggle 
+  onToggle,
+  signedUrls
 }: { 
   seed: InventorySeed; 
   isSelected: boolean; 
   onClose: () => void;
   onToggle: (id: string) => void;
+  signedUrls: Record<string, string>;
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   
-  // Consolidate images for the carousel
-  const images = useMemo(() => {
-    const imgs = seed.images && seed.images.length > 0 ? [...seed.images] : [];
-    if (seed.thumbnail && !imgs.includes(seed.thumbnail)) imgs.unshift(seed.thumbnail);
+  // Clean array: Remove blanks, combine thumbnail, avoid exact duplicates
+  const rawImages = useMemo(() => {
+    const imgs = (seed.images || []).filter(img => img && typeof img === 'string' && img.trim() !== '');
+    if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) {
+      imgs.unshift(seed.thumbnail);
+    }
     return imgs;
   }, [seed]);
 
-  const showCarousel = images.length > 1;
-  const displayImage = images.length > 0 ? images[currentIdx] : null;
-  const heatProfile = seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
+  const showCarousel = rawImages.length > 1;
+  const rawDisplayImage = rawImages.length > 0 ? rawImages[currentIdx] : null;
+  
+  // NEW: Only calculate Heat Profile if it's actually a pepper
+  const isPepper = seed.category.toLowerCase().includes('pepper');
+  const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
 
-  // Lock body scroll when modal is open
+  // Resolve raw path to Signed URL (or fallback to base64)
+  const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:'))
+    ? rawDisplayImage
+    : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
+
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = 'unset'; };
@@ -48,15 +59,12 @@ const SeedModal = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm transition-opacity"></div>
       
-      {/* Modal Content */}
       <div 
         className="relative bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()} // Prevent clicks inside from closing modal
+        onClick={(e) => e.stopPropagation()} 
       >
-        {/* Close Button */}
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 z-50 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-full flex items-center justify-center backdrop-blur-md transition-colors"
@@ -64,10 +72,9 @@ const SeedModal = ({
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
 
-        {/* Carousel Area */}
         <div className="aspect-[4/3] sm:aspect-[16/10] w-full bg-stone-100 relative shrink-0 group">
-          {displayImage ? (
-            <img src={displayImage} alt={seed.variety_name} className={`w-full h-full object-cover ${seed.out_of_stock ? 'grayscale opacity-70' : ''}`} />
+          {resolvedSrc ? (
+            <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${seed.out_of_stock ? 'grayscale opacity-70' : ''}`} />
           ) : (
              <div className="w-full h-full flex items-center justify-center text-stone-300">
                 <svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -77,19 +84,19 @@ const SeedModal = ({
           {showCarousel && (
             <>
               <button 
-                onClick={() => setCurrentIdx((prev) => (prev - 1 + images.length) % images.length)} 
+                onClick={() => setCurrentIdx((prev) => (prev - 1 + rawImages.length) % rawImages.length)} 
                 className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all backdrop-blur-sm z-10"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
               </button>
               <button 
-                onClick={() => setCurrentIdx((prev) => (prev + 1) % images.length)} 
+                onClick={() => setCurrentIdx((prev) => (prev + 1) % rawImages.length)} 
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all backdrop-blur-sm z-10"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
               </button>
               <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">
-                {images.map((_, i) => (
+                {rawImages.map((_, i) => (
                   <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 shadow-sm ${i === currentIdx ? 'bg-white scale-110' : 'bg-white/50'}`} />
                 ))}
               </div>
@@ -102,7 +109,6 @@ const SeedModal = ({
           )}
         </div>
 
-        {/* Scrollable Details */}
         <div className="p-6 overflow-y-auto flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-emerald-200">
@@ -136,7 +142,6 @@ const SeedModal = ({
           </div>
         </div>
 
-        {/* Modal Footer (Action) */}
         <div className="p-4 border-t border-stone-100 bg-stone-50 shrink-0">
           <button
             onClick={() => onToggle(seed.id)}
@@ -167,16 +172,26 @@ const SeedCard = ({
   seed, 
   isSelected, 
   onToggle,
-  onView
+  onView,
+  signedUrls
 }: { 
   seed: InventorySeed; 
   isSelected: boolean; 
   onToggle: (id: string) => void;
   onView: (seed: InventorySeed) => void;
+  signedUrls: Record<string, string>;
 }) => {
-  const displayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
+  const rawDisplayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
   const isOutOfStock = seed.out_of_stock;
-  const heatProfile = seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
+  
+  // NEW: Only calculate Heat Profile if it's actually a pepper
+  const isPepper = seed.category.toLowerCase().includes('pepper');
+  const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
+
+  // Resolve raw path to Signed URL (or fallback to base64)
+  const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:'))
+    ? rawDisplayImage
+    : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
 
   return (
     <div 
@@ -185,7 +200,6 @@ const SeedCard = ({
         ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-md z-10' : 'border-transparent hover:border-emerald-200 hover:shadow-md'}`
       }
     >
-      {/* EXPLICIT SELECTION BUTTON */}
       <button 
         onClick={(e) => { e.stopPropagation(); onToggle(seed.id); }}
         className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-30 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm border-2
@@ -208,10 +222,9 @@ const SeedCard = ({
         </div>
       )}
 
-      {/* Image Container with Data Overlay */}
       <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden border-b border-stone-100">
-        {displayImage ? (
-          <img src={displayImage} alt={seed.variety_name} loading="lazy" className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} />
+        {resolvedSrc ? (
+          <img src={resolvedSrc} alt={seed.variety_name} loading="lazy" className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-stone-400">
             <svg className="w-6 h-6 sm:w-12 sm:h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -253,13 +266,12 @@ export default function WishlistCatalog() {
   const [session, setSession] = useState<WishlistSession | null>(null);
   const [seasonName, setSeasonName] = useState("");
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({}); 
   
-  // Selection & Modal State
   const [selectedSeedIds, setSelectedSeedIds] = useState<string[]>([]);
-  const [viewedSeed, setViewedSeed] = useState<InventorySeed | null>(null); // NEW: Controls the Modal
+  const [viewedSeed, setViewedSeed] = useState<InventorySeed | null>(null);
   const [customRequest, setCustomRequest] = useState("");
   
-  // Filter & Sort State
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [sortBy, setSortBy] = useState("name_asc");
@@ -270,6 +282,7 @@ export default function WishlistCatalog() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Initial Fetch
   useEffect(() => {
     const fetchCatalogData = async () => {
       if (!token) return;
@@ -291,10 +304,7 @@ export default function WishlistCatalog() {
         setSession(sessionData);
         setSeasonName(sessionData.seasons?.name || "the upcoming season");
 
-        const { data: seedData, error: seedError } = await supabase
-          .from('seed_inventory')
-          .select('*');
-
+        const { data: seedData, error: seedError } = await supabase.from('seed_inventory').select('*');
         if (seedError) throw seedError;
         setSeeds(seedData as InventorySeed[]);
 
@@ -307,6 +317,49 @@ export default function WishlistCatalog() {
 
     fetchCatalogData();
   }, [token]);
+
+  // Generate Signed URLs for any Supabase Bucket Paths
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSignedUrls = async () => {
+      if (seeds.length === 0) return;
+
+      const urlsToFetch = seeds
+        .flatMap(s => [s.thumbnail, ...(s.images || [])])
+        .filter(img => img && typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('http'));
+
+      if (urlsToFetch.length === 0) return;
+
+      const uniqueUrls = Array.from(new Set(urlsToFetch));
+
+      try {
+        const chunkSize = 100;
+        const fetchedUrls: Record<string, string> = {};
+
+        for (let i = 0; i < uniqueUrls.length; i += chunkSize) {
+          const chunk = uniqueUrls.slice(i, i + chunkSize);
+          const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(chunk, 3600);
+          
+          if (data && !error) {
+            data.forEach((item: any) => {
+              if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl;
+            });
+          }
+        }
+
+        if (isMounted && Object.keys(fetchedUrls).length > 0) {
+          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+        }
+      } catch (err) {
+        console.error("Failed to load signed URLs", err);
+      }
+    };
+
+    loadSignedUrls();
+
+    return () => { isMounted = false; };
+  }, [seeds]);
 
   const availableCategories = useMemo(() => {
     const cats = new Set(seeds.map(s => s.category));
@@ -413,13 +466,13 @@ export default function WishlistCatalog() {
   return (
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
       
-      {/* View Modal overlay */}
       {viewedSeed && (
         <SeedModal 
           seed={viewedSeed} 
           isSelected={selectedSeedIds.includes(viewedSeed.id)} 
           onClose={() => setViewedSeed(null)} 
           onToggle={toggleSeedSelection} 
+          signedUrls={signedUrls}
         />
       )}
 
@@ -507,7 +560,8 @@ export default function WishlistCatalog() {
                 seed={seed} 
                 isSelected={selectedSeedIds.includes(seed.id)} 
                 onToggle={toggleSeedSelection} 
-                onView={setViewedSeed} // NEW: Trigger Modal
+                onView={setViewedSeed} 
+                signedUrls={signedUrls}
               />
             ))}
           </div>
