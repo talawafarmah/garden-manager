@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SeedlingTray, AppView } from '../types';
+import { SeedlingTray, AppView, InventorySeed } from '../types';
 
 interface TrayListProps {
   trays: SeedlingTray[];
+  inventory: InventorySeed[]; // NEW: Required to look up seed names
   isLoadingDB: boolean;
   navigateTo: (view: AppView, payload?: any) => void;
   handleGoBack: (view: AppView) => void;
   userRole?: string;
 }
 
-export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
+export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
@@ -20,14 +21,12 @@ export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack,
 
     const loadThumbnailUrls = async () => {
       try {
-        // Safely extract the first image from each tray using fallbacks
         const urlsToFetch = trays
           .map(t => (t.images || [])[0])
           .filter(img => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
 
         if (urlsToFetch.length === 0) return;
 
-        // Deduplicate the array
         const uniqueUrls = Array.from(new Set(urlsToFetch));
 
         const fetchedUrls: Record<string, string> = {};
@@ -54,10 +53,22 @@ export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack,
     return () => { isMounted = false; };
   }, [trays]);
 
-  const filteredTrays = trays.filter(tray => 
-    tray.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (tray.location && tray.location.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Enhanced search to check Tray ID, Location, or the Names of the planted seeds
+  const filteredTrays = trays.filter(tray => {
+    const q = searchQuery.toLowerCase();
+    
+    // Grab all seed IDs in this tray
+    const seedIds = (tray.contents || []).map(c => c.seed_id).filter(Boolean);
+    // Map them to their actual names
+    const seedNames = seedIds.map(id => inventory.find(s => s.id === id)?.variety_name?.toLowerCase() || "");
+    
+    return (
+      tray.id.toLowerCase().includes(q) || 
+      ((tray as any).name && (tray as any).name.toLowerCase().includes(q)) ||
+      (tray.location && tray.location.toLowerCase().includes(q)) ||
+      seedNames.some(name => name.includes(q))
+    );
+  });
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
@@ -92,7 +103,7 @@ export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack,
         <div className="relative">
           <input 
             type="text" 
-            placeholder="Search by Tray ID or Location..." 
+            placeholder="Search by Tray, Seed Name, or Location..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)} 
             className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 outline-none transition-colors" 
@@ -108,12 +119,19 @@ export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack,
             </div>
           ) : filteredTrays.length > 0 ? (
             filteredTrays.map((tray) => {
-              // Safe fallbacks for optional arrays
               const plantedCount = (tray.contents || []).length;
               const firstImage = (tray.images || [])[0];
               const displayImg = firstImage 
                 ? (firstImage.startsWith('http') || firstImage.startsWith('data:') ? firstImage : signedUrls[firstImage])
                 : null;
+
+              // Extract unique seeds planted in this tray and map them to their names
+              const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
+              const seedNames = uniqueSeedIds.map(id => {
+                 const seed = inventory.find(s => s.id === id);
+                 return seed ? seed.variety_name : id; // Fallback to ID if seed deleted from DB
+              });
+              const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
               return (
                 <div 
@@ -141,11 +159,20 @@ export default function TrayList({ trays, isLoadingDB, navigateTo, handleGoBack,
                   {/* Tray Info */}
                   <div className="flex-1 py-1 flex flex-col justify-between min-w-0">
                     <div>
-                      <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-black text-stone-800 text-lg leading-none truncate pr-2">{tray.id}</h3>
+                      <div className="flex justify-between items-start mb-0.5">
+                        <h3 className="font-black text-stone-800 text-lg leading-none truncate pr-2">
+                          {/* Use custom Tray Name if it exists, otherwise use ID */}
+                          {(tray as any).name || tray.id}
+                        </h3>
                         <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest whitespace-nowrap">{tray.sown_date}</span>
                       </div>
-                      <p className="text-xs text-stone-500 truncate">{tray.location || 'Location Not Set'}</p>
+                      
+                      {/* Seed Contents */}
+                      <p className="text-xs font-bold text-emerald-600 truncate mb-1">
+                        {seedsDisplay}
+                      </p>
+                      
+                      <p className="text-[10px] text-stone-500 truncate">{tray.location || 'Location Not Set'}</p>
                     </div>
 
                     <div className="flex items-center gap-2 mt-2">

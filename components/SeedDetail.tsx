@@ -8,7 +8,7 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any) => void;
   handleGoBack: (view: any) => void;
-  userRole?: string; // Passed from page.tsx to determine Admin/Viewer
+  userRole?: string;
 }
 
 export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
@@ -149,7 +149,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
         </button>
         <h1 className="text-lg font-bold truncate px-2">Seed Details</h1>
         
-        {/* ROLE CHECK: Only Admins can edit or breed */}
         {userRole === 'admin' && (
           <div className="flex gap-2">
              <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
@@ -260,7 +259,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
              </section>
           )}
 
-          {/* Key Indicators */}
+          {/* Key Indicators (Tomato/Pepper Data) */}
           {(isTomato || isPepper) && (
             <div className="grid grid-cols-1 gap-2">
               {isTomato && seed.tomato_type && (
@@ -284,8 +283,65 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           )}
 
+          {/* MISSING FIELD RECOVERY: Vendor & Sourcing */}
+          {(seed.vendor || seed.lifecycle) && (
+            <section className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex justify-between items-center shadow-sm">
+              {seed.vendor && (
+                <div>
+                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-0.5">Source / Vendor</p>
+                  <p className="font-bold text-blue-900">{seed.vendor}</p>
+                </div>
+              )}
+              {seed.lifecycle && (
+                <div className="text-right">
+                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] mb-0.5">Lifecycle</p>
+                  <p className="font-bold text-blue-900">{seed.lifecycle}</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* MISSING FIELD RECOVERY: Germination Protocol */}
+          <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
+            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-4 border-b border-stone-100 pb-2">Germination Protocol</h3>
+            
+            {seed.cold_stratification && (
+              <div className="mb-4 bg-sky-50 border border-sky-100 p-3 rounded-xl flex items-start gap-3">
+                <div className="text-sky-500 mt-0.5">❄️</div>
+                <div>
+                  <p className="font-black text-sky-800 text-sm">Cold Stratification Required</p>
+                  <p className="text-xs text-sky-600 mt-1">This seed must be kept cold and moist for <strong>{seed.stratification_days || '--'} days</strong> before sowing.</p>
+                </div>
+              </div>
+            )}
+
+            {seed.light_required && (
+              <div className="mb-4 bg-amber-50 border border-amber-100 p-3 rounded-xl flex items-start gap-3">
+                <div className="text-amber-500 mt-0.5">☀️</div>
+                <div>
+                  <p className="font-black text-amber-800 text-sm">Light Required for Germination</p>
+                  <p className="text-xs text-amber-600 mt-1">Do not bury this seed deeply. Surface sow and press lightly into soil.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-y-4 gap-x-4">
+              <div>
+                <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Seed Depth</label>
+                <p className="font-bold text-stone-800">{seed.seed_depth || '--'}</p>
+              </div>
+              <div>
+                <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Germination Time</label>
+                <p className="font-bold text-stone-800">{seed.germination_days || '--'} Days</p>
+              </div>
+            </div>
+          </section>
+
           {/* Core Botanical Data */}
           <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200 grid grid-cols-2 gap-y-5 gap-x-4">
+            <div className="col-span-2 border-b border-stone-100 pb-2 mb-1">
+              <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em]">Growing Requirements</h3>
+            </div>
             <div>
               <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Maturity</label>
               <p className="font-bold text-stone-800">{seed.days_to_maturity || '--'} Days</p>
@@ -295,18 +351,35 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
               <p className="font-bold text-stone-800">{seed.sunlight || 'Full Sun'}</p>
             </div>
             <div>
-              <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Seed Depth</label>
-              <p className="font-bold text-stone-800">{seed.seed_depth || '--'}</p>
+              <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Plant Spacing</label>
+              <p className="font-bold text-stone-800">{seed.plant_spacing || '--'}</p>
             </div>
             <div>
-              <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Spacing</label>
-              <p className="font-bold text-stone-800">{seed.plant_spacing || '--'}</p>
+              <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Row Spacing</label>
+              <p className="font-bold text-stone-800">{seed.row_spacing || '--'}</p>
             </div>
           </section>
 
+          {/* MISSING FIELD RECOVERY: Companion Planting */}
+          {seed.companion_plants && seed.companion_plants.length > 0 && (
+            <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
+              <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 border-b border-stone-100 pb-2">
+                <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                Companion Plants
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {seed.companion_plants.map((plant, i) => (
+                  <span key={i} className="bg-stone-100 text-stone-600 px-3 py-1 rounded-lg text-xs font-bold border border-stone-200">
+                    {plant}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Growing Notes */}
           <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200">
-            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 border-b border-stone-100 pb-2">
               <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
