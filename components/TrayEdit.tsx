@@ -41,7 +41,6 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
 
 export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo, handleGoBack }: any) {
   
-  // FIX: Generate a true UUID for the ID, and use the friendly "Tray-XXXX" format for the Name
   const defaultTray: SeedlingTray = {
     id: crypto.randomUUID(), 
     name: `Tray ${Math.floor(Math.random() * 10000)}`,
@@ -300,7 +299,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Setup</h3>
           
-          {/* FIX: Changed "Tray ID" input to "Tray Name" */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Tray Name</label>
@@ -338,7 +336,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Season</label>
               <select value={trayFormData.season_id || ''} onChange={(e) => setTrayFormData({ ...trayFormData, season_id: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none">
                 <option value="">-- None --</option>
-                {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {seasons.map((s: Season) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           </div>
@@ -371,14 +369,13 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                <div className="text-center py-6 text-stone-400 text-sm italic">No seeds mapped to this tray yet.</div>
             ) : (
               (trayFormData.contents || []).map((content, idx) => {
-                const seedName = inventory.find(s => s.id === content.seed_id)?.variety_name;
+                const seedName = inventory.find((s: InventorySeed) => s.id === content.seed_id)?.variety_name;
                 return (
                   <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
                     <div className="w-16">
                       <input type="number" placeholder="Cell #" value={content.cell || ''} onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" />
                     </div>
                     <div className="flex-1">
-                      {/* FIX: Trigger Full Screen Search Modal instead of select dropdown */}
                       <button 
                         onClick={() => setSeedSearchRow(idx)}
                         className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2.5 text-xs font-bold outline-none hover:border-emerald-400 transition-colors shadow-sm ${content.seed_id ? 'text-stone-800' : 'text-stone-400'}`}
