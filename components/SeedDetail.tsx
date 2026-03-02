@@ -142,27 +142,39 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
       )}
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        <button onClick={onBack} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+        {/* NEW: Left Side Buttons Group */}
+        <div className="flex items-center gap-2">
+          <button onClick={onBack} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Go Back">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
+        </div>
+
         <h1 className="text-lg font-bold truncate px-2">Seed Details</h1>
         
-        {userRole === 'admin' && (
-          <div className="flex gap-2">
-             <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-               </svg>
-             </button>
-             <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-               </svg>
-             </button>
-          </div>
-        )}
+        <div className="flex gap-2 min-w-[80px] justify-end">
+          {userRole === 'admin' && (
+            <>
+               <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                 </svg>
+               </button>
+               <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Edit Seed">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                 </svg>
+               </button>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="max-w-md mx-auto">
@@ -283,7 +295,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           )}
 
-          {/* MISSING FIELD RECOVERY: Vendor & Sourcing */}
+          {/* Vendor & Sourcing */}
           {(seed.vendor || seed.lifecycle) && (
             <section className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex justify-between items-center shadow-sm">
               {seed.vendor && (
@@ -301,7 +313,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </section>
           )}
 
-          {/* MISSING FIELD RECOVERY: Germination Protocol */}
+          {/* Germination Protocol */}
           <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-4 border-b border-stone-100 pb-2">Germination Protocol</h3>
             
@@ -360,7 +372,7 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           </section>
 
-          {/* MISSING FIELD RECOVERY: Companion Planting */}
+          {/* Companion Planting */}
           {seed.companion_plants && seed.companion_plants.length > 0 && (
             <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 border-b border-stone-100 pb-2">

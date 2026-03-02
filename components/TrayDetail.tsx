@@ -37,10 +37,26 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
   const totalPlanted = localTray.contents.reduce((sum: number, item: any) => sum + (item.planted_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
-  // FIX: Explicitly mapped to SeedlingTray type to satisfy TypeScript
+  // UX Improvement: Quick log counts directly from the detail screen
+  const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
+    e.stopPropagation();
+    if (userRole !== 'admin') return;
+
+    const updatedContents = [...localTray.contents];
+    const currentVal = updatedContents[index][field as keyof typeof updatedContents[0]] || 0;
+    const newVal = Math.max(0, (currentVal as number) + delta);
+    
+    (updatedContents[index][field as keyof typeof updatedContents[0]] as any) = newVal;
+    
+    // Update UI instantly
+    setLocalTray({ ...localTray, contents: updatedContents });
+    
+    // Sync to DB quietly
+    await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
+  };
+
   const handleDuplicateTray = () => {
     setIsDuplicating(true);
-    
     const duplicatedTray: SeedlingTray = {
       id: `TRAY-${Math.floor(Math.random() * 10000)}`,
       sown_date: new Date().toISOString().split('T')[0],
@@ -54,7 +70,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
       location: localTray.location,
       season_id: localTray.season_id,
     };
-
     navigateTo('tray_edit', duplicatedTray);
     setIsDuplicating(false);
   };
@@ -66,10 +81,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     } else {
       navigateTo('seed_detail', { id: seedId, returnTo: 'tray_detail', returnPayload: localTray });
     }
-  };
-
-  const onBack = () => {
-    navigateTo('trays', null, true);
   };
 
   const openPotUpModal = (e: React.MouseEvent, seedRecord: any, varietyName: string) => {
@@ -90,7 +101,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     setIsPottingUp(true);
 
     try {
-      // 1. Resolve active season
       let sId = localTray.season_id;
       if (!sId) {
         const { data: sData } = await supabase.from('seasons').select('id').order('created_at', { ascending: false }).limit(1);
@@ -98,7 +108,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
       }
       if (!sId) throw new Error("No active season found to attach these seedlings to.");
 
-      // 2. Fetch or Create Ledger
       const { data: existingLedger } = await supabase.from('season_seedlings')
         .select('*').eq('seed_id', potUpState.seedId).eq('season_id', sId).maybeSingle();
 
@@ -130,7 +139,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
         }]);
       }
 
-      // 3. Update Tray planted_count
       const updatedContents = localTray.contents.map((c: any) => 
         c.seed_id === potUpState.seedId 
           ? { ...c, planted_count: (c.planted_count || 0) + potUpState.count } 
@@ -138,8 +146,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
       );
 
       await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
-      
-      // Update local state to reflect change instantly
       setLocalTray({ ...localTray, contents: updatedContents });
       setPotUpState(null);
       
@@ -153,14 +159,12 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans relative">
       
-      {/* Fullscreen Image */}
       {fullScreenImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-2 cursor-zoom-out" onClick={() => setFullScreenImage(null)}>
           <img src={fullScreenImage} alt="Full screen" className="max-w-full max-h-full object-contain" />
         </div>
       )}
 
-      {/* Pot Up Modal */}
       {potUpState?.isOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -212,7 +216,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
 
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2 mr-2">
-          <button onClick={onBack} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back">
+          <button onClick={() => navigateTo('trays', null, true)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
@@ -255,7 +259,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                  <div className="text-sm font-bold text-emerald-600">{localTray.first_germination_date || '--'}</div>
                </div>
                <div className="border-l border-stone-200">
-                 <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Planted</div>
+                 <div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Potted</div>
                  <div className="text-sm font-bold text-blue-600">{localTray.first_planted_date || '--'}</div>
                </div>
             </div>
@@ -290,7 +294,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                       </div>
                    </div>
                    
-                   {/* POT UP BUTTON */}
                    {userRole === 'admin' && (
                      <button 
                        onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
@@ -302,10 +305,31 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                    )}
                  </div>
                  
-                 <div className="flex justify-between text-xs px-1 text-stone-500 font-medium">
-                   <div>Sown: <span className="text-stone-800 font-bold">{seedRecord.sown_count || 0}</span></div>
-                   <div>Sprouted: <span className="text-emerald-600 font-bold">{seedRecord.germinated_count || 0}</span></div>
-                   <div>Potted/Moved: <span className="text-blue-600 font-bold">{seedRecord.planted_count || 0}</span></div>
+                 <div className="grid grid-cols-3 text-xs pt-1 mt-1">
+                   <div className="flex flex-col items-center border-r border-stone-100">
+                     <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
+                     <div className="flex items-center gap-1.5">
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 disabled:opacity-50 font-black">-</button>
+                       <span className="font-bold text-stone-800 w-5 text-center text-sm">{seedRecord.sown_count || 0}</span>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 disabled:opacity-50 font-black">+</button>
+                     </div>
+                   </div>
+                   
+                   <div className="flex flex-col items-center border-r border-stone-100">
+                     <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
+                     <div className="flex items-center gap-1.5">
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 disabled:opacity-50 font-black">-</button>
+                       <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 disabled:opacity-50 font-black">+</button>
+                     </div>
+                   </div>
+
+                   <div className="flex flex-col items-center">
+                     <span className="text-[9px] uppercase tracking-widest text-blue-600 mb-1.5">Potted</span>
+                     <div className="flex items-center h-6">
+                       <span className="font-black text-blue-600 text-lg">{seedRecord.planted_count || 0}</span>
+                     </div>
+                   </div>
                  </div>
                </div>
              );

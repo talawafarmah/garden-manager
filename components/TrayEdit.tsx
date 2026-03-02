@@ -33,11 +33,7 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
       
-      try { 
-        resolve(canvas.toDataURL('image/jpeg', quality)); 
-      } catch (e) { 
-        resolve(""); 
-      }
+      try { resolve(canvas.toDataURL('image/jpeg', quality)); } catch (e) { resolve(""); }
     };
     img.onerror = () => resolve("");
     
@@ -68,7 +64,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
   const [trayFormData, setTrayFormData] = useState<SeedlingTray>(tray || defaultTray);
   const [seasons, setSeasons] = useState<Season[]>([]);
-  
   const [isSaving, setIsSaving] = useState(false);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -83,35 +78,21 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
   useEffect(() => {
     let isMounted = true;
-    
     const loadUrls = async () => {
       try {
         const currentImages = trayFormData.images || [];
         if (currentImages.length === 0) return;
-        
-        const urlsToFetch = currentImages.filter((img: string) => 
-          img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http')
-        );
-        
+        const urlsToFetch = currentImages.filter((img: string) => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
         if (urlsToFetch.length === 0) return;
 
         const fetchedUrls: Record<string, string> = {};
         const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
-        
         if (data && !error) {
-          data.forEach((item: any) => { 
-            if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; 
-          });
+          data.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; });
         }
-        
-        if (isMounted && Object.keys(fetchedUrls).length > 0) {
-          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
-        }
-      } catch (err) { 
-        console.error("Error fetching signed URLs:", err); 
-      }
+        if (isMounted && Object.keys(fetchedUrls).length > 0) setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+      } catch (err) { console.error("Error fetching signed URLs:", err); }
     };
-    
     loadUrls();
     return () => { isMounted = false; };
   }, [trayFormData.images]);
@@ -120,22 +101,14 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => { 
-        setTrayFormData({ 
-          ...trayFormData, 
-          images: [...(trayFormData.images || []), reader.result as string] 
-        }); 
-      };
+      reader.onloadend = () => { setTrayFormData({ ...trayFormData, images: [...(trayFormData.images || []), reader.result as string] }); };
       reader.readAsDataURL(file);
     }
   };
 
   const handleAddCellContent = () => {
     const newContent: TraySeedRecord = { cell: 1, seed_id: '' };
-    setTrayFormData({
-      ...trayFormData,
-      contents: [...(trayFormData.contents || []), newContent]
-    });
+    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), newContent] });
   };
 
   const handleUpdateCellContent = (index: number, field: keyof TraySeedRecord, value: any) => {
@@ -174,7 +147,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
-      // FIX: Ensure empty strings for dates are converted to explicit nulls so Postgres doesn't crash
       const payloadToSave: any = { 
         ...trayFormData, 
         images: uploadedImagePaths,
@@ -221,24 +193,16 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
         <div className="flex items-center gap-2">
           <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
             {trays.some((t: SeedlingTray) => t.id === tray?.id) ? 'Edit Tray' : 'New Tray'}
           </h1>
         </div>
-        <button 
-          onClick={handleSaveEdit} 
-          disabled={isSaving} 
-          className="px-5 py-2 bg-emerald-600 text-white font-black rounded-xl shadow-sm disabled:opacity-50 transition-colors hover:bg-emerald-700 tracking-wide"
-        >
+        <button onClick={handleSaveEdit} disabled={isSaving} className="px-5 py-2 bg-emerald-600 text-white font-black rounded-xl shadow-sm disabled:opacity-50 transition-colors hover:bg-emerald-700 tracking-wide">
           {isSaving ? 'Saving...' : 'Save'}
         </button>
       </header>
@@ -266,10 +230,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                        <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </div>
                   )}
-                  <button 
-                    onClick={() => setTrayFormData({ ...trayFormData, images: (trayFormData.images || []).filter((_: string, i: number) => i !== idx) })} 
-                    className="absolute top-1 right-1 p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm"
-                  >
+                  <button onClick={() => setTrayFormData({ ...trayFormData, images: (trayFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="absolute top-1 right-1 p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>
@@ -295,13 +256,24 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Cell Count</label>
-              <select value={trayFormData.cell_count} onChange={(e) => setTrayFormData({ ...trayFormData, cell_count: Number(e.target.value) })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none">
-                <option value={6}>6 Cells</option>
-                <option value={50}>50 Cells</option>
-                <option value={72}>72 Cells</option>
-                <option value={128}>128 Cells</option>
-                <option value={200}>200 Cells</option>
-              </select>
+              <div className="relative">
+                <input 
+                  type="number" 
+                  list="cell-counts"
+                  value={trayFormData.cell_count || ''} 
+                  onChange={(e) => setTrayFormData({ ...trayFormData, cell_count: Number(e.target.value) })} 
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm"
+                  placeholder="e.g., 72"
+                />
+                <datalist id="cell-counts">
+                  <option value={6} />
+                  <option value={50} />
+                  <option value={72} />
+                  <option value={128} />
+                  <option value={200} />
+                </datalist>
+                <span className="absolute right-4 top-3.5 text-sm font-bold text-stone-400 pointer-events-none">Cells</span>
+              </div>
             </div>
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Season</label>
@@ -318,16 +290,10 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
 
           <div className="flex flex-wrap gap-2 pt-2">
-            <button 
-              onClick={() => setTrayFormData({...trayFormData, humidity_dome: !trayFormData.humidity_dome})}
-              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.humidity_dome ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
-            >
+            <button onClick={() => setTrayFormData({...trayFormData, humidity_dome: !trayFormData.humidity_dome})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.humidity_dome ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>
               Humidity Dome ON
             </button>
-            <button 
-              onClick={() => setTrayFormData({...trayFormData, grow_light: !trayFormData. grow_light})}
-              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.grow_light ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
-            >
+            <button onClick={() => setTrayFormData({...trayFormData, grow_light: !trayFormData. grow_light})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.grow_light ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>
               Grow Lights ON
             </button>
           </div>
@@ -348,29 +314,15 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               (trayFormData.contents || []).map((content, idx) => (
                 <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
                   <div className="w-16">
-                    <input 
-                      type="number" 
-                      placeholder="Cell #" 
-                      value={content.cell || ''} 
-                      onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))}
-                      className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center"
-                    />
+                    <input type="number" placeholder="Cell #" value={content.cell || ''} onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" />
                   </div>
                   <div className="flex-1">
-                    <select 
-                      value={content.seed_id} 
-                      onChange={(e) => handleUpdateCellContent(idx, 'seed_id', e.target.value)}
-                      className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 appearance-none text-stone-700"
-                    >
+                    <select value={content.seed_id} onChange={(e) => handleUpdateCellContent(idx, 'seed_id', e.target.value)} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 appearance-none text-stone-700">
                       <option value="">Select Seed...</option>
-                      {inventory.map((s: InventorySeed) => (
-                        <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>
-                      ))}
+                      {inventory.map((s: InventorySeed) => <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>)}
                     </select>
                   </div>
-                  <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
+                  <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
               ))
             )}
@@ -386,7 +338,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               <input type="date" value={trayFormData.first_germination_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_germination_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">1st Planted Out</label>
+              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">1st Potted Up</label>
               <input type="date" value={trayFormData.first_planted_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_planted_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
           </div>
@@ -398,24 +350,13 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
           <div>
             <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">General Notes</label>
-            <textarea 
-              value={trayFormData.notes || ''} 
-              onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} 
-              rows={4} 
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm resize-none outline-none focus:border-emerald-500" 
-              placeholder="Issues with damping off, watering schedule, etc..." 
-            />
+            <textarea value={trayFormData.notes || ''} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={4} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm resize-none outline-none focus:border-emerald-500" placeholder="Issues with damping off, watering schedule, etc..." />
           </div>
         </section>
 
         {trays.some((t: SeedlingTray) => t.id === tray?.id) && (
-          <button 
-            onClick={handleDeleteTray} 
-            className="w-full py-4 mt-2 bg-red-50 text-red-600 font-bold rounded-2xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+          <button onClick={handleDeleteTray} className="w-full py-4 mt-2 bg-red-50 text-red-600 font-bold rounded-2xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             Delete Tray Permanently
           </button>
         )}
