@@ -1,5 +1,3 @@
-// types.ts
-
 export type AppView = 
   | 'dashboard' 
   | 'vault' 
@@ -10,15 +8,15 @@ export type AppView =
   | 'trays'
   | 'tray_detail'
   | 'tray_edit'
-  | 'admin_seasons'  // NEW: Manage seasons and generate magic links
-  | 'admin_demand';  // NEW: The aggregated demand planner
+  | 'seedlings'        // NEW: The Seedling Ledger Dashboard
+  | 'admin_seasons' 
+  | 'admin_demand';
 
 export interface SeedCategory {
   name: string;
   prefix: string;
 }
 
-// Used by the AI Scanner & Importer before saving to the DB
 export interface SeedData {
   variety_name?: string;
   vendor?: string;
@@ -68,14 +66,12 @@ export interface InventorySeed {
   parent_id_male?: string;
   generation?: string;
 
-  // Temporary UI/Navigation state (not saved to the database)
   returnTo?: AppView;
   returnPayload?: any;
   newCatName?: string;
   newCatPrefix?: string;
 }
 
-// RESTORED: Required by TrayEdit.tsx
 export interface TraySeedRecord {
   cell: number;
   seed_id: string;
@@ -85,7 +81,7 @@ export interface SeedlingTray {
   id: string;
   sown_date: string;
   cell_count: number;
-  contents: TraySeedRecord[]; // Uses the restored interface
+  contents: TraySeedRecord[];
   notes?: string;
   images?: string[];
   humidity_dome?: boolean;
@@ -94,12 +90,8 @@ export interface SeedlingTray {
   first_planted_date?: string;
   potting_mix?: string;
   location?: string;
-  season_id?: string; // NEW: Links this tray to a specific season
+  season_id?: string; 
 }
-
-// ==========================================
-// NEW: Community Nursery & Planning Types
-// ==========================================
 
 export interface Season {
   id: string;
@@ -109,7 +101,7 @@ export interface Season {
 }
 
 export interface WishlistSession {
-  id: string; // The magic token (UUID)
+  id: string; 
   list_name: string;
   season_id: string;
   expires_at?: string;
@@ -119,10 +111,45 @@ export interface WishlistSession {
 export interface WishlistSelection {
   id: string;
   session_id: string;
-  seed_id?: string; // Null if it's a custom write-in request
+  seed_id?: string; 
   custom_request?: string;
   created_at: string;
-  
-  // Joined data we will fetch for the UI to display the requested seed details
   seed?: InventorySeed; 
+}
+
+// ==========================================
+// NEW: Seedling Ledger Types
+// ==========================================
+
+export interface SeedlingJournalEntry {
+  id: string;
+  date: string;
+  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE';
+  note: string;
+}
+
+export interface SeasonSeedling {
+  id: string;
+  seed_id: string;
+  season_id: string;
+  
+  qty_growing: number;
+  
+  allocate_keep: number;
+  allocate_reserve: number;
+  
+  qty_planted: number;
+  qty_gifted: number;
+  qty_sold: number;
+  qty_dead: number;
+  
+  locations: Record<string, number>; 
+  journal: SeedlingJournalEntry[];
+  
+  created_at?: string;
+  updated_at?: string;
+
+  // Joined fields for the UI
+  seed?: InventorySeed;
+  season?: Season;
 }

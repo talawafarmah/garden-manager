@@ -5,7 +5,7 @@ import { AppView } from '../types';
 
 interface Props {
   navigateTo: (view: AppView) => void;
-  userRole?: string; // Added to protect the Admin section
+  userRole?: string; 
 }
 
 export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
@@ -16,7 +16,7 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v2.4</span>
+              <span className="text-sm font-normal text-emerald-300">v2.5</span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -30,6 +30,8 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Inventory Management</h2>
           <div className="grid grid-cols-2 gap-4">
+            
+            {/* Row 1: Add New */}
             <button 
               onClick={() => navigateTo('scanner')} 
               className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95"
@@ -50,6 +52,7 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
               <span className="text-sm font-medium">Import URL</span>
             </button>
             
+            {/* Row 2: View Databases */}
             <button 
               onClick={() => navigateTo('vault')} 
               className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-amber-500 hover:shadow-md transition-all active:scale-95"
@@ -57,7 +60,7 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
               <div className="bg-amber-100 p-3 rounded-full mb-2 text-amber-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               </div>
-              <span className="text-sm font-medium">View Vault</span>
+              <span className="text-sm font-medium">Seed Vault</span>
             </button>
 
             <button 
@@ -67,8 +70,20 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
               <div className="bg-purple-100 p-3 rounded-full mb-2 text-purple-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
               </div>
-              <span className="text-sm font-medium">Seedling Tracker</span>
+              <span className="text-sm font-medium">Tray Tracker</span>
             </button>
+
+            {/* Row 3: Seedlings (Full Width) */}
+            <button 
+              onClick={() => navigateTo('seedlings')} 
+              className="col-span-2 flex items-center justify-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-teal-500 hover:shadow-md transition-all active:scale-95"
+            >
+              <div className="bg-teal-100 p-3 rounded-full text-teal-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
+              </div>
+              <span className="text-lg font-bold text-stone-700">Seedling Ledger</span>
+            </button>
+
           </div>
         </section>
 
@@ -91,7 +106,6 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
           </div>
         </section>
 
-        {/* NEW: Admin Section (Only visible to authenticated admin) */}
         {userRole === 'admin' && (
           <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">Nursery Admin</h2>

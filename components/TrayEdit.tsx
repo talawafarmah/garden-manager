@@ -174,10 +174,14 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
+      // FIX: Ensure empty strings for dates are converted to explicit nulls so Postgres doesn't crash
       const payloadToSave: any = { 
         ...trayFormData, 
         images: uploadedImagePaths,
-        season_id: trayFormData.season_id || null
+        season_id: trayFormData.season_id || null,
+        sown_date: trayFormData.sown_date || null,
+        first_germination_date: trayFormData.first_germination_date || null,
+        first_planted_date: trayFormData.first_planted_date || null,
       };
       
       if (isNewRecord) {
@@ -191,7 +195,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === tray.id ? payloadToSave : t);
       setTrays(updatedTrays);
       
-      // FIX: Using true to replace history state to avoid loops
       navigateTo('trays', null, true);
       
     } catch (e: any) { 
@@ -206,7 +209,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const { error } = await supabase.from('seedling_trays').delete().eq('id', trayFormData.id);
       if (!error) { 
         setTrays(trays.filter((t: SeedlingTray) => t.id !== trayFormData.id)); 
-        // FIX: Using true to replace history state
         navigateTo('trays', null, true); 
       } else {
         alert("Failed to delete tray: " + error.message);
@@ -286,7 +288,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
             </div>
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sown Date</label>
-              <input type="date" value={trayFormData.sown_date} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
+              <input type="date" value={trayFormData.sown_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
           </div>
 
