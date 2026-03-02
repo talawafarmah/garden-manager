@@ -38,14 +38,12 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       try { 
         resolve(canvas.toDataURL('image/jpeg', quality)); 
       } catch (e) { 
-        // If canvas is tainted (CORS error), it will fall into this catch
         resolve(""); 
       }
     };
     img.onerror = () => resolve("");
     
     let finalSrc = source;
-    // FIX: Using corsproxy.io instead of allorigins, as it handles image binary streams much better
     if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('corsproxy')) {
        finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`;
     } else if (!source.startsWith('http') && !source.startsWith('data:')) {
@@ -243,9 +241,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
         if (sourceToResize) {
            const generatedThumb = await resizeImage(sourceToResize, 150, 0.6);
-           
-           // FAILSAFE FIX: If resizing fails (usually because CORS blocked the external HTTP link from being drawn to the canvas),
-           // we simply save the raw HTTP link as the thumbnail. It's better to load the full image than to show a blank space.
            if (generatedThumb) {
                newThumbnail = generatedThumb;
            } else if (sourceToResize.startsWith('http') && !sourceToResize.includes('supabase.co')) {
@@ -288,7 +283,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const updatedInventory = isNewRecord ? [cleanPayloadToSave, ...inventory] : inventory.map((s: InventorySeed) => s.id === seed.id ? cleanPayloadToSave : s);
       setInventory(updatedInventory);
       
-      navigateTo('vault');
+      // FIX: Replace the history state to prevent Back Button loop
+      navigateTo('vault', null, true);
       
     } catch (e: any) { 
       alert(e.message); 
@@ -302,7 +298,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const { error } = await supabase.from('seed_inventory').delete().eq('id', seed.id);
       if (!error) { 
         setInventory(inventory.filter((s: InventorySeed) => s.id !== seed.id)); 
-        navigateTo('vault'); 
+        // FIX: Replace the history state to prevent Back Button loop
+        navigateTo('vault', null, true); 
       }
     }
   };
@@ -330,13 +327,18 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       )}
       
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
-        <div className="flex items-center gap-3">
-          <button onClick={handleCancel} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+        <div className="flex items-center gap-2">
+          <button onClick={handleCancel} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold text-stone-800">
+          <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
+          <h1 className="text-xl font-bold text-stone-800 ml-1">
             {inventory.some((s: InventorySeed) => s.id === seed.id) ? 'Edit Seed' : 'New Seed'}
           </h1>
         </div>

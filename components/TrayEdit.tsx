@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeedlingTray, InventorySeed, TraySeedRecord, Season } from '../types';
 
-// Fast, synchronous conversion of base64 to binary Blob
 const base64ToBlob = (base64: string, mimeType: string): Blob => {
   const byteString = atob(base64.split(',')[1]);
   const ab = new ArrayBuffer(byteString.length);
@@ -53,7 +52,6 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
 };
 
 export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo, handleGoBack }: any) {
-  // If no tray is passed, initialize a default empty tray
   const defaultTray: SeedlingTray = {
     id: `TRAY-${Math.floor(Math.random() * 10000)}`,
     sown_date: new Date().toISOString().split('T')[0],
@@ -75,7 +73,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
-  // Load Seasons for the dropdown
   useEffect(() => {
     const fetchSeasons = async () => {
       const { data } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
@@ -84,13 +81,11 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
     fetchSeasons();
   }, []);
 
-  // Resolve Signed URLs for existing bucket images
   useEffect(() => {
     let isMounted = true;
     
     const loadUrls = async () => {
       try {
-        // FIX: Added || [] fallback
         const currentImages = trayFormData.images || [];
         if (currentImages.length === 0) return;
         
@@ -128,7 +123,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       reader.onloadend = () => { 
         setTrayFormData({ 
           ...trayFormData, 
-          // FIX: Added || [] fallback
           images: [...(trayFormData.images || []), reader.result as string] 
         }); 
       };
@@ -164,7 +158,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
       const folderName = btoa(trayFormData.id).replace(/=/g, ''); 
       
-      // FIX: Added || [] fallback
       const uploadPromises = (trayFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
@@ -184,7 +177,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const payloadToSave: any = { 
         ...trayFormData, 
         images: uploadedImagePaths,
-        season_id: trayFormData.season_id || null // Ensure empty string becomes null for foreign key
+        season_id: trayFormData.season_id || null
       };
       
       if (isNewRecord) {
@@ -198,7 +191,8 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === tray.id ? payloadToSave : t);
       setTrays(updatedTrays);
       
-      navigateTo('trays');
+      // FIX: Using true to replace history state to avoid loops
+      navigateTo('trays', null, true);
       
     } catch (e: any) { 
       alert(e.message); 
@@ -212,7 +206,8 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
       const { error } = await supabase.from('seedling_trays').delete().eq('id', trayFormData.id);
       if (!error) { 
         setTrays(trays.filter((t: SeedlingTray) => t.id !== trayFormData.id)); 
-        navigateTo('trays'); 
+        // FIX: Using true to replace history state
+        navigateTo('trays', null, true); 
       } else {
         alert("Failed to delete tray: " + error.message);
       }
@@ -222,13 +217,18 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
-        <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors">
+        <div className="flex items-center gap-2">
+          <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold text-stone-800">
+          <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
+          <h1 className="text-xl font-bold text-stone-800 ml-1">
             {trays.some((t: SeedlingTray) => t.id === tray?.id) ? 'Edit Tray' : 'New Tray'}
           </h1>
         </div>
@@ -243,7 +243,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
       <div className="max-w-md mx-auto p-4 space-y-5">
         
-        {/* Images Section */}
         <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-black text-stone-800 uppercase text-[10px] tracking-[0.2em]">Tray Photos</h3>
@@ -254,7 +253,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
           
           <div className="grid grid-cols-3 gap-3">
-            {/* FIX: Added || [] fallback */}
             {(trayFormData.images || []).map((img: string, idx: number) => {
               const displaySrc = img.startsWith('data:') || img.startsWith('http') ? img : signedUrls[img] || '';
               return (
@@ -267,7 +265,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                     </div>
                   )}
                   <button 
-                    // FIX: Added || [] fallback
                     onClick={() => setTrayFormData({ ...trayFormData, images: (trayFormData.images || []).filter((_: string, i: number) => i !== idx) })} 
                     className="absolute top-1 right-1 p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm"
                   >
@@ -279,7 +276,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
         </section>
 
-        {/* Basic Info */}
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Setup</h3>
           
@@ -335,7 +331,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
         </section>
 
-        {/* Tray Contents (The Grid) */}
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <div className="flex items-center justify-between border-b border-stone-100 pb-2">
             <h3 className="font-black text-stone-800 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Contents</h3>
@@ -345,7 +340,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
           
           <div className="space-y-3">
-            {/* FIX: Added || [] fallback */}
             {(trayFormData.contents || []).length === 0 ? (
                <div className="text-center py-6 text-stone-400 text-sm italic">No seeds mapped to this tray yet.</div>
             ) : (
@@ -381,7 +375,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           </div>
         </section>
 
-        {/* Milestones & Notes */}
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Milestones & Notes</h3>
           

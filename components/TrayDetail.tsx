@@ -7,7 +7,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
 
-  // Resolve Signed URLs for the tray's own gallery images
   useEffect(() => {
     const loadUrls = async () => {
       if (!tray || !tray.images || tray.images.length === 0) return;
@@ -48,19 +47,15 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
   const handleSeedClick = (seedId: string) => {
     const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedId);
     if (fullSeed) {
-      // Pass returnTo context so SeedDetail knows how to come back here
       navigateTo('seed_detail', { ...fullSeed, returnTo: 'tray_detail', returnPayload: tray });
     } else {
       navigateTo('seed_detail', { id: seedId, returnTo: 'tray_detail', returnPayload: tray });
     }
   };
 
-  /**
-   * FIX: Return explicitly to 'trays' list view instead of using generic back button logic.
-   * This prevents being stuck in a navigation loop if the user came here from Seed Detail.
-   */
+  // FIX: Using true to replace history state to avoid loops
   const onBack = () => {
-    navigateTo('trays');
+    navigateTo('trays', null, true);
   };
 
   return (
@@ -72,12 +67,15 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }
       )}
 
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors">
+        <div className="flex items-center gap-2 mr-2">
+          <button onClick={onBack} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold truncate">Tray Details</h1>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          </button>
         </div>
+        <h1 className="text-xl font-bold truncate flex-1">Tray Details</h1>
         <div className="flex items-center gap-2">
            <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50 text-sm">
              Copy

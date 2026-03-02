@@ -1,4 +1,3 @@
-/* Component: ScannerImporter.tsx */
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { fileToBase64, fetchWithRetry, getBestModel, generateNextId } from '../lib/utils';
@@ -65,7 +64,6 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         const cleanJson = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
         const parsedData = JSON.parse(cleanJson);
         
-        // FIX: Route numbers to undefined, text to empty string
         for (const key in parsedData) {
           if (parsedData[key] === null) {
             if (['days_to_maturity', 'stratification_days', 'scoville_rating'].includes(key)) {
@@ -236,10 +234,15 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
         />
       )}
 
-      <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950 sticky top-0 z-50 shadow-xl">
-        <button onClick={() => handleGoBack('dashboard')} className="p-2 mr-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors shadow-md">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </button>
+      <header className="p-4 flex items-center border-b border-stone-800 bg-stone-950 sticky top-0 z-50 shadow-xl gap-3">
+        <div className="flex items-center gap-2 mr-1">
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors shadow-md">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors shadow-md">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          </button>
+        </div>
         <div>
           <h1 className="text-xl font-bold tracking-tight">{isScanMode ? 'Scan Packet' : 'Import Link'}</h1>
           <p className="text-[10px] text-stone-500 font-black uppercase tracking-[0.2em]">Digital Seed Vault</p>
