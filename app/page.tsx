@@ -12,7 +12,6 @@ import SeedEdit from '../components/SeedEdit';
 import TrayList from '../components/TrayList';
 import TrayDetail from '../components/TrayDetail';
 import TrayEdit from '../components/TrayEdit';
-// NEW: Import the Admin Modules
 import AdminSeasons from '../components/AdminSeasons';
 import AdminDemand from '../components/AdminDemand';
 
@@ -27,10 +26,8 @@ export default function App() {
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
-
   const [userRole, setUserRole] = useState<'admin' | 'viewer'>('viewer');
 
-  // Read the Role Cookie on initial load
   useEffect(() => {
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split('; ');
@@ -91,6 +88,7 @@ export default function App() {
     if (view === 'trays') { fetchTrays(); fetchInventory(); }
   };
 
+  // Fixed signature to accept the replace flag for breaking history loops
   const navigateTo = (view: AppView, payload: any = null, replace: boolean = false) => {
     if (typeof window !== 'undefined') {
         if (replace) {
@@ -140,22 +138,21 @@ export default function App() {
       return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
+    
+    // FIX: Passed inventory={inventory} here to resolve the TypeScript error
     case 'trays':
-      return <TrayList trays={trays} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
+      return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
+    
     case 'tray_detail':
       return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'tray_edit':
       return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
-    
-    // NEW: Route to the Admin Modules
     case 'admin_seasons':
       return <AdminSeasons navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_demand':
       return <AdminDemand navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
-    
     case 'dashboard':
     default:
-      // FIX: Added userRole={userRole} here so the Dashboard actually knows you are an admin!
       return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
   }
 }
