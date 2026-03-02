@@ -18,6 +18,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [deductReserve, setDeductReserve] = useState(0);
   const [deductAvailable, setDeductAvailable] = useState(0);
 
+  // Allocation Form State
+  const [editKeep, setEditKeep] = useState(0);
+  const [editReserve, setEditReserve] = useState(0);
+
   // Journal State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
@@ -52,7 +56,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
-  // Open Double-Entry Event Modal
   const openEventModal = (ledger: SeasonSeedling) => {
     setSelectedLedger(ledger);
     setEventType('qty_planted');
@@ -62,7 +65,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     setActiveModal('LOG_EVENT');
   };
 
-  // Submit Double-Entry Event
+  const openAllocateModal = (ledger: SeasonSeedling) => {
+    setSelectedLedger(ledger);
+    setEditKeep(ledger.allocate_keep);
+    setEditReserve(ledger.allocate_reserve);
+    setActiveModal('ALLOCATE');
+  };
+
   const submitEvent = async () => {
     if (!selectedLedger) return;
     const totalDeducted = deductKeep + deductReserve + deductAvailable;
@@ -73,7 +82,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     const newReserve = Math.max(0, selectedLedger.allocate_reserve - deductReserve);
     const newEventTotal = (selectedLedger[eventType] as number) + totalDeducted;
 
-    const verb = eventType.replace('qty_', ''); // planted, gifted, sold, dead
+    const verb = eventType.replace('qty_', ''); 
     const newJournalEntry: SeedlingJournalEntry = {
       id: crypto.randomUUID(),
       date: new Date().toISOString().split('T')[0],
@@ -91,10 +100,31 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
       journal: updatedJournal
     };
 
-    // Optimistic UI update
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
     setActiveModal(null);
+    await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
+  };
 
+  const submitAllocation = async () => {
+    if (!selectedLedger) return;
+
+    const newJournalEntry: SeedlingJournalEntry = {
+      id: crypto.randomUUID(),
+      date: new Date().toISOString().split('T')[0],
+      type: 'ALLOCATE',
+      note: `Updated Allocations: Keep (${editKeep}), Reserve (${editReserve})`
+    };
+
+    const updatedJournal = [newJournalEntry, ...(selectedLedger.journal || [])];
+
+    const updates = {
+      allocate_keep: editKeep,
+      allocate_reserve: editReserve,
+      journal: updatedJournal
+    };
+
+    setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
+    setActiveModal(null);
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
   };
 
@@ -182,11 +212,15 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
                   {/* Action Bar */}
                   <div className="p-3 bg-stone-50 border-t border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide">
-                    <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[100px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Log Event
+                    <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center shadow-sm">
+                      Log Event
                     </button>
-                    <button onClick={() => { setSelectedLedger(ledger); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[100px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-1 hover:bg-stone-100">
-                      📓 Journal ({ledger.journal?.length || 0})
+                    {/* NEW: Allocate Button */}
+                    <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">
+                      Allocate
+                    </button>
+                    <button onClick={() => { setSelectedLedger(ledger); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
+                      Journal
                     </button>
                   </div>
 
@@ -265,6 +299,55 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
       )}
 
       {/* ========================================================= */}
+      {/* MODAL: ALLOCATE (Set Keep and Reserve amounts)              */}
+      {/* ========================================================= */}
+      {activeModal === 'ALLOCATE' && selectedLedger && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-purple-50 p-4 border-b border-purple-100 flex justify-between items-center">
+              <h2 className="font-black text-purple-900 tracking-tight flex items-center gap-2">🎯 Update Allocations</h2>
+              <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-purple-400 hover:bg-purple-200 hover:text-purple-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            
+            <div className="p-5 space-y-5">
+              <div className="text-center bg-stone-100 p-3 rounded-xl border border-stone-200 mb-4">
+                 <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Total Growing</span>
+                 <div className="text-3xl font-black text-stone-800">{selectedLedger.qty_growing}</div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-stone-700 w-24">My Keep</span>
+                  <input type="number" min="0" value={editKeep || ''} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-stone-700 w-24">Reserved</span>
+                  <input type="number" min="0" value={editReserve || ''} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-stone-200 flex justify-between items-center">
+                <span className="text-xs font-black uppercase tracking-widest text-blue-600">Calculated Available</span>
+                <span className={`text-2xl font-black ${selectedLedger.qty_growing - editKeep - editReserve < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                  {selectedLedger.qty_growing - editKeep - editReserve}
+                </span>
+              </div>
+              {selectedLedger.qty_growing - editKeep - editReserve < 0 && (
+                <p className="text-[10px] text-red-500 font-bold text-center">You have over-allocated your growing plants!</p>
+              )}
+
+              <button 
+                onClick={submitAllocation}
+                className="w-full py-4 bg-purple-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-2"
+              >
+                Save Allocations
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
       {/* MODAL: JOURNAL (Pot sizes, notes, timeline)                 */}
       {/* ========================================================= */}
       {activeModal === 'JOURNAL' && selectedLedger && (
@@ -288,6 +371,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm
                         ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
                           entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 
+                          entry.type === 'ALLOCATE' ? 'bg-purple-100 text-purple-800' :
                           entry.type === 'EVENT' ? 'bg-stone-800 text-white' : 'bg-emerald-100 text-emerald-800'}`}
                       >
                         {entry.type}

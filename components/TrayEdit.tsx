@@ -104,7 +104,8 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
   const handleAddCellContent = () => {
     const newIdx = (trayFormData.contents || []).length;
-    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), { cell: 1, seed_id: '' }] });
+    // FIX: Default sown_count to 1 instead of setting the "cell" string
+    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), { seed_id: '', sown_count: 1 }] });
     setSeedSearchRow(newIdx);
   };
 
@@ -373,7 +374,16 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                 return (
                   <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
                     <div className="w-16">
-                      <input type="number" placeholder="Cell #" value={content.cell || ''} onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" />
+                      {/* FIX: Bind this input to sown_count instead of cell */}
+                      <input 
+                        type="number" 
+                        min="0"
+                        placeholder="Qty Sown" 
+                        value={content.sown_count ?? ''} 
+                        onChange={(e) => handleUpdateCellContent(idx, 'sown_count', Number(e.target.value))} 
+                        className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" 
+                        title="Number of seeds sown"
+                      />
                     </div>
                     <div className="flex-1">
                       <button 

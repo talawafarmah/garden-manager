@@ -8,7 +8,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [localTray, setLocalTray] = useState<SeedlingTray>(tray);
 
-  // Pot Up Modal State
   const [potUpState, setPotUpState] = useState<{isOpen: boolean, seedId: string, varietyName: string, count: number, note: string, maxAvailable: number} | null>(null);
   const [isPottingUp, setIsPottingUp] = useState(false);
 
@@ -37,7 +36,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
   const totalPlanted = localTray.contents.reduce((sum: number, item: any) => sum + (item.planted_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
-  // UX Improvement: Quick log counts directly from the detail screen
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
     e.stopPropagation();
     if (userRole !== 'admin') return;
@@ -47,28 +45,27 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     const newVal = Math.max(0, (currentVal as number) + delta);
     
     (updatedContents[index][field as keyof typeof updatedContents[0]] as any) = newVal;
-    
-    // Update UI instantly
     setLocalTray({ ...localTray, contents: updatedContents });
-    
-    // Sync to DB quietly
     await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
   };
 
   const handleDuplicateTray = () => {
     setIsDuplicating(true);
     const duplicatedTray: SeedlingTray = {
-      id: `TRAY-${Math.floor(Math.random() * 10000)}`,
+      ...localTray,
+      id: crypto.randomUUID(),
+      name: `${localTray.name || 'Tray'} (Copy)`,
       sown_date: new Date().toISOString().split('T')[0],
-      cell_count: localTray.cell_count,
-      contents: localTray.contents.map((item: any) => ({ ...item, sown_count: 0, germinated_count: 0, planted_count: 0, germination_date: "" })),
-      notes: localTray.notes ? `${localTray.notes} (Copied)` : undefined,
+      first_germination_date: "",
+      first_planted_date: "",
       images: [],
-      humidity_dome: localTray.humidity_dome,
-      grow_light: localTray.grow_light,
-      potting_mix: localTray.potting_mix,
-      location: localTray.location,
-      season_id: localTray.season_id,
+      // FIX: Retain what was sown, but reset germinated and planted out counts!
+      contents: localTray.contents.map((item: any) => ({ 
+        ...item, 
+        sown_count: item.sown_count || 0, 
+        germinated_count: 0, 
+        planted_count: 0 
+      }))
     };
     navigateTo('tray_edit', duplicatedTray);
     setIsDuplicating(false);
@@ -111,11 +108,13 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
       const { data: existingLedger } = await supabase.from('season_seedlings')
         .select('*').eq('seed_id', potUpState.seedId).eq('season_id', sId).maybeSingle();
 
+      // FIX: Journal entry now correctly references the tray name instead of the raw ID
+      const trayReference = localTray.name || 'a tray';
       const journalEntry: SeedlingJournalEntry = {
         id: crypto.randomUUID(),
         date: new Date().toISOString().split('T')[0],
         type: 'UPPOT',
-        note: `Potted up ${potUpState.count} from tray ${localTray.id}. ${potUpState.note}`
+        note: `Potted up ${potUpState.count} from ${trayReference}. ${potUpState.note}`
       };
 
       if (existingLedger) {

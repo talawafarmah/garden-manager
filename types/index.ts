@@ -72,14 +72,18 @@ export interface InventorySeed {
   newCatPrefix?: string;
 }
 
+// FIX: Added the explicit count properties so TypeScript saves them correctly
 export interface TraySeedRecord {
-  cell: number;
+  cell?: number | string;
   seed_id: string;
+  sown_count?: number;
+  germinated_count?: number;
+  planted_count?: number;
 }
 
 export interface SeedlingTray {
   id: string;
-  name?: string; // NEW: Added proper name field
+  name?: string; 
   sown_date: string;
   cell_count: number;
   contents: TraySeedRecord[];
@@ -121,7 +125,7 @@ export interface WishlistSelection {
 export interface SeedlingJournalEntry {
   id: string;
   date: string;
-  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE';
+  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE' | 'ALLOCATE';
   note: string;
 }
 
