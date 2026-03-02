@@ -21,22 +21,14 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
-      
-      if (width > height) { 
-        if (width > maxSize) { height *= maxSize / width; width = maxSize; } 
-      } else { 
-        if (height > maxSize) { width *= maxSize / height; height = maxSize; } 
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+      else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      
       try { resolve(canvas.toDataURL('image/jpeg', quality)); } catch (e) { resolve(""); }
     };
     img.onerror = () => resolve("");
-    
     let finalSrc = source;
     if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('corsproxy')) {
        finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`;
@@ -48,8 +40,11 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
 };
 
 export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo, handleGoBack }: any) {
+  
+  // FIX: Generate a true UUID for the ID, and use the friendly "Tray-XXXX" format for the Name
   const defaultTray: SeedlingTray = {
-    id: `TRAY-${Math.floor(Math.random() * 10000)}`,
+    id: crypto.randomUUID(), 
+    name: `Tray ${Math.floor(Math.random() * 10000)}`,
     sown_date: new Date().toISOString().split('T')[0],
     cell_count: 72,
     contents: [],
@@ -68,6 +63,9 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
+  const [seedSearchRow, setSeedSearchRow] = useState<number | null>(null);
+  const [seedSearchQuery, setSeedSearchQuery] = useState("");
+
   useEffect(() => {
     const fetchSeasons = async () => {
       const { data } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
@@ -84,7 +82,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         if (currentImages.length === 0) return;
         const urlsToFetch = currentImages.filter((img: string) => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
         if (urlsToFetch.length === 0) return;
-
         const fetchedUrls: Record<string, string> = {};
         const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
         if (data && !error) {
@@ -107,8 +104,9 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   };
 
   const handleAddCellContent = () => {
-    const newContent: TraySeedRecord = { cell: 1, seed_id: '' };
-    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), newContent] });
+    const newIdx = (trayFormData.contents || []).length;
+    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), { cell: 1, seed_id: '' }] });
+    setSeedSearchRow(newIdx);
   };
 
   const handleUpdateCellContent = (index: number, field: keyof TraySeedRecord, value: any) => {
@@ -124,12 +122,11 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   };
 
   const handleSaveEdit = async () => {
-    if (!trayFormData.id.trim()) { alert("Tray ID is required."); return; }
     setIsSaving(true);
     
     try {
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
-      const folderName = btoa(trayFormData.id).replace(/=/g, ''); 
+      const folderName = trayFormData.id; 
       
       const uploadPromises = (trayFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
@@ -160,13 +157,12 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         const { error } = await supabase.from('seedling_trays').insert([payloadToSave]);
         if (error) throw new Error("Insert Error: " + error.message);
       } else {
-        const { error } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', tray.id);
+        const { error } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', trayFormData.id);
         if (error) throw new Error("Update Error: " + error.message);
       }
       
-      const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === tray.id ? payloadToSave : t);
+      const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
       setTrays(updatedTrays);
-      
       navigateTo('trays', null, true);
       
     } catch (e: any) { 
@@ -177,7 +173,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   };
 
   const handleDeleteTray = async () => {
-    if (confirm(`Are you sure you want to delete Tray ${trayFormData.id}?`)) {
+    if (confirm(`Are you sure you want to delete this tray?`)) {
       const { error } = await supabase.from('seedling_trays').delete().eq('id', trayFormData.id);
       if (!error) { 
         setTrays(trays.filter((t: SeedlingTray) => t.id !== trayFormData.id)); 
@@ -188,8 +184,70 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
     }
   };
 
+  const filteredInventory = inventory.filter((s: InventorySeed) => {
+    if (!seedSearchQuery.trim()) return true;
+    const q = seedSearchQuery.toLowerCase();
+    return s.variety_name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+  });
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
+      
+      {seedSearchRow !== null && (
+        <div className="fixed inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  autoFocus 
+                  placeholder="Search 300+ seeds..." 
+                  value={seedSearchQuery} 
+                  onChange={e => setSeedSearchQuery(e.target.value)} 
+                  className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" 
+                />
+                <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </div>
+              <button onClick={() => { setSeedSearchRow(null); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredInventory.length === 0 ? (
+                <div className="text-center py-10 text-stone-400 text-sm">No seeds found matching "{seedSearchQuery}"</div>
+              ) : (
+                filteredInventory.map((s: InventorySeed) => (
+                  <button 
+                    key={s.id} 
+                    onClick={() => { 
+                      handleUpdateCellContent(seedSearchRow, 'seed_id', s.id); 
+                      setSeedSearchRow(null); 
+                      setSeedSearchQuery(""); 
+                    }} 
+                    className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-emerald-100"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 group-hover:border-emerald-300">
+                      {s.thumbnail ? (
+                        <img src={s.thumbnail} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-stone-300">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-stone-800 text-sm truncate">{s.variety_name}</h4>
+                      <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate">{s.category}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
         <div className="flex items-center gap-2">
           <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
@@ -242,10 +300,11 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Setup</h3>
           
+          {/* FIX: Changed "Tray ID" input to "Tray Name" */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Tray ID</label>
-              <input type="text" value={trayFormData.id} onChange={(e) => setTrayFormData({ ...trayFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-mono uppercase font-bold outline-none focus:border-emerald-500 shadow-sm" />
+              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Tray Name</label>
+              <input type="text" value={trayFormData.name || ''} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} placeholder="e.g., Spring Tomatoes" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sown Date</label>
@@ -311,20 +370,26 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
             {(trayFormData.contents || []).length === 0 ? (
                <div className="text-center py-6 text-stone-400 text-sm italic">No seeds mapped to this tray yet.</div>
             ) : (
-              (trayFormData.contents || []).map((content, idx) => (
-                <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
-                  <div className="w-16">
-                    <input type="number" placeholder="Cell #" value={content.cell || ''} onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" />
+              (trayFormData.contents || []).map((content, idx) => {
+                const seedName = inventory.find(s => s.id === content.seed_id)?.variety_name;
+                return (
+                  <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
+                    <div className="w-16">
+                      <input type="number" placeholder="Cell #" value={content.cell || ''} onChange={(e) => handleUpdateCellContent(idx, 'cell', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" />
+                    </div>
+                    <div className="flex-1">
+                      {/* FIX: Trigger Full Screen Search Modal instead of select dropdown */}
+                      <button 
+                        onClick={() => setSeedSearchRow(idx)}
+                        className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2.5 text-xs font-bold outline-none hover:border-emerald-400 transition-colors shadow-sm ${content.seed_id ? 'text-stone-800' : 'text-stone-400'}`}
+                      >
+                        {seedName || "Tap to search seeds..."}
+                      </button>
+                    </div>
+                    <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                   </div>
-                  <div className="flex-1">
-                    <select value={content.seed_id} onChange={(e) => handleUpdateCellContent(idx, 'seed_id', e.target.value)} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 appearance-none text-stone-700">
-                      <option value="">Select Seed...</option>
-                      {inventory.map((s: InventorySeed) => <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>)}
-                    </select>
-                  </div>
-                  <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </section>

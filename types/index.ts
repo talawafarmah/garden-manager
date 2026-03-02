@@ -8,7 +8,7 @@ export type AppView =
   | 'trays'
   | 'tray_detail'
   | 'tray_edit'
-  | 'seedlings'        // NEW: The Seedling Ledger Dashboard
+  | 'seedlings'
   | 'admin_seasons' 
   | 'admin_demand';
 
@@ -79,6 +79,7 @@ export interface TraySeedRecord {
 
 export interface SeedlingTray {
   id: string;
+  name?: string; // NEW: Added proper name field
   sown_date: string;
   cell_count: number;
   contents: TraySeedRecord[];
@@ -117,10 +118,6 @@ export interface WishlistSelection {
   seed?: InventorySeed; 
 }
 
-// ==========================================
-// NEW: Seedling Ledger Types
-// ==========================================
-
 export interface SeedlingJournalEntry {
   id: string;
   date: string;
@@ -149,7 +146,6 @@ export interface SeasonSeedling {
   created_at?: string;
   updated_at?: string;
 
-  // Joined fields for the UI
   seed?: InventorySeed;
   season?: Season;
 }
