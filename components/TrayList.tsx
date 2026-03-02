@@ -11,6 +11,13 @@ interface TrayListProps {
   userRole?: string;
 }
 
+// Safe date parsing to avoid timezone timezone shifts
+const parseDateString = (dateStr: string) => {
+  if (!dateStr) return new Date();
+  const [y, m, d] = dateStr.split('-');
+  return new Date(Number(y), Number(m) - 1, Number(d));
+};
+
 export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -123,7 +130,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                 ? (firstImage.startsWith('http') || firstImage.startsWith('data:') ? firstImage : signedUrls[firstImage])
                 : null;
 
-              // Extract unique seeds planted in this tray and map them to their names
               const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
               const seedNames = uniqueSeedIds.map(id => {
                  const seed = inventory.find((s: InventorySeed) => s.id === id);
@@ -131,25 +137,63 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               });
               const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
-              // Calculate Estimated Germination Range from the seeds
-              let minGerm = 999;
-              let maxGerm = 0;
-              uniqueSeedIds.forEach(id => {
-                 const s = inventory.find((i: InventorySeed) => i.id === id);
-                 if (s && s.germination_days) {
-                    const nums = s.germination_days.match(/\d+/g);
-                    if (nums) {
-                       nums.forEach(n => {
-                          const val = parseInt(n, 10);
-                          if (val < minGerm) minGerm = val;
-                          if (val > maxGerm) maxGerm = val;
-                       });
-                    }
-                 }
-              });
-              let germText = "Unknown";
-              if (minGerm !== 999 && maxGerm !== 0) {
-                 germText = minGerm === maxGerm ? `${minGerm} days` : `${minGerm}-${maxGerm} days`;
+              // --- Dynamic Germination Calculations ---
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+
+              let statusText = "Est. Sprout: Unknown";
+              let statusColor = "text-stone-500 bg-stone-100 border-stone-200";
+              let showSproutIcon = false;
+
+              if (tray.first_germination_date) {
+                // Already sprouted: Calculate days ago
+                const germDate = parseDateString(tray.first_germination_date);
+                const diffDays = Math.round((today.getTime() - germDate.getTime()) / (1000 * 60 * 60 * 24));
+                
+                if (diffDays === 0) statusText = "Sprouted Today!";
+                else if (diffDays === 1) statusText = "Sprouted Yesterday";
+                else statusText = `Sprouted ${diffDays} days ago`;
+                
+                statusColor = "text-emerald-700 bg-emerald-50 border-emerald-300";
+                showSproutIcon = true;
+
+              } else if (tray.sown_date) {
+                // Not sprouted yet: Calculate minimum estimated time based on seeds
+                let minGerm = Infinity;
+                uniqueSeedIds.forEach(id => {
+                   const s = inventory.find((i: InventorySeed) => i.id === id);
+                   if (s && s.germination_days) {
+                      const nums = s.germination_days.match(/\d+/g);
+                      if (nums) {
+                         nums.forEach(n => {
+                            const val = parseInt(n, 10);
+                            if (val > 0 && val < minGerm) minGerm = val;
+                         });
+                      }
+                   }
+                });
+
+                if (minGerm !== Infinity) {
+                  const sownDate = parseDateString(tray.sown_date);
+                  const targetDate = new Date(sownDate);
+                  targetDate.setDate(targetDate.getDate() + minGerm);
+                  
+                  const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  
+                  if (diffDays > 1) {
+                    statusText = `Sprouts in ~${diffDays} days`;
+                    statusColor = "text-blue-700 bg-blue-50 border-blue-200";
+                  } else if (diffDays === 1) {
+                    statusText = `Sprouts Tomorrow`;
+                    statusColor = "text-blue-700 bg-blue-50 border-blue-200";
+                  } else if (diffDays === 0) {
+                    statusText = `Expected Today!`;
+                    statusColor = "text-amber-700 bg-amber-50 border-amber-300";
+                  } else {
+                    statusText = `Overdue by ${Math.abs(diffDays)} days`;
+                    statusColor = "text-orange-700 bg-orange-50 border-orange-300";
+                  }
+                }
               }
 
               return (
@@ -193,17 +237,15 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                     </div>
 
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-stone-100">
-                      {tray.first_germination_date ? (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded">
+                      <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 px-2 py-0.5 rounded border shadow-sm ${statusColor}`}>
+                        {showSproutIcon ? (
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                          Sprouted
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
-                          Est. Sprout: <span className="font-black text-stone-700">{germText}</span>
-                        </span>
-                      )}
-                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{uniqueSeedIds.length} Varieties</span>
+                        ) : (
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        )}
+                        {statusText}
+                      </span>
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{uniqueSeedIds.length} Var{uniqueSeedIds.length === 1 ? '' : 's'}</span>
                     </div>
                   </div>
                 </div>
@@ -211,7 +253,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
             })
           ) : (
             <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
-              <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
               <p className="font-medium">No trays found.</p>
             </div>
           )}
