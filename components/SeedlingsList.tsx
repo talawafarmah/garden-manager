@@ -25,6 +25,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   // Journal State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
+  const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL'); // NEW: Filter state
 
   useEffect(() => {
     fetchSeasonsAndLedgers();
@@ -215,11 +216,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center shadow-sm">
                       Log Event
                     </button>
-                    {/* NEW: Allocate Button */}
                     <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">
                       Allocate
                     </button>
-                    <button onClick={() => { setSelectedLedger(ledger); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
+                    <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
                       Journal
                     </button>
                   </div>
@@ -318,11 +318,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-stone-700 w-24">My Keep</span>
-                  <input type="number" min="0" value={editKeep || ''} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
+                  <input type="number" min="0" value={editKeep === 0 ? '' : editKeep} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-stone-700 w-24">Reserved</span>
-                  <input type="number" min="0" value={editReserve || ''} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
+                  <input type="number" min="0" value={editReserve === 0 ? '' : editReserve} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
                 </div>
               </div>
 
@@ -361,11 +361,24 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
+            {/* NEW: Journal Quick Filters */}
+            <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
+               {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT', 'ALLOCATE'].map(f => (
+                 <button 
+                   key={f} 
+                   onClick={() => setJournalFilter(f as any)} 
+                   className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}
+                 >
+                   {f}
+                 </button>
+               ))}
+            </div>
+
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100">
-              {(selectedLedger.journal || []).length === 0 ? (
-                <p className="text-center text-stone-400 text-sm italic py-10">No journal entries yet.</p>
+              {(selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).length === 0 ? (
+                <p className="text-center text-stone-400 text-sm italic py-10">No journal entries match this filter.</p>
               ) : (
-                (selectedLedger.journal || []).map((entry, idx) => (
+                (selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).map((entry, idx) => (
                   <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative">
                     <div className="flex justify-between items-start mb-2">
                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm

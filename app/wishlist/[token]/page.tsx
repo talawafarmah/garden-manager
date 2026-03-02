@@ -43,11 +43,9 @@ const SeedModal = ({
   const showCarousel = rawImages.length > 1;
   const rawDisplayImage = rawImages.length > 0 ? rawImages[currentIdx] : null;
   
-  // Only calculate Heat Profile if it's actually a pepper
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
 
-  // Resolve raw path to Signed URL (or fallback to base64)
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:'))
     ? rawDisplayImage
     : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
@@ -183,12 +181,8 @@ const SeedCard = ({
 }) => {
   const rawDisplayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
   const isOutOfStock = seed.out_of_stock;
-  
-  // Only calculate Heat Profile if it's actually a pepper
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
-
-  // Resolve raw path to Signed URL (or fallback to base64)
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:'))
     ? rawDisplayImage
     : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
@@ -282,7 +276,6 @@ export default function WishlistCatalog() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initial Fetch
   useEffect(() => {
     const fetchCatalogData = async () => {
       if (!token) return;
@@ -304,6 +297,14 @@ export default function WishlistCatalog() {
         setSession(sessionData);
         setSeasonName(sessionData.seasons?.name || "the upcoming season");
 
+        // STATEFUL LOAD: Fetch existing selections if they've submitted before
+        const { data: existingSelections } = await supabase.from('wishlist_selections').select('*').eq('session_id', sessionData.id);
+        if (existingSelections && existingSelections.length > 0) {
+           setSelectedSeedIds(existingSelections.filter(s => s.seed_id).map(s => s.seed_id as string));
+           const custom = existingSelections.find(s => s.custom_request);
+           if (custom) setCustomRequest(custom.custom_request);
+        }
+
         const { data: seedData, error: seedError } = await supabase.from('seed_inventory').select('*');
         if (seedError) throw seedError;
         setSeeds(seedData as InventorySeed[]);
@@ -318,46 +319,26 @@ export default function WishlistCatalog() {
     fetchCatalogData();
   }, [token]);
 
-  // Generate Signed URLs for any Supabase Bucket Paths
   useEffect(() => {
     let isMounted = true;
-
     const loadSignedUrls = async () => {
       if (seeds.length === 0) return;
-
-      const urlsToFetch = seeds
-        .flatMap(s => [s.thumbnail, ...(s.images || [])])
-        .filter(img => img && typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('http')) as string[]; // FIX: Added type assertion
-
+      const urlsToFetch = seeds.flatMap(s => [s.thumbnail, ...(s.images || [])]).filter(img => img && typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('http')) as string[]; 
       if (urlsToFetch.length === 0) return;
 
       const uniqueUrls = Array.from(new Set(urlsToFetch));
-
       try {
         const chunkSize = 100;
         const fetchedUrls: Record<string, string> = {};
-
         for (let i = 0; i < uniqueUrls.length; i += chunkSize) {
           const chunk = uniqueUrls.slice(i, i + chunkSize);
           const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(chunk, 3600);
-          
-          if (data && !error) {
-            data.forEach((item: any) => {
-              if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl;
-            });
-          }
+          if (data && !error) data.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; });
         }
-
-        if (isMounted && Object.keys(fetchedUrls).length > 0) {
-          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
-        }
-      } catch (err) {
-        console.error("Failed to load signed URLs", err);
-      }
+        if (isMounted && Object.keys(fetchedUrls).length > 0) setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+      } catch (err) { console.error("Failed to load signed URLs", err); }
     };
-
     loadSignedUrls();
-
     return () => { isMounted = false; };
   }, [seeds]);
 
@@ -368,29 +349,20 @@ export default function WishlistCatalog() {
 
   const filteredAndSortedSeeds = useMemo(() => {
     let result = [...seeds];
-
     if (showSelectedOnly) result = result.filter(s => selectedSeedIds.includes(s.id));
     if (activeCategory !== 'All') result = result.filter(s => s.category === activeCategory);
-    
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
-      result = result.filter(s => 
-        s.variety_name.toLowerCase().includes(q) || 
-        (s.species && s.species.toLowerCase().includes(q)) ||
-        (s.notes && s.notes.toLowerCase().includes(q))
-      );
+      result = result.filter(s => s.variety_name.toLowerCase().includes(q) || (s.species && s.species.toLowerCase().includes(q)) || (s.notes && s.notes.toLowerCase().includes(q)));
     }
-
     result.sort((a, b) => {
       if (sortBy === 'name_asc') return a.variety_name.localeCompare(b.variety_name);
       if (sortBy === 'name_desc') return b.variety_name.localeCompare(a.variety_name);
       if (sortBy === 'category') return a.category.localeCompare(b.category) || a.variety_name.localeCompare(b.variety_name);
-      
       if (sortBy === 'dtm_asc') return (a.days_to_maturity ?? 9999) - (b.days_to_maturity ?? 9999);
       if (sortBy === 'dtm_desc') return (b.days_to_maturity ?? -1) - (a.days_to_maturity ?? -1);
       return 0;
     });
-
     return result;
   }, [seeds, searchQuery, activeCategory, sortBy, showSelectedOnly, selectedSeedIds]);
 
@@ -403,6 +375,10 @@ export default function WishlistCatalog() {
     setIsSubmitting(true);
 
     try {
+      // STATEFUL OVERWRITE: Delete existing selections first so we don't duplicate on resubmission
+      const { error: deleteError } = await supabase.from('wishlist_selections').delete().eq('session_id', session.id);
+      if (deleteError) throw deleteError;
+
       const inserts = selectedSeedIds.map(seedId => ({ session_id: session.id, seed_id: seedId }));
       if (customRequest.trim() !== "") {
         inserts.push({ session_id: session.id, seed_id: undefined as any, custom_request: customRequest.trim() } as any); 
@@ -427,102 +403,38 @@ export default function WishlistCatalog() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-emerald-600">
-           <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-           <span className="font-bold tracking-widest uppercase text-xs">Loading Catalog...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !session) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-stone-200">
-          <h1 className="text-xl font-black text-stone-800 mb-2">Link Unavailable</h1>
-          <p className="text-stone-500 text-sm">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isSuccess) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-stone-200 animate-in zoom-in-95 duration-500">
-          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-          </div>
-          <h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Sent!</h1>
-          <p className="text-stone-500 text-sm mb-6">Thank you, {session.list_name}! Your garden requests for {seasonName} have been locked in.</p>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><div className="flex flex-col items-center gap-4 text-emerald-600"><svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span className="font-bold tracking-widest uppercase text-xs">Loading Catalog...</span></div></div>;
+  if (error || !session) return <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center"><div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-stone-200"><h1 className="text-xl font-black text-stone-800 mb-2">Link Unavailable</h1><p className="text-stone-500 text-sm">{error}</p></div></div>;
+  if (isSuccess) return <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center"><div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-stone-200 animate-in zoom-in-95 duration-500"><div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div><h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Sent!</h1><p className="text-stone-500 text-sm mb-6">Thank you, {session.list_name}! Your garden requests for {seasonName} have been locked in. You can return to this link anytime to update your choices.</p></div></div>;
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
-      
-      {viewedSeed && (
-        <SeedModal 
-          seed={viewedSeed} 
-          isSelected={selectedSeedIds.includes(viewedSeed.id)} 
-          onClose={() => setViewedSeed(null)} 
-          onToggle={toggleSeedSelection} 
-          signedUrls={signedUrls}
-        />
-      )}
+      {viewedSeed && <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} />}
 
       <header className="bg-emerald-800 text-white pt-10 pb-20 px-4 sm:px-6 rounded-b-[2rem] sm:rounded-b-[3rem] shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
         <div className="max-w-4xl mx-auto relative z-10 text-center">
-          <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-3 shadow-sm backdrop-blur-sm">
-            {seasonName} Catalog
-          </span>
-          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight mb-3">
-            Welcome, {session.list_name}!
-          </h1>
-          <p className="text-emerald-100 text-xs sm:text-sm md:text-base max-w-xl mx-auto leading-relaxed px-2">
-            Browse the seed vault. Tap any card for photos and details, or tap the (+) to quickly add it to your list. 
-          </p>
+          <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-3 shadow-sm backdrop-blur-sm">{seasonName} Catalog</span>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight mb-3">Welcome, {session.list_name}!</h1>
+          <p className="text-emerald-100 text-xs sm:text-sm md:text-base max-w-xl mx-auto leading-relaxed px-2">Browse the seed vault. Tap any card for photos and details, or tap the (+) to quickly add it to your list.</p>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-2 sm:px-6 -mt-12 sm:-mt-16 relative z-20 space-y-6">
-        
         <div className="bg-white/90 backdrop-blur-md p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg border border-stone-200 flex flex-col sm:flex-row gap-2 sm:gap-4 items-center">
           <div className="relative w-full sm:flex-1">
-            <input 
-              type="text" 
-              placeholder="Search varieties, notes..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-9 sm:pl-10 pr-4 text-xs sm:text-sm shadow-inner focus:border-emerald-500 outline-none" 
-            />
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 absolute left-3 top-3 sm:top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input type="text" placeholder="Search varieties, notes..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-9 sm:pl-10 pr-4 text-xs sm:text-sm shadow-inner focus:border-emerald-500 outline-none" />
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-
           <div className="flex w-full sm:w-auto gap-2">
             <div className="relative flex-1 sm:w-40">
-              <select
-                value={activeCategory}
-                onChange={(e) => setActiveCategory(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none"
-              >
+              <select value={activeCategory} onChange={(e) => setActiveCategory(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none">
                 {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
               <svg className="w-4 h-4 text-stone-400 absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </div>
-
             <div className="relative flex-1 sm:w-40">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none"
-              >
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none">
                 <option value="name_asc">Name (A-Z)</option>
                 <option value="name_desc">Name (Z-A)</option>
                 <option value="category">Category</option>
@@ -535,50 +447,26 @@ export default function WishlistCatalog() {
         </div>
 
         <div className="flex justify-between items-center px-2">
-          <button 
-            onClick={() => setShowSelectedOnly(!showSelectedOnly)}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center gap-1.5 border ${showSelectedOnly ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'}`}
-          >
-            <span className={`w-2 h-2 rounded-full ${selectedSeedIds.length > 0 ? 'bg-emerald-500' : 'bg-stone-300'}`}></span>
-            Show Selected ({selectedSeedIds.length})
+          <button onClick={() => setShowSelectedOnly(!showSelectedOnly)} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center gap-1.5 border ${showSelectedOnly ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'}`}>
+            <span className={`w-2 h-2 rounded-full ${selectedSeedIds.length > 0 ? 'bg-emerald-500' : 'bg-stone-300'}`}></span>Show Selected ({selectedSeedIds.length})
           </button>
-
-          <p className="text-[9px] sm:text-[10px] font-black text-stone-400 uppercase tracking-widest">
-            {filteredAndSortedSeeds.length} Results
-          </p>
+          <p className="text-[9px] sm:text-[10px] font-black text-stone-400 uppercase tracking-widest">{filteredAndSortedSeeds.length} Results</p>
         </div>
 
         {filteredAndSortedSeeds.length === 0 ? (
-          <div className="bg-white p-10 rounded-3xl text-center border border-stone-200 shadow-sm">
-             <h3 className="text-lg font-black text-stone-800">No seeds found</h3>
-          </div>
+          <div className="bg-white p-10 rounded-3xl text-center border border-stone-200 shadow-sm"><h3 className="text-lg font-black text-stone-800">No seeds found</h3></div>
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-4">
             {filteredAndSortedSeeds.map((seed) => (
-              <SeedCard 
-                key={seed.id} 
-                seed={seed} 
-                isSelected={selectedSeedIds.includes(seed.id)} 
-                onToggle={toggleSeedSelection} 
-                onView={setViewedSeed} 
-                signedUrls={signedUrls}
-              />
+              <SeedCard key={seed.id} seed={seed} isSelected={selectedSeedIds.includes(seed.id)} onToggle={toggleSeedSelection} onView={setViewedSeed} signedUrls={signedUrls} />
             ))}
           </div>
         )}
 
         <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-stone-200 mt-8">
-          <h3 className="font-black text-sm sm:text-base text-stone-800 mb-1 sm:mb-2 flex items-center gap-2">
-            <span className="text-emerald-500">✨</span> Custom Requests
-          </h3>
+          <h3 className="font-black text-sm sm:text-base text-stone-800 mb-1 sm:mb-2 flex items-center gap-2"><span className="text-emerald-500">✨</span> Custom Requests</h3>
           <p className="text-[10px] sm:text-sm text-stone-500 mb-3 sm:mb-4">Don't see what you're looking for? Leave a note.</p>
-          <textarea 
-            value={customRequest}
-            onChange={(e) => setCustomRequest(e.target.value)}
-            placeholder="e.g., I'd love a really hot yellow pepper..."
-            rows={3}
-            className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 sm:p-4 text-xs sm:text-sm outline-none focus:border-emerald-500 resize-none shadow-inner"
-          />
+          <textarea value={customRequest} onChange={(e) => setCustomRequest(e.target.value)} placeholder="e.g., I'd love a really hot yellow pepper..." rows={3} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 sm:p-4 text-xs sm:text-sm outline-none focus:border-emerald-500 resize-none shadow-inner" />
         </div>
       </div>
 
@@ -588,16 +476,11 @@ export default function WishlistCatalog() {
             <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-stone-400">Your List</span>
             <span className="font-black text-sm sm:text-base text-emerald-700">{selectedSeedIds.length} Items Selected</span>
           </div>
-          <button 
-            onClick={handleSubmit}
-            disabled={isSubmitting || (selectedSeedIds.length === 0 && customRequest.trim() === "")}
-            className="px-6 py-3 sm:px-8 sm:py-4 bg-emerald-600 text-white rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50"
-          >
+          <button onClick={handleSubmit} disabled={isSubmitting || (selectedSeedIds.length === 0 && customRequest.trim() === "")} className="px-6 py-3 sm:px-8 sm:py-4 bg-emerald-600 text-white rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50">
             {isSubmitting ? 'Sending...' : 'Submit List'}
           </button>
         </div>
       </div>
-
     </main>
   );
 }

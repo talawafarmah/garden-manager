@@ -13,6 +13,12 @@ interface DemandItem {
   seed: InventorySeed;
   count: number;
   requesters: string[];
+  ledger?: {
+    growing: number;
+    keep: number;
+    reserve: number;
+    available: number;
+  };
 }
 
 interface CustomRequest {
@@ -28,7 +34,7 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
   
   const [aggregatedDemand, setAggregatedDemand] = useState<DemandItem[]>([]);
   const [customRequests, setCustomRequests] = useState<CustomRequest[]>([]);
-  const [totalLists, setTotalLists] = useState(0);
+  const [totalSubmitted, setTotalSubmitted] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   // 1. Load Seasons for the dropdown
@@ -60,11 +66,10 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
 
         if (sessionsErr) throw sessionsErr;
         
-        setTotalLists(sessions?.length || 0);
-
         if (!sessions || sessions.length === 0) {
            setAggregatedDemand([]);
            setCustomRequests([]);
+           setTotalSubmitted(0);
            setIsLoading(false);
            return;
         }
@@ -80,7 +85,22 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
 
         if (selectionsErr) throw selectionsErr;
 
-        // Step C: Aggregate the data
+        // FIX #1: Calculate accurately how many unique wishlists have actually been submitted
+        const uniqueSessionsSubmitted = new Set((selections || []).map(s => s.session_id));
+        setTotalSubmitted(uniqueSessionsSubmitted.size);
+
+        // Step C: Fetch Active Seedling Ledgers for this season (The Final Linkage!)
+        const { data: ledgers, error: ledgerErr } = await supabase
+          .from('season_seedlings')
+          .select('*')
+          .eq('season_id', activeSeasonId);
+        
+        const ledgerMap = new Map();
+        if (ledgers) {
+           ledgers.forEach(l => ledgerMap.set(l.seed_id, l));
+        }
+
+        // Step D: Aggregate the data
         const demandMap = new Map<string, DemandItem>();
         const customReqs: CustomRequest[] = [];
 
@@ -96,10 +116,23 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
                  existing.requesters.push(requesterName);
               }
             } else {
+              // Attach ledger data if it exists for this seed!
+              let seedLedger;
+              if (ledgerMap.has(sel.seed_id)) {
+                const l = ledgerMap.get(sel.seed_id);
+                seedLedger = {
+                  growing: l.qty_growing,
+                  keep: l.allocate_keep,
+                  reserve: l.allocate_reserve,
+                  available: Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve)
+                };
+              }
+
               demandMap.set(sel.seed_id, {
                 seed: sel.seed as InventorySeed,
                 count: 1,
-                requesters: [requesterName]
+                requesters: [requesterName],
+                ledger: seedLedger
               });
             }
           } else if (sel.custom_request) {
@@ -155,7 +188,8 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
             >
               {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <p className="text-xs font-bold text-stone-400 tracking-wider uppercase">{totalLists} Wishlists Submitted</p>
+            {/* FIX #1: Shows accurately calculated submitted count */}
+            <p className="text-xs font-bold text-stone-400 tracking-wider uppercase">{totalSubmitted} Wishlists Submitted</p>
           </div>
           <svg className="w-5 h-5 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
         </div>
@@ -176,11 +210,11 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
                 </div>
               ) : (
                 aggregatedDemand.map((item, index) => (
-                  <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex gap-4 items-center">
+                  <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex gap-4 items-start">
                     
                     {/* Rank & Count Badge */}
                     <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-2xl w-14 h-14 flex-shrink-0">
-                      <span className="text-xs font-bold text-stone-400 leading-none">QTY</span>
+                      <span className="text-[9px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
                       <span className="text-xl font-black text-blue-600 leading-none mt-1">{item.count}</span>
                     </div>
 
@@ -199,10 +233,28 @@ export default function AdminDemand({ navigateTo, handleGoBack, userRole }: Prop
                       </div>
                       <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{item.seed.category}</p>
                       
+                      {/* FIX #2: The Final Linkage! Showing Nursery Ledger status inline */}
+                      <div className="mt-3 flex flex-wrap gap-1.5 items-center">
+                        {item.ledger ? (
+                          <>
+                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded">Grow: {item.ledger.growing}</span>
+                            <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded">Res: {item.ledger.reserve}</span>
+                            <span className={`border text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                              Avail: {item.ledger.available}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="bg-stone-100 text-stone-500 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            Not Started Yet
+                          </span>
+                        )}
+                      </div>
+
                       {/* Requesters List */}
-                      <div className="mt-2 flex flex-wrap gap-1">
+                      <div className="mt-3 flex flex-wrap gap-1 border-t border-stone-100 pt-3">
                         {item.requesters.map((req, i) => (
-                          <span key={i} className="text-[10px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-full">
+                          <span key={i} className="text-[10px] font-bold text-stone-500 bg-stone-50 border border-stone-200 px-2 py-0.5 rounded-full">
                             {req}
                           </span>
                         ))}
