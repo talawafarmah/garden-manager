@@ -43,7 +43,7 @@ const SeedModal = ({
   const showCarousel = rawImages.length > 1;
   const rawDisplayImage = rawImages.length > 0 ? rawImages[currentIdx] : null;
   
-  // NEW: Only calculate Heat Profile if it's actually a pepper
+  // Only calculate Heat Profile if it's actually a pepper
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
 
@@ -184,7 +184,7 @@ const SeedCard = ({
   const rawDisplayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
   const isOutOfStock = seed.out_of_stock;
   
-  // NEW: Only calculate Heat Profile if it's actually a pepper
+  // Only calculate Heat Profile if it's actually a pepper
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
 
@@ -327,7 +327,7 @@ export default function WishlistCatalog() {
 
       const urlsToFetch = seeds
         .flatMap(s => [s.thumbnail, ...(s.images || [])])
-        .filter(img => img && typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('http'));
+        .filter(img => img && typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('http')) as string[]; // FIX: Added type assertion
 
       if (urlsToFetch.length === 0) return;
 
