@@ -12,6 +12,7 @@ import SeedEdit from '../components/SeedEdit';
 import TrayList from '../components/TrayList';
 import TrayDetail from '../components/TrayDetail';
 import TrayEdit from '../components/TrayEdit';
+import SeedlingsList from '../components/SeedlingsList';
 import AdminSeasons from '../components/AdminSeasons';
 import AdminDemand from '../components/AdminDemand';
 
@@ -76,19 +77,22 @@ export default function App() {
     setActiveView(view);
     if (typeof window !== 'undefined') window.scrollTo(0, 0);
 
-    if (view === 'dashboard' || view === 'vault' || view === 'trays' || view === 'scanner' || view === 'importer') {
-        setSelectedSeed(null); setSelectedTray(null);
+    // Clear selections when returning to high-level views
+    if (['dashboard', 'vault', 'trays', 'scanner', 'importer', 'seedlings', 'admin_seasons', 'admin_demand'].includes(view)) {
+        setSelectedSeed(null); 
+        setSelectedTray(null);
     }
-    if (view === 'seed_detail' && payload) setSelectedSeed(payload);
-    if (view === 'seed_edit' && payload) setSelectedSeed(payload);
-    if (view === 'tray_detail' && payload) setSelectedTray(payload);
-    if (view === 'tray_edit' && payload) setSelectedTray(payload);
+    
+    // Explicitly set payload (even if null) so forms know if they are 'New' or 'Edit'
+    if (view === 'seed_detail') setSelectedSeed(payload);
+    if (view === 'seed_edit') setSelectedSeed(payload);
+    if (view === 'tray_detail') setSelectedTray(payload);
+    if (view === 'tray_edit') setSelectedTray(payload);
     
     if (view === 'vault') fetchInventory();
     if (view === 'trays') { fetchTrays(); fetchInventory(); }
   };
 
-  // Fixed signature to accept the replace flag for breaking history loops
   const navigateTo = (view: AppView, payload: any = null, replace: boolean = false) => {
     if (typeof window !== 'undefined') {
         if (replace) {
@@ -112,14 +116,14 @@ export default function App() {
         if (e.state && e.state.view) applyRoute(e.state.view, e.state.payload);
         else {
             const hash = window.location.hash.replace('#', '') as AppView;
-            if (['vault', 'trays', 'scanner', 'importer'].includes(hash)) applyRoute(hash);
+            if (['vault', 'trays', 'scanner', 'importer', 'seedlings'].includes(hash)) applyRoute(hash);
             else applyRoute('dashboard');
         }
     };
     window.addEventListener('popstate', handlePopState);
     
     const initialHash = window.location.hash.replace('#', '') as AppView;
-    if (initialHash && ['vault', 'trays'].includes(initialHash)) {
+    if (initialHash && ['vault', 'trays', 'seedlings'].includes(initialHash)) {
          window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
          applyRoute(initialHash);
     } else {
@@ -138,15 +142,17 @@ export default function App() {
       return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'seed_edit':
       return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
-    
-    // FIX: Passed inventory={inventory} here to resolve the TypeScript error
     case 'trays':
       return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
-    
     case 'tray_detail':
       return selectedTray ? <TrayDetail key={selectedTray.id} tray={selectedTray} inventory={inventory} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
+    
+    // FIX: Removed the ternary operator here. TrayEdit can now render even if selectedTray is null!
     case 'tray_edit':
-      return selectedTray ? <TrayEdit key={selectedTray.id} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
+      return <TrayEdit key={selectedTray?.id || 'new_tray'} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    
+    case 'seedlings':
+      return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_seasons':
       return <AdminSeasons navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_demand':
