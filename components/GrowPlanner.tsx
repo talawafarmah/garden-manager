@@ -15,8 +15,8 @@ interface GrowPlanRecord {
   seed_id: string;
   target_plant_date: string;
   planned_qty: number;
-  sown_qty: number; // Manual offsets (direct sow)
-  tray_sown_qty?: number; // Dynamically aggregated from Seedling Trays
+  sown_qty: number;
+  tray_sown_qty?: number;
   indoor_start_date: string;
   seed?: InventorySeed;
 }
@@ -65,8 +65,9 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
       if (seasonData) {
         setSeasons(seasonData as Season[]);
         if (seasonData.length > 0 && !activeSeasonId) {
-          const active = seasonData.find((s: any) => s.status === 'Active');
-          setActiveSeasonId(active ? active.id : seasonData[0].id);
+          const active = seasonData.find((s: any) => s.status === 'Active') || seasonData[0];
+          setActiveSeasonId(active.id);
+          if (active.seedling_target_date) setGlobalTargetDate(active.seedling_target_date);
         }
       }
     };
@@ -79,30 +80,21 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     setIsLoading(true);
     setSelectedPlanIds([]);
     try {
-      // Fetch Grow Plan
       const { data: planData } = await supabase.from('grow_plan').select('*, seed:seed_inventory(*)').eq('season_id', activeSeasonId);
       const currentPlans = (planData || []) as GrowPlanRecord[];
 
-      // FIX: Dynamically aggregate sown_count from Seedling Trays
       const { data: trays } = await supabase.from('seedling_trays').select('contents').eq('season_id', activeSeasonId);
       const traySownMap: Record<string, number> = {};
       
       if (trays) {
         trays.forEach(t => {
           (t.contents || []).forEach((c: any) => {
-            if (c.seed_id) {
-              traySownMap[c.seed_id] = (traySownMap[c.seed_id] || 0) + (c.sown_count || 0);
-            }
+            if (c.seed_id) { traySownMap[c.seed_id] = (traySownMap[c.seed_id] || 0) + (c.sown_count || 0); }
           });
         });
       }
 
-      // Merge dynamic tray counts into the plans
-      const plansWithTrayData = currentPlans.map(p => ({
-        ...p,
-        tray_sown_qty: traySownMap[p.seed_id] || 0
-      }));
-
+      const plansWithTrayData = currentPlans.map(p => ({ ...p, tray_sown_qty: traySownMap[p.seed_id] || 0 }));
       setPlans(plansWithTrayData);
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
   };
@@ -142,7 +134,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     }
   };
 
-  // Manual Sown Qty (Useful for direct sows that skip the tray process)
   const updateSownQty = async (id: string, delta: number) => {
     const plan = plans.find(p => p.id === id);
     if (!plan) return;
@@ -151,7 +142,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     await supabase.from('grow_plan').update({ sown_qty: newQty }).eq('id', id);
   };
 
-  // Update Planned Goal
   const updatePlannedQty = async (id: string, delta: number) => {
     const plan = plans.find(p => p.id === id);
     if (!plan) return;
@@ -164,29 +154,60 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     setSelectedPlanIds(prev => prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]);
   };
 
-  // FIX: Navigate to Tray creation without auto-completing the database!
   const handleBulkSow = () => {
     const selected = plans.filter(p => selectedPlanIds.includes(p.id));
     if (selected.length === 0) return;
-
     const trayContents = selected.map(p => {
       const totalAlreadySown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
-      return {
-        seed_id: p.seed_id,
-        sown_count: Math.max(1, p.planned_qty - totalAlreadySown)
-      };
+      return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown) };
     });
-
     navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents });
   };
 
+  // FIX: Bulk Recalculator Function
+  const handleSyncDates = async () => {
+    if (!confirm("This will recalculate all start dates on your calendar based on your latest seed data and category settings. Proceed?")) return;
+    
+    setIsLoading(true);
+    try {
+      let updates: { id: string, indoor_start_date: string }[] = [];
+
+      for (const plan of plans) {
+        if (!plan.seed) continue;
+        
+        const weeks = resolveNurseryWeeks(plan.seed, categories);
+        const newStartDate = calculateStartDate(plan.target_plant_date, weeks, plan.seed.germination_days);
+        
+        if (newStartDate !== plan.indoor_start_date) {
+          updates.push({ id: plan.id, indoor_start_date: newStartDate });
+        }
+      }
+
+      if (updates.length > 0) {
+        for (const u of updates) {
+          await supabase.from('grow_plan').update({ indoor_start_date: u.indoor_start_date }).eq('id', u.id);
+        }
+        
+        setPlans(plans.map(p => {
+          const update = updates.find(u => u.id === p.id);
+          return update ? { ...p, indoor_start_date: update.indoor_start_date } : p;
+        }));
+        alert(`Successfully synced ${updates.length} scheduled seed(s) with your latest configurations!`);
+      } else {
+        alert("Everything is already perfectly up to date!");
+      }
+    } catch (err: any) {
+      alert("Error syncing dates: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const today = new Date(); today.setHours(0,0,0,0);
-  
   const filteredPlans = plans.filter(p => {
     const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
     return showCompleted || totalSown < p.planned_qty;
   });
-  
   const sortedPlans = [...filteredPlans].sort((a, b) => new Date(a.indoor_start_date).getTime() - new Date(b.indoor_start_date).getTime());
 
   const plannedSeedIds = new Set(plans.map(p => p.seed_id));
@@ -202,9 +223,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-32 font-sans relative">
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-20 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('admin_hub')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
+          <button onClick={() => handleGoBack('admin_hub')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <h1 className="text-xl font-bold">Grow Planner</h1>
         </div>
       </header>
@@ -212,28 +231,28 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
       <div className="max-w-6xl mx-auto p-4 space-y-6 mt-4">
         
         <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6 items-start md:items-center max-w-3xl mx-auto">
-          
           <div className="flex-1 w-full border-b md:border-b-0 md:border-r border-stone-100 pb-4 md:pb-0 md:pr-6">
             <div className="flex items-center gap-3 mb-2">
               <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
               <div className="flex-1 relative">
-                <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6">
+                <select value={activeSeasonId || ''} onChange={(e) => {
+                  setActiveSeasonId(e.target.value);
+                  const s = seasons.find(x => x.id === e.target.value);
+                  if (s?.seedling_target_date) setGlobalTargetDate(s.seedling_target_date);
+                }} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6">
                   {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <svg className="w-4 h-4 text-stone-400 absolute right-0 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
             </div>
-            
             <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 flex items-center justify-between">
-              <div><h2 className="font-black text-amber-900 text-xs">Target Frost Date</h2></div>
+              <div><h2 className="font-black text-amber-900 text-xs">Seedling Target</h2></div>
               <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm font-bold text-amber-900 outline-none focus:border-amber-500 shadow-sm" />
             </div>
           </div>
           
           <div className="flex-1 w-full relative">
-             <div className="flex justify-between items-center mb-1.5">
-               <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Quick Add to Calendar</span>
-             </div>
+             <div className="flex justify-between items-center mb-1.5"><span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Quick Add to Calendar</span></div>
              <div className="relative">
                <input type="text" placeholder="Search vault (e.g. Jalapeno)..." value={manualSearch} onChange={e => setManualSearch(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 pl-10 text-sm outline-none focus:border-emerald-500 shadow-inner" />
                <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -255,22 +274,27 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
            <div className="flex justify-center py-20 text-stone-400"><svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
         ) : (
           <div className="space-y-4">
+            
+            {/* FIX: Sync Dates Button added to the Timeline Header */}
             <div className="flex justify-between items-end border-b border-stone-200 pb-2 px-2">
-              <h3 className="font-black text-xs uppercase tracking-widest text-stone-400">
-                Timeline ({sortedPlans.length} Seeds)
-              </h3>
-              <div className="flex items-center gap-2 text-xs font-bold text-stone-500">
-                <span>Show Completed</span>
-                <button onClick={() => setShowCompleted(!showCompleted)} className={`w-8 h-4 rounded-full transition-colors relative ${showCompleted ? 'bg-emerald-500' : 'bg-stone-300'}`}>
-                  <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${showCompleted ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+              <h3 className="font-black text-xs uppercase tracking-widest text-stone-400">Timeline ({sortedPlans.length} Seeds)</h3>
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={handleSyncDates} className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  Sync Dates
                 </button>
+                <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold text-stone-500">
+                  <span>Show Completed</span>
+                  <button onClick={() => setShowCompleted(!showCompleted)} className={`w-8 h-4 rounded-full transition-colors relative ${showCompleted ? 'bg-emerald-500' : 'bg-stone-300'}`}>
+                    <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${showCompleted ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                  </button>
+                </div>
               </div>
             </div>
 
             {sortedPlans.length === 0 ? (
               <div className="bg-white p-10 rounded-3xl border border-stone-200 text-center shadow-sm max-w-xl mx-auto"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🌱</div><h4 className="font-black text-stone-800">Your timeline is empty</h4><p className="text-xs text-stone-500 mt-1">Add seeds from the top bar or send requests from the Demand Planner.</p></div>
             ) : (
-              // FIX: 2 Column Grid for Timeline Cards!
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4">
                 {sortedPlans.map(plan => {
                   const isSelected = selectedPlanIds.includes(plan.id);
@@ -289,11 +313,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                   const progressPercent = Math.min(100, Math.round((totalSown / plan.planned_qty) * 100));
 
                   return (
-                    <div 
-                      key={plan.id} 
-                      className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`}
-                      onClick={() => !isComplete && toggleSelection(plan.id)}
-                    >
+                    <div key={plan.id} className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`} onClick={() => !isComplete && toggleSelection(plan.id)}>
                       <div className="flex justify-between items-start">
                         <div className="flex gap-3 items-start pr-2 min-w-0">
                           {!isComplete && (
@@ -381,7 +401,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                  </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seedling Target Date</label>
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
