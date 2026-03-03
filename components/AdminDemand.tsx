@@ -104,7 +104,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         const { data: selections, error: selectionsErr } = await supabase.from('wishlist_selections').select('*, seed:seed_inventory(*)').in('session_id', validSessionIds);
         if (selectionsErr) throw selectionsErr;
 
-        // Fetch Both Ledgers and Plans!
         const [{ data: ledgers }, { data: growPlans }] = await Promise.all([
           supabase.from('season_seedlings').select('*').eq('season_id', activeSeasonId),
           supabase.from('grow_plan').select('*').eq('season_id', activeSeasonId)
@@ -164,7 +163,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     fetchDemandData();
   }, [activeSeasonId, showDrafts]);
 
-  // NEW: 1-Click Quick Add
   const handleQuickAdd = async (item: DemandItem) => {
     if (!activeSeasonId) return;
     const weeks = resolveNurseryWeeks(item.seed, categories);
@@ -174,7 +172,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
       season_id: activeSeasonId,
       seed_id: item.seed.id,
       target_plant_date: globalTargetDate,
-      planned_qty: item.count, // Defaults to the exact requested amount
+      planned_qty: item.count,
       sown_qty: 0,
       indoor_start_date: startDate
     };
@@ -194,7 +192,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const openPlanModal = (item: DemandItem) => {
     setEditingItem(item);
     setFormWeeks(resolveNurseryWeeks(item.seed, categories)); 
-    setFormTargetDate(globalTargetDate); // Uses the global date we set in the new header!
+    setFormTargetDate(globalTargetDate);
     setFormQty(Math.max(item.count, 1));
     setActiveModal('PLAN_SEED');
   };
@@ -206,7 +204,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
-      // Update local state to reflect it's planned
       setAggregatedDemand(aggregatedDemand.map(d => d.seed.id === editingItem.seed.id ? { ...d, plan: { id: data.id, planned_qty: formQty, indoor_start_date: startDate } } : d));
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
@@ -227,7 +224,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
       <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        {/* FIX: Upgraded Top Control Panel to include Frost Date */}
         <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4 max-w-4xl mx-auto">
           <div className="flex items-center gap-4 flex-1">
             <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl hidden sm:block">
@@ -269,55 +265,54 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
               {aggregatedDemand.length === 0 ? (
                 <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {aggregatedDemand.map((item) => (
-                    <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-3 hover:border-emerald-200 transition-colors">
-                      <div className="flex gap-4 items-start">
-                        <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-2xl w-14 h-14 flex-shrink-0">
-                          <span className="text-[9px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
-                          <span className="text-xl font-black text-blue-600 leading-none mt-1">{item.count}</span>
+                    <div key={item.seed.id} className="bg-white p-3 rounded-2xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-2 hover:border-emerald-200 transition-colors">
+                      <div className="flex gap-3 items-start">
+                        <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-xl w-10 h-10 flex-shrink-0">
+                          <span className="text-[7px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
+                          <span className="text-base font-black text-blue-600 leading-none mt-0.5">{item.count}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between">
-                            <h3 className="font-black text-stone-800 text-lg leading-tight truncate pr-2 cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => navigateTo('seed_detail', item.seed)}>{item.seed.variety_name}</h3>
-                            {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-widest flex-shrink-0">Out of Stock</span>}
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-black text-stone-800 text-sm sm:text-base leading-tight truncate cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => navigateTo('seed_detail', item.seed)}>{item.seed.variety_name}</h3>
+                            {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest flex-shrink-0">OOS</span>}
                           </div>
-                          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5 mb-2">{item.seed.category}</p>
+                          <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{item.seed.category}</p>
                           
-                          <div className="mt-2 flex flex-wrap gap-1 border-t border-stone-100 pt-2">
+                          <div className="mt-1.5 flex flex-wrap gap-1 border-t border-stone-100 pt-1.5">
                             {item.requesters.map((req, i) => (
-                              <span key={i} className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${req.includes('(Draft)') ? 'bg-stone-50 text-stone-400 border-stone-200 border-dashed' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{req}</span>
+                              <span key={i} className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md border ${req.includes('(Draft)') ? 'bg-stone-50 text-stone-400 border-stone-200 border-dashed' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{req}</span>
                             ))}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col xl:flex-row xl:items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-100 gap-2">
-                        <div className="flex flex-wrap gap-1.5 items-center">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-stone-50 p-1.5 rounded-lg border border-stone-100 gap-2 mt-1">
+                        <div className="flex flex-wrap gap-1 items-center">
                           {item.ledger ? (
                             <>
-                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">Grow: {item.ledger.growing}</span>
-                              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">Res: {item.ledger.reserve}</span>
-                              <span className={`border text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>Avail: {item.ledger.available}</span>
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">Grow: {item.ledger.growing}</span>
+                              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">Res: {item.ledger.reserve}</span>
+                              <span className={`border text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>Avail: {item.ledger.available}</span>
                             </>
                           ) : (
-                            <span className="text-stone-400 text-[9px] font-black uppercase tracking-widest px-2 py-1 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>Nursery Empty</span>
+                            <span className="text-stone-400 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 flex items-center gap-1"><svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>Nursery Empty</span>
                           )}
                         </div>
 
-                        {/* FIX: The new Quick Add Action Buttons */}
-                        <div className="flex gap-1.5 justify-end self-end xl:self-auto">
+                        <div className="flex gap-1 justify-end self-end sm:self-auto w-full sm:w-auto">
                           {item.plan ? (
-                             <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm">
+                             <span className="w-full sm:w-auto justify-center bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 shadow-sm">
                                🗓️ Planned: {item.plan.planned_qty}
                              </span>
                           ) : (
                              <>
-                               <button onClick={() => openPlanModal(item)} className="bg-stone-100 text-stone-600 hover:bg-stone-200 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-colors border border-transparent flex items-center gap-1">
+                               <button onClick={() => openPlanModal(item)} className="flex-1 sm:flex-none justify-center bg-stone-100 text-stone-600 hover:bg-stone-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded transition-colors border border-transparent flex items-center gap-1">
                                  Edit
                                </button>
-                               <button onClick={() => handleQuickAdd(item)} className="bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-emerald-500 active:scale-95 transition-transform shadow-sm">
-                                 ⚡ Quick Add
+                               <button onClick={() => handleQuickAdd(item)} className="flex-1 sm:flex-none justify-center bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 hover:bg-emerald-500 active:scale-95 transition-transform shadow-sm">
+                                 ⚡ Quick
                                </button>
                              </>
                           )}
