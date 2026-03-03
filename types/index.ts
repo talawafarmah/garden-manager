@@ -108,9 +108,9 @@ export interface Season {
   id: string;
   name: string;
   status: 'Planning' | 'Active' | 'Archived';
+  seedling_target_date?: string; // Updated name
   created_at: string;
 }
-
 export interface WishlistSession {
   id: string; 
   list_name: string;
