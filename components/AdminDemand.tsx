@@ -48,6 +48,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [aggregatedDemand, setAggregatedDemand] = useState<DemandItem[]>([]);
   const [customRequests, setCustomRequests] = useState<CustomRequest[]>([]);
   
+  const [globalTargetDate, setGlobalTargetDate] = useState<string>(`${new Date().getFullYear()}-05-10`);
   const [showDrafts, setShowDrafts] = useState(false);
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +57,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
   const [editingItem, setEditingItem] = useState<DemandItem | null>(null);
   const [formWeeks, setFormWeeks] = useState(6);
-  const [formTargetDate, setFormTargetDate] = useState(`${new Date().getFullYear()}-05-10`);
+  const [formTargetDate, setFormTargetDate] = useState("");
   const [formQty, setFormQty] = useState(0);
 
   useEffect(() => {
@@ -163,9 +164,37 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     fetchDemandData();
   }, [activeSeasonId, showDrafts]);
 
+  // NEW: 1-Click Quick Add
+  const handleQuickAdd = async (item: DemandItem) => {
+    if (!activeSeasonId) return;
+    const weeks = resolveNurseryWeeks(item.seed, categories);
+    const startDate = calculateStartDate(globalTargetDate, weeks, item.seed.germination_days);
+    
+    const payload = {
+      season_id: activeSeasonId,
+      seed_id: item.seed.id,
+      target_plant_date: globalTargetDate,
+      planned_qty: item.count, // Defaults to the exact requested amount
+      sown_qty: 0,
+      indoor_start_date: startDate
+    };
+
+    const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
+    if (!error && data) {
+      setAggregatedDemand(aggregatedDemand.map(d => 
+        d.seed.id === item.seed.id 
+          ? { ...d, plan: { id: data.id, planned_qty: item.count, indoor_start_date: startDate } } 
+          : d
+      ));
+    } else {
+      alert("Error saving plan: " + error?.message);
+    }
+  };
+
   const openPlanModal = (item: DemandItem) => {
     setEditingItem(item);
     setFormWeeks(resolveNurseryWeeks(item.seed, categories)); 
+    setFormTargetDate(globalTargetDate); // Uses the global date we set in the new header!
     setFormQty(Math.max(item.count, 1));
     setActiveModal('PLAN_SEED');
   };
@@ -198,9 +227,10 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
       <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-2xl mx-auto">
-          <div className="flex items-center gap-4">
-            <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
+        {/* FIX: Upgraded Top Control Panel to include Frost Date */}
+        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4 max-w-4xl mx-auto">
+          <div className="flex items-center gap-4 flex-1">
+            <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl hidden sm:block">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
             </div>
             <div className="flex-1 relative">
@@ -211,7 +241,15 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
               <p className="text-[10px] font-bold text-stone-400 tracking-wider uppercase mt-1">{counts.submitted} Submitted • {counts.drafts} Drafts</p>
             </div>
           </div>
-          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 sm:pl-4 sm:border-l border-stone-100">
+          
+          <div className="flex items-center gap-3 px-1 md:px-4 md:border-l border-stone-100">
+            <div>
+              <h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Target Frost</h2>
+            </div>
+            <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 md:pl-4 md:border-l border-stone-100">
             <span className="text-xs font-bold text-stone-500">Show drafts?</span>
             <button onClick={() => setShowDrafts(!showDrafts)} className={`w-10 h-5 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
               <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-transform ${showDrafts ? 'translate-x-[22px]' : 'translate-x-1'}`} />
@@ -231,7 +269,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
               {aggregatedDemand.length === 0 ? (
                 <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
               ) : (
-                // FIX: Added sm:grid-cols-2 and lg:grid-cols-3 so it scales across devices!
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {aggregatedDemand.map((item) => (
                     <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-3 hover:border-emerald-200 transition-colors">
@@ -255,7 +292,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-100">
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-100 gap-2">
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {item.ledger ? (
                             <>
@@ -264,19 +301,25 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                               <span className={`border text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>Avail: {item.ledger.available}</span>
                             </>
                           ) : (
-                            <span className="text-stone-400 text-[9px] font-black uppercase tracking-widest px-2 py-1 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>Nursery Empty</span>
+                            <span className="text-stone-400 text-[9px] font-black uppercase tracking-widest px-2 py-1 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77-1.333.192 3 1.732 3z" /></svg>Nursery Empty</span>
                           )}
                         </div>
 
-                        <div>
+                        {/* FIX: The new Quick Add Action Buttons */}
+                        <div className="flex gap-1.5 justify-end self-end xl:self-auto">
                           {item.plan ? (
-                             <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-widest px-2 py-1.5 rounded-lg flex items-center gap-1 shadow-sm">
+                             <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm">
                                🗓️ Planned: {item.plan.planned_qty}
                              </span>
                           ) : (
-                             <button onClick={() => openPlanModal(item)} className="bg-stone-800 text-white border border-stone-900 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-stone-700 active:scale-95 transition-transform shadow-sm">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Schedule
-                             </button>
+                             <>
+                               <button onClick={() => openPlanModal(item)} className="bg-stone-100 text-stone-600 hover:bg-stone-200 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-colors border border-transparent flex items-center gap-1">
+                                 Edit
+                               </button>
+                               <button onClick={() => handleQuickAdd(item)} className="bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-emerald-500 active:scale-95 transition-transform shadow-sm">
+                                 ⚡ Quick Add
+                               </button>
+                             </>
                           )}
                         </div>
                       </div>
@@ -306,6 +349,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         )}
       </div>
 
+      {/* PLAN SEED MODAL */}
       {activeModal === 'PLAN_SEED' && editingItem && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
