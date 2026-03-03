@@ -148,7 +148,7 @@ export default function App() {
     
     // NEW ROUTES: ADMIN HUB & PLANNERS
     case 'admin_hub': return <AdminHub navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
-    case 'admin_categories': return <AdminCategories categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
+    case 'admin_categories': return <AdminCategories categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_seasons': return <AdminSeasons navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_demand': return <AdminDemand categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'grow_planner': return <GrowPlanner categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
