@@ -337,6 +337,17 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
               </div>
             )}
 
+            {/* NEW: CUSTOM NURSERY WEEKS OVERRIDE BADGE */}
+            {seed.custom_nursery_weeks != null && seed.custom_nursery_weeks !== undefined && (
+              <div className="mb-4 bg-purple-50 border border-purple-100 p-3 rounded-xl flex items-start gap-3">
+                <div className="text-purple-500 mt-0.5">🌱</div>
+                <div>
+                  <p className="font-black text-purple-800 text-sm">Nursery Override</p>
+                  <p className="text-xs text-purple-600 mt-1">Requires <strong>{seed.custom_nursery_weeks} weeks</strong> indoors before plant-out.</p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-y-4 gap-x-4">
               <div>
                 <label className="block text-[9px] font-black text-stone-400 uppercase tracking-[0.2em] mb-1">Seed Depth</label>

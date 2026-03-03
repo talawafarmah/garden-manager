@@ -9,12 +9,17 @@ export type AppView =
   | 'tray_detail'
   | 'tray_edit'
   | 'seedlings'
+  | 'admin_hub'         // NEW
+  | 'admin_categories'  // NEW
   | 'admin_seasons' 
-  | 'admin_demand';
+  | 'admin_demand'
+  | 'grow_planner';
 
 export interface SeedCategory {
+  id?: string;
   name: string;
   prefix: string;
+  default_nursery_weeks?: number; // NEW
 }
 
 export interface SeedData {
@@ -36,6 +41,7 @@ export interface SeedData {
   stratification_days?: number;
   light_required?: boolean;
   scoville_rating?: number;
+  custom_nursery_weeks?: number; // NEW
 }
 
 export interface InventorySeed {
@@ -65,6 +71,7 @@ export interface InventorySeed {
   parent_id_female?: string;
   parent_id_male?: string;
   generation?: string;
+  custom_nursery_weeks?: number; // NEW
 
   returnTo?: AppView;
   returnPayload?: any;
@@ -72,7 +79,6 @@ export interface InventorySeed {
   newCatPrefix?: string;
 }
 
-// FIX: Added the explicit count properties so TypeScript saves them correctly
 export interface TraySeedRecord {
   cell?: number | string;
   seed_id: string;
@@ -134,23 +140,17 @@ export interface SeasonSeedling {
   id: string;
   seed_id: string;
   season_id: string;
-  
   qty_growing: number;
-  
   allocate_keep: number;
   allocate_reserve: number;
-  
   qty_planted: number;
   qty_gifted: number;
   qty_sold: number;
   qty_dead: number;
-  
   locations: Record<string, number>; 
   journal: SeedlingJournalEntry[];
-  
   created_at?: string;
   updated_at?: string;
-
   seed?: InventorySeed;
   season?: Season;
 }

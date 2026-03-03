@@ -251,6 +251,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
       
+      // FIX: Added custom_nursery_weeks to the save payload
       const payloadToSave: any = { 
         ...editFormData, 
         category: finalCatName,
@@ -259,6 +260,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         days_to_maturity: editFormData.days_to_maturity === "" ? null : Number(editFormData.days_to_maturity),
         stratification_days: editFormData.stratification_days === "" ? null : Number(editFormData.stratification_days),
         scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
+        custom_nursery_weeks: editFormData.custom_nursery_weeks === "" || editFormData.custom_nursery_weeks == null ? null : Number(editFormData.custom_nursery_weeks),
         tomato_type: editFormData.tomato_type || null,
         parent_id_female: editFormData.parent_id_female || null,
         parent_id_male: editFormData.parent_id_male || null,
@@ -283,7 +285,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const updatedInventory = isNewRecord ? [cleanPayloadToSave, ...inventory] : inventory.map((s: InventorySeed) => s.id === seed.id ? cleanPayloadToSave : s);
       setInventory(updatedInventory);
       
-      // FIX: Replace the history state to prevent Back Button loop
       navigateTo('vault', null, true);
       
     } catch (e: any) { 
@@ -298,7 +299,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const { error } = await supabase.from('seed_inventory').delete().eq('id', seed.id);
       if (!error) { 
         setInventory(inventory.filter((s: InventorySeed) => s.id !== seed.id)); 
-        // FIX: Replace the history state to prevent Back Button loop
         navigateTo('vault', null, true); 
       }
     }
@@ -582,6 +582,20 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               <input type="number" value={editFormData.stratification_days || ''} onChange={(e) => setEditFormData({ ...editFormData, stratification_days: e.target.value })} className="w-full bg-white border border-blue-200 rounded-xl p-3 text-sm outline-none shadow-sm" />
             </div>
           )}
+
+          {/* FIX: NEW CUSTOM NURSERY WEEKS OVERRIDE */}
+          <div className="mt-4 p-4 bg-stone-100 rounded-2xl border border-stone-200">
+            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Nursery Weeks Override</label>
+            <p className="text-[10px] text-stone-400 mb-2 leading-tight">Leave blank to use the default time for this seed's category.</p>
+            <input 
+              type="number" 
+              min="0"
+              value={editFormData.custom_nursery_weeks ?? ''} 
+              onChange={(e) => setEditFormData({ ...editFormData, custom_nursery_weeks: e.target.value })} 
+              className="w-full bg-white border border-stone-300 rounded-xl p-3 text-sm font-bold shadow-inner outline-none focus:border-emerald-500" 
+              placeholder={`e.g., 9 (Default: ${editFormData.category || 'Unknown'})`} 
+            />
+          </div>
         </section>
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
