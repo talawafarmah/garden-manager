@@ -110,6 +110,7 @@ export interface WishlistSession {
   list_name: string;
   season_id: string;
   expires_at?: string;
+  submitted_at?: string;
   created_at: string;
 }
 
