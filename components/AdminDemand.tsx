@@ -19,7 +19,6 @@ interface DemandItem {
 
 interface CustomRequest { id: string; requester: string; request: string; created_at: string; }
 
-// Planning Helpers
 const resolveNurseryWeeks = (seed: InventorySeed, categories: SeedCategory[]) => {
   if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) return seed.custom_nursery_weeks;
   const cat = categories.find(c => c.name === seed.category);
@@ -52,7 +51,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Scheduling Modal State
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
   const [editingItem, setEditingItem] = useState<DemandItem | null>(null);
   const [formWeeks, setFormWeeks] = useState(6);
@@ -103,7 +101,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         const { data: selections, error: selectionsErr } = await supabase.from('wishlist_selections').select('*, seed:seed_inventory(*)').in('session_id', validSessionIds);
         if (selectionsErr) throw selectionsErr;
 
-        // Fetch Both Ledgers and Plans!
         const [{ data: ledgers }, { data: growPlans }] = await Promise.all([
           supabase.from('season_seedlings').select('*').eq('season_id', activeSeasonId),
           supabase.from('grow_plan').select('*').eq('season_id', activeSeasonId)
@@ -133,20 +130,12 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                 const l = ledgerMap.get(sel.seed_id);
                 seedLedger = { growing: l.qty_growing, keep: l.allocate_keep, reserve: l.allocate_reserve, available: Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve) };
               }
-              
               let seedPlan;
               if (planMap.has(sel.seed_id)) {
                 const p = planMap.get(sel.seed_id);
                 seedPlan = { id: p.id, planned_qty: p.planned_qty, indoor_start_date: p.indoor_start_date };
               }
-
-              demandMap.set(sel.seed_id, { 
-                seed: sel.seed as InventorySeed, 
-                count: 1, 
-                requesters: [requesterName], 
-                ledger: seedLedger,
-                plan: seedPlan
-              });
+              demandMap.set(sel.seed_id, { seed: sel.seed as InventorySeed, count: 1, requesters: [requesterName], ledger: seedLedger, plan: seedPlan });
             }
           } else if (sel.custom_request) {
             customReqs.push({ id: sel.id, requester: requesterName, request: sel.custom_request, created_at: sel.created_at });
@@ -177,7 +166,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
-      // Update local state to reflect it's planned
       setAggregatedDemand(aggregatedDemand.map(d => d.seed.id === editingItem.seed.id ? { ...d, plan: { id: data.id, planned_qty: formQty, indoor_start_date: startDate } } : d));
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
@@ -196,26 +184,25 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         </div>
       </header>
 
-      <div className="max-w-xl mx-auto p-4 space-y-6 mt-4">
+      <div className="max-w-6xl mx-auto p-4 space-y-6 mt-4">
         
-        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col gap-3">
-          <div className="flex items-center gap-4 border-b border-stone-100 pb-3">
+        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-xl mx-auto">
+          <div className="flex items-center gap-4">
             <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
             </div>
-            <div className="flex-1">
-              <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none">
+            <div className="flex-1 relative">
+              <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6">
                 {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-              <p className="text-xs font-bold text-stone-400 tracking-wider uppercase">{counts.submitted} Submitted • {counts.drafts} Drafts</p>
+              <svg className="w-4 h-4 text-stone-400 absolute right-0 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <p className="text-[10px] font-bold text-stone-400 tracking-wider uppercase mt-1">{counts.submitted} Submitted • {counts.drafts} Drafts</p>
             </div>
-            <svg className="w-5 h-5 text-stone-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
           </div>
-          
-          <div className="flex justify-between items-center px-1">
-            <span className="text-xs font-bold text-stone-500">Include unsubmitted drafts?</span>
-            <button onClick={() => setShowDrafts(!showDrafts)} className={`w-12 h-6 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
-              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${showDrafts ? 'translate-x-7' : 'translate-x-1'}`} />
+          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 sm:pl-4 sm:border-l border-stone-100">
+            <span className="text-xs font-bold text-stone-500">Show drafts?</span>
+            <button onClick={() => setShowDrafts(!showDrafts)} className={`w-10 h-5 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
+              <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-transform ${showDrafts ? 'translate-x-[22px]' : 'translate-x-1'}`} />
             </button>
           </div>
         </div>
@@ -225,69 +212,71 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         ) : (
           <>
             <section className="space-y-3">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 ml-1 border-b border-stone-200 pb-2 flex justify-between">
-                <span>Top Requested Varieties</span>
-                <button onClick={() => navigateTo('grow_planner')} className="text-emerald-600 flex items-center gap-1 hover:text-emerald-700">View Calendar <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 ml-1 border-b border-stone-200 pb-2 flex justify-between items-end">
+                <span>All Requested Varieties</span>
+                <button onClick={() => navigateTo('grow_planner')} className="text-emerald-600 flex items-center gap-1 hover:text-emerald-700 transition-colors bg-emerald-50 px-2 py-1 rounded">View Calendar <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
               </h2>
               {aggregatedDemand.length === 0 ? (
-                <div className="text-center py-10 bg-white rounded-3xl border border-stone-200"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
+                <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
               ) : (
-                aggregatedDemand.map((item) => (
-                  <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex gap-4 items-start">
-                    <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-2xl w-14 h-14 flex-shrink-0">
-                      <span className="text-[9px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
-                      <span className="text-xl font-black text-blue-600 leading-none mt-1">{item.count}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between">
-                        <h3 className="font-black text-stone-800 text-lg leading-tight truncate pr-2 cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => navigateTo('seed_detail', item.seed)}>{item.seed.variety_name}</h3>
-                        {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-widest flex-shrink-0">Out of Stock</span>}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {aggregatedDemand.map((item) => (
+                    <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-3 hover:border-emerald-200 transition-colors">
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-2xl w-14 h-14 flex-shrink-0">
+                          <span className="text-[9px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
+                          <span className="text-xl font-black text-blue-600 leading-none mt-1">{item.count}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between">
+                            <h3 className="font-black text-stone-800 text-lg leading-tight truncate pr-2 cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => navigateTo('seed_detail', item.seed)}>{item.seed.variety_name}</h3>
+                            {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-widest flex-shrink-0">Out of Stock</span>}
+                          </div>
+                          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{item.seed.category}</p>
+                          
+                          <div className="mt-2 flex flex-wrap gap-1 border-t border-stone-100 pt-2">
+                            {item.requesters.map((req, i) => (
+                              <span key={i} className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${req.includes('(Draft)') ? 'bg-stone-50 text-stone-400 border-stone-200 border-dashed' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{req}</span>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5 mb-2">{item.seed.category}</p>
-                      
-                      <div className="flex flex-col gap-2">
-                        {/* Seed Ledger Data */}
+
+                      <div className="flex items-center justify-between bg-stone-50 p-2 rounded-xl border border-stone-100">
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {item.ledger ? (
                             <>
-                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded">Grow: {item.ledger.growing}</span>
-                              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded">Res: {item.ledger.reserve}</span>
-                              <span className={`border text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>Avail: {item.ledger.available}</span>
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">Grow: {item.ledger.growing}</span>
+                              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">Res: {item.ledger.reserve}</span>
+                              <span className={`border text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm ${item.ledger.available < item.count ? 'bg-red-50 text-red-600 border-red-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>Avail: {item.ledger.available}</span>
                             </>
                           ) : (
-                            <span className="bg-stone-100 text-stone-500 border border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>Not Started Yet</span>
+                            <span className="text-stone-400 text-[9px] font-black uppercase tracking-widest px-2 py-1 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>Nursery Empty</span>
                           )}
                         </div>
 
-                        {/* FIX: Planner Call To Action */}
-                        <div className="flex items-center">
+                        <div>
                           {item.plan ? (
-                             <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1">
-                               🗓️ Scheduled: {item.plan.planned_qty}
+                             <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase tracking-widest px-2 py-1.5 rounded-lg flex items-center gap-1 shadow-sm">
+                               🗓️ Planned: {item.plan.planned_qty}
                              </span>
                           ) : (
-                             <button onClick={() => openPlanModal(item)} className="bg-stone-800 text-white border border-stone-900 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded flex items-center gap-1 hover:bg-stone-700 active:scale-95 transition-transform">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add to Calendar
+                             <button onClick={() => openPlanModal(item)} className="bg-stone-800 text-white border border-stone-900 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-stone-700 active:scale-95 transition-transform shadow-sm">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Schedule
                              </button>
                           )}
                         </div>
                       </div>
-
-                      <div className="mt-3 flex flex-wrap gap-1 border-t border-stone-100 pt-3">
-                        {item.requesters.map((req, i) => (
-                          <span key={i} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${req.includes('(Draft)') ? 'bg-stone-50 text-stone-400 border-stone-200 border-dashed' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{req}</span>
-                        ))}
-                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </section>
 
             {customRequests.length > 0 && (
               <section className="space-y-3 mt-8">
                 <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 ml-1 border-b border-stone-200 pb-2 flex items-center gap-2"><span>✨</span> Custom Write-ins</h2>
-                <div className="bg-amber-50 rounded-3xl border border-amber-100 p-2 space-y-2">
+                <div className="bg-amber-50 rounded-3xl border border-amber-100 p-2 space-y-2 max-w-xl">
                   {customRequests.map(req => (
                     <div key={req.id} className="bg-white p-4 rounded-2xl shadow-sm border border-amber-200/50">
                       <div className="flex justify-between items-center mb-2">
@@ -304,7 +293,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         )}
       </div>
 
-      {/* PLAN SEED MODAL */}
       {activeModal === 'PLAN_SEED' && editingItem && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -335,7 +323,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
           </div>
         </div>
       )}
-
     </main>
   );
 }

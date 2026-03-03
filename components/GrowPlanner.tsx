@@ -15,7 +15,8 @@ interface GrowPlanRecord {
   seed_id: string;
   target_plant_date: string;
   planned_qty: number;
-  sown_qty: number;
+  sown_qty: number; // Manual offsets (direct sow)
+  tray_sown_qty?: number; // Dynamically aggregated from Seedling Trays
   indoor_start_date: string;
   seed?: InventorySeed;
 }
@@ -78,8 +79,31 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     setIsLoading(true);
     setSelectedPlanIds([]);
     try {
+      // Fetch Grow Plan
       const { data: planData } = await supabase.from('grow_plan').select('*, seed:seed_inventory(*)').eq('season_id', activeSeasonId);
-      setPlans((planData || []) as GrowPlanRecord[]);
+      const currentPlans = (planData || []) as GrowPlanRecord[];
+
+      // FIX: Dynamically aggregate sown_count from Seedling Trays
+      const { data: trays } = await supabase.from('seedling_trays').select('contents').eq('season_id', activeSeasonId);
+      const traySownMap: Record<string, number> = {};
+      
+      if (trays) {
+        trays.forEach(t => {
+          (t.contents || []).forEach((c: any) => {
+            if (c.seed_id) {
+              traySownMap[c.seed_id] = (traySownMap[c.seed_id] || 0) + (c.sown_count || 0);
+            }
+          });
+        });
+      }
+
+      // Merge dynamic tray counts into the plans
+      const plansWithTrayData = currentPlans.map(p => ({
+        ...p,
+        tray_sown_qty: traySownMap[p.seed_id] || 0
+      }));
+
+      setPlans(plansWithTrayData);
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
   };
 
@@ -106,7 +130,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select('*, seed:seed_inventory(*)').single();
     if (!error && data) {
-      setPlans([...plans, data as GrowPlanRecord]);
+      setPlans([...plans, { ...(data as GrowPlanRecord), tray_sown_qty: 0 }]);
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
   };
@@ -118,6 +142,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     }
   };
 
+  // Manual Sown Qty (Useful for direct sows that skip the tray process)
   const updateSownQty = async (id: string, delta: number) => {
     const plan = plans.find(p => p.id === id);
     if (!plan) return;
@@ -126,11 +151,11 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     await supabase.from('grow_plan').update({ sown_qty: newQty }).eq('id', id);
   };
 
-  // FIX: Edit Planned Goal from Timeline
+  // Update Planned Goal
   const updatePlannedQty = async (id: string, delta: number) => {
     const plan = plans.find(p => p.id === id);
     if (!plan) return;
-    const newQty = Math.max(1, plan.planned_qty + delta); // Prevent hitting 0, use delete for that
+    const newQty = Math.max(1, plan.planned_qty + delta);
     setPlans(plans.map(p => p.id === id ? { ...p, planned_qty: newQty } : p));
     await supabase.from('grow_plan').update({ planned_qty: newQty }).eq('id', id);
   };
@@ -139,25 +164,29 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     setSelectedPlanIds(prev => prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]);
   };
 
-  const handleBulkSow = async () => {
+  // FIX: Navigate to Tray creation without auto-completing the database!
+  const handleBulkSow = () => {
     const selected = plans.filter(p => selectedPlanIds.includes(p.id));
     if (selected.length === 0) return;
 
-    const trayContents = selected.map(p => ({
-      seed_id: p.seed_id,
-      sown_count: Math.max(1, p.planned_qty - (p.sown_qty || 0))
-    }));
+    const trayContents = selected.map(p => {
+      const totalAlreadySown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
+      return {
+        seed_id: p.seed_id,
+        sown_count: Math.max(1, p.planned_qty - totalAlreadySown)
+      };
+    });
 
-    for (const p of selected) {
-      await supabase.from('grow_plan').update({ sown_qty: p.planned_qty }).eq('id', p.id);
-    }
-    
     navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents });
   };
 
   const today = new Date(); today.setHours(0,0,0,0);
   
-  const filteredPlans = plans.filter(p => showCompleted || (p.sown_qty || 0) < p.planned_qty);
+  const filteredPlans = plans.filter(p => {
+    const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
+    return showCompleted || totalSown < p.planned_qty;
+  });
+  
   const sortedPlans = [...filteredPlans].sort((a, b) => new Date(a.indoor_start_date).getTime() - new Date(b.indoor_start_date).getTime());
 
   const plannedSeedIds = new Set(plans.map(p => p.seed_id));
@@ -178,31 +207,39 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
           </button>
           <h1 className="text-xl font-bold">Grow Planner</h1>
         </div>
-        <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="bg-stone-800 border border-stone-700 text-sm font-bold rounded-xl px-3 py-1.5 outline-none appearance-none cursor-pointer">
-          {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
       </header>
 
-      <div className="max-w-3xl mx-auto p-4 space-y-6">
+      <div className="max-w-6xl mx-auto p-4 space-y-6 mt-4">
         
-        {/* FIX: New Top Layout (Target Date + Add Custom Seed) */}
-        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-center">
-          <div className="w-full md:w-1/2">
-            <h2 className="font-black text-stone-800 text-sm">Target Frost Date</h2>
-            <p className="text-[10px] text-stone-500 uppercase tracking-widest mt-0.5 mb-2">Used for calculating timelines</p>
-            <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-sm font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
+        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6 items-start md:items-center max-w-3xl mx-auto">
+          
+          <div className="flex-1 w-full border-b md:border-b-0 md:border-r border-stone-100 pb-4 md:pb-0 md:pr-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+              <div className="flex-1 relative">
+                <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6">
+                  {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <svg className="w-4 h-4 text-stone-400 absolute right-0 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </div>
+            
+            <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 flex items-center justify-between">
+              <div><h2 className="font-black text-amber-900 text-xs">Target Frost Date</h2></div>
+              <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm font-bold text-amber-900 outline-none focus:border-amber-500 shadow-sm" />
+            </div>
           </div>
           
-          <div className="w-full md:w-1/2 relative">
-             <div className="flex justify-between items-center mb-2">
-               <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Add to Calendar</span>
+          <div className="flex-1 w-full relative">
+             <div className="flex justify-between items-center mb-1.5">
+               <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Quick Add to Calendar</span>
              </div>
              <div className="relative">
-               <input type="text" placeholder="Search vault (e.g. Jalapeno)..." value={manualSearch} onChange={e => setManualSearch(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 pl-9 text-sm outline-none focus:border-emerald-500 shadow-inner" />
-               <svg className="w-4 h-4 text-stone-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+               <input type="text" placeholder="Search vault (e.g. Jalapeno)..." value={manualSearch} onChange={e => setManualSearch(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 pl-10 text-sm outline-none focus:border-emerald-500 shadow-inner" />
+               <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
              </div>
              {manualSearchResults.length > 0 && (
-               <div className="absolute top-full left-0 right-0 bg-white border border-stone-200 shadow-xl rounded-xl divide-y divide-stone-100 overflow-hidden mt-2 z-30">
+               <div className="absolute top-full left-0 right-0 bg-white border border-stone-200 shadow-2xl rounded-xl divide-y divide-stone-100 overflow-hidden mt-2 z-30">
                  {manualSearchResults.map(s => (
                    <button key={s.id} onClick={() => openPlanModal(s)} className="w-full text-left p-3 hover:bg-emerald-50 text-sm flex justify-between items-center group">
                      <span className="font-bold text-stone-800 group-hover:text-emerald-700 truncate">{s.variety_name}</span>
@@ -231,15 +268,17 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
             </div>
 
             {sortedPlans.length === 0 ? (
-              <div className="bg-white p-10 rounded-3xl border border-stone-200 text-center shadow-sm"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🌱</div><h4 className="font-black text-stone-800">Your timeline is empty</h4><p className="text-xs text-stone-500 mt-1">Add seeds from the top bar or Demand Planner.</p></div>
+              <div className="bg-white p-10 rounded-3xl border border-stone-200 text-center shadow-sm max-w-xl mx-auto"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🌱</div><h4 className="font-black text-stone-800">Your timeline is empty</h4><p className="text-xs text-stone-500 mt-1">Add seeds from the top bar or send requests from the Demand Planner.</p></div>
             ) : (
-              <div className="relative border-l-2 border-stone-200 ml-3 md:ml-4 space-y-5 pb-4">
+              // FIX: 2 Column Grid for Timeline Cards!
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4">
                 {sortedPlans.map(plan => {
                   const isSelected = selectedPlanIds.includes(plan.id);
                   const planDate = new Date(plan.indoor_start_date);
                   const diffDays = Math.round((planDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                   
-                  const isComplete = (plan.sown_qty || 0) >= plan.planned_qty;
+                  const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
+                  const isComplete = totalSown >= plan.planned_qty;
                   let badgeColor = "bg-stone-100 text-stone-600 border-stone-200"; let statusTxt = "Future";
                   
                   if (isComplete) { badgeColor = "bg-emerald-100 text-emerald-700 border-emerald-200"; statusTxt = "Sown ✓"; }
@@ -247,64 +286,57 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                   else if (diffDays <= 7) { badgeColor = "bg-amber-100 text-amber-700 border-amber-300"; statusTxt = "This Week"; }
                   else if (diffDays <= 14) { badgeColor = "bg-blue-100 text-blue-700 border-blue-200"; statusTxt = "Next Week"; }
 
-                  const progressPercent = Math.min(100, Math.round(((plan.sown_qty || 0) / plan.planned_qty) * 100));
+                  const progressPercent = Math.min(100, Math.round((totalSown / plan.planned_qty) * 100));
 
                   return (
-                    <div key={plan.id} className="relative pl-6">
-                      <div className={`absolute -left-[9px] top-1.5 w-4 h-4 rounded-full border-4 border-white shadow-sm ${badgeColor.split(' ')[0]}`}></div>
-                      
-                      <div 
-                        className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col gap-2 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`}
-                        onClick={() => !isComplete && toggleSelection(plan.id)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex gap-3 items-start pr-2 min-w-0">
-                            {!isComplete && (
-                              <div className={`w-5 h-5 rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-stone-50 border-stone-300 text-transparent'}`}>
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
-                              <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
+                    <div 
+                      key={plan.id} 
+                      className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`}
+                      onClick={() => !isComplete && toggleSelection(plan.id)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-3 items-start pr-2 min-w-0">
+                          {!isComplete && (
+                            <div className={`w-5 h-5 rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-stone-50 border-stone-300 text-transparent'}`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                             </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{planDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
-                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">{plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}</div>
+                          )}
+                          <div className="min-w-0">
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
+                            <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
                           </div>
                         </div>
-
-                        {/* Tracking UI */}
-                        <div className="mt-2 pt-3 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3" onClick={e => e.stopPropagation()}>
-                           
-                           <div className="flex-1">
-                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest mb-1.5">
-                               {/* FIX: Editable Goal amounts */}
-                               <span className="text-stone-500 flex items-center gap-1.5">
-                                 Goal: {plan.planned_qty}
-                                 <div className="flex bg-stone-100 rounded border border-stone-200">
-                                   <button onClick={() => updatePlannedQty(plan.id, -1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">-</button>
-                                   <div className="w-[1px] bg-stone-200"></div>
-                                   <button onClick={() => updatePlannedQty(plan.id, 1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">+</button>
-                                 </div>
-                               </span>
-                               <span className="text-emerald-600">Sown: {plan.sown_qty || 0}</span>
-                             </div>
-                             <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
-                               <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-                             </div>
-                           </div>
-
-                           <div className="flex items-center gap-2 self-end sm:self-auto">
-                             <div className="flex items-center gap-1 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner">
-                               <button onClick={() => updateSownQty(plan.id, -1)} className="w-7 h-7 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
-                               <button onClick={() => updateSownQty(plan.id, 1)} className="w-7 h-7 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
-                             </div>
-                             
-                             <button onClick={() => deletePlan(plan.id)} className="p-2 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                           </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{planDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                          <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">{plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}</div>
                         </div>
+                      </div>
+
+                      <div className="mt-1 pt-3 border-t border-stone-100 flex items-center justify-between gap-3" onClick={e => e.stopPropagation()}>
+                         <div className="flex-1 min-w-0">
+                           <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest mb-1.5">
+                             <div className="flex items-center gap-1.5 text-stone-500">
+                               Goal: <span className="text-stone-800">{plan.planned_qty}</span>
+                               <div className="flex bg-stone-100 rounded border border-stone-200">
+                                 <button onClick={() => updatePlannedQty(plan.id, -1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">-</button>
+                                 <div className="w-[1px] bg-stone-200"></div>
+                                 <button onClick={() => updatePlannedQty(plan.id, 1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">+</button>
+                               </div>
+                             </div>
+                             <span className="text-emerald-600">Sown: {totalSown}</span>
+                           </div>
+                           <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
+                             <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+                           </div>
+                         </div>
+
+                         <div className="flex items-center gap-2">
+                           <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
+                             <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
+                             <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
+                           </div>
+                           <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                         </div>
                       </div>
                     </div>
                   );
