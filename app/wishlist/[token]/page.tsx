@@ -16,21 +16,12 @@ const getHeatProfile = (shu: number) => {
 
 const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls }: { seed: InventorySeed; isSelected: boolean; onClose: () => void; onToggle: (id: string) => void; signedUrls: Record<string, string>; }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
-  
-  const rawImages = useMemo(() => {
-    const imgs = (seed.images || []).filter(img => img && typeof img === 'string' && img.trim() !== '');
-    if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) {
-      imgs.unshift(seed.thumbnail);
-    }
-    return imgs;
-  }, [seed]);
-
+  const rawImages = useMemo(() => { const imgs = (seed.images || []).filter(img => img && typeof img === 'string' && img.trim() !== ''); if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) { imgs.unshift(seed.thumbnail); } return imgs; }, [seed]);
   const showCarousel = rawImages.length > 1;
   const rawDisplayImage = rawImages.length > 0 ? rawImages[currentIdx] : null;
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:')) ? rawDisplayImage : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
-
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
 
   return (
@@ -39,11 +30,7 @@ const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls }: { seed: 
       <div className="relative bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-4 z-50 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-full flex items-center justify-center backdrop-blur-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
         <div className="aspect-[4/3] sm:aspect-[16/10] w-full bg-stone-100 relative shrink-0 group">
-          {resolvedSrc ? (
-            <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${seed.out_of_stock ? 'grayscale opacity-70' : ''}`} />
-          ) : (
-             <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
-          )}
+          {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${seed.out_of_stock ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
           {showCarousel && (
             <>
               <button onClick={() => setCurrentIdx((prev) => (prev - 1 + rawImages.length) % rawImages.length)} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all backdrop-blur-sm z-10"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
@@ -110,7 +97,7 @@ export default function WishlistCatalog() {
   const params = useParams();
   const token = params.token as string;
 
-  const [session, setSession] = useState<WishlistSession | null>(null);
+  const [session, setSession] = useState<any>(null);
   const [seasonName, setSeasonName] = useState("");
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({}); 
@@ -133,11 +120,10 @@ export default function WishlistCatalog() {
     const fetchCatalogData = async () => {
       if (!token) return;
       setIsLoading(true);
-
       try {
         const { data: sessionData, error: sessionError } = await supabase
           .from('wishlist_sessions')
-          .select('*, seasons(name, status)')
+          .select('*, seasons(name, status, seedling_target_date)')
           .eq('id', token)
           .single();
 
@@ -164,13 +150,8 @@ export default function WishlistCatalog() {
            if (custom) setCustomRequest(custom.custom_request);
         }
 
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
+      } catch (err: any) { setError(err.message); } finally { setIsLoading(false); }
     };
-
     fetchCatalogData();
   }, [token]);
 
@@ -188,9 +169,7 @@ export default function WishlistCatalog() {
         for (let i = 0; i < uniqueUrls.length; i += chunkSize) {
           const chunk = uniqueUrls.slice(i, i + chunkSize);
           const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(chunk, 3600);
-          if (data && !error) {
-            data.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; });
-          }
+          if (data && !error) { data.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; }); }
         }
         if (isMounted && Object.keys(fetchedUrls).length > 0) setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
       } catch (err) { console.error("Failed to load signed URLs", err); }
@@ -208,12 +187,10 @@ export default function WishlistCatalog() {
     let result = [...seeds];
     if (showSelectedOnly) result = result.filter(s => selectedSeedIds.includes(s.id));
     if (activeCategory !== 'All') result = result.filter(s => s.category === activeCategory);
-    
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
       result = result.filter(s => s.variety_name.toLowerCase().includes(q) || (s.species && s.species.toLowerCase().includes(q)) || (s.notes && s.notes.toLowerCase().includes(q)));
     }
-
     result.sort((a, b) => {
       if (sortBy === 'name_asc') return a.variety_name.localeCompare(b.variety_name);
       if (sortBy === 'name_desc') return b.variety_name.localeCompare(a.variety_name);
@@ -222,14 +199,12 @@ export default function WishlistCatalog() {
       if (sortBy === 'dtm_desc') return (b.days_to_maturity ?? -1) - (a.days_to_maturity ?? -1);
       return 0;
     });
-
     return result;
   }, [seeds, searchQuery, activeCategory, sortBy, showSelectedOnly, selectedSeedIds]);
 
   const toggleSeedSelection = async (seedId: string) => {
     if (!session) return;
     const isCurrentlySelected = selectedSeedIds.includes(seedId);
-    
     if (isCurrentlySelected) {
       setSelectedSeedIds(prev => prev.filter(id => id !== seedId));
       await supabase.from('wishlist_selections').delete().match({ session_id: session.id, seed_id: seedId });
@@ -249,52 +224,24 @@ export default function WishlistCatalog() {
       }
       await supabase.from('wishlist_sessions').update({ submitted_at: new Date().toISOString() }).eq('id', session.id);
       setIsSuccess(true);
-    } catch (err: any) {
-      alert("Failed to submit wishlist: " + err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
+    } catch (err: any) { alert("Failed to submit wishlist: " + err.message); } 
+    finally { setIsSubmitting(false); }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-emerald-600">
-           <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-           <span className="font-bold tracking-widest uppercase text-xs">Loading Catalog...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !session) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-stone-200">
-          <h1 className="text-xl font-black text-stone-800 mb-2">Link Unavailable</h1>
-          <p className="text-stone-500 text-sm">{error}</p>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><div className="flex flex-col items-center gap-4 text-emerald-600"><svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span className="font-bold tracking-widest uppercase text-xs">Loading Catalog...</span></div></div>;
+  if (error || !session) return <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center"><div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-stone-200"><h1 className="text-xl font-black text-stone-800 mb-2">Link Unavailable</h1><p className="text-stone-500 text-sm">{error}</p></div></div>;
 
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 text-center">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-stone-200 animate-in zoom-in-95 duration-500">
-          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-          </div>
+          <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
           <h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Submitted!</h1>
-          
-          {/* FIX: Dynamically mention the expiry date if it exists */}
           <p className="text-stone-500 text-sm mb-6">
-            Thank you, {session.list_name}! Your garden requests for {seasonName} have been recorded. You can return to this link to update your choices anytime{session.expires_at ? ` before it expires on ${new Date(session.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric'})}` : ''}.
+            Thank you, {session.list_name}! Your garden requests for {seasonName} have been recorded. 
+            {session.seasons?.seedling_target_date && ` Your seedlings should be ready around ${new Date(session.seasons.seedling_target_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric'})}.`}
           </p>
-          
-          <button onClick={() => setIsSuccess(false)} className="px-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 active:scale-95 transition-all shadow-sm">
-            Make Changes
-          </button>
+          <button onClick={() => setIsSuccess(false)} className="px-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 active:scale-95 transition-all shadow-sm">Make Changes</button>
         </div>
       </div>
     );
@@ -302,44 +249,39 @@ export default function WishlistCatalog() {
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
-      
-      {viewedSeed && (
-        <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} />
-      )}
+      {viewedSeed && <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} />}
 
       <header className="bg-emerald-800 text-white pt-10 pb-20 px-4 sm:px-6 rounded-b-[2rem] sm:rounded-b-[3rem] shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
         <div className="max-w-4xl mx-auto relative z-10 text-center">
-          <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-3 shadow-sm backdrop-blur-sm">
-            {seasonName} Catalog
-          </span>
-          
-          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight mb-3">
-            Welcome, {session.list_name}!
-          </h1>
+          <span className="inline-block py-1 px-3 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-200 text-[10px] font-black uppercase tracking-[0.2em] mb-3 shadow-sm backdrop-blur-sm">{seasonName} Catalog</span>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-tight mb-3">Welcome, {session.list_name}!</h1>
 
-          {/* FIX: Friendly Expiry Notification Badge */}
-          {session.expires_at && (
-            <div className="flex items-center justify-center gap-1.5 text-emerald-200/90 text-xs sm:text-sm font-medium mb-4">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span>Your access expires on <strong>{new Date(session.expires_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong></span>
-            </div>
-          )}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6 text-emerald-200/90 text-xs sm:text-sm font-medium mb-4">
+            {session.expires_at && (
+              <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>Access expires: <strong>{new Date(session.expires_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
+              </div>
+            )}
+            {session.seasons?.seedling_target_date && (
+              <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <span>Target Availability: <strong>{new Date(session.seasons.seedling_target_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong></span>
+              </div>
+            )}
+          </div>
 
-          <p className="text-emerald-100 text-xs sm:text-sm md:text-base max-w-xl mx-auto leading-relaxed px-2">
-            Browse the seed vault. Tap any card for photos and details, or tap the (+) to instantly save it to your list.
-          </p>
+          <p className="text-emerald-100 text-xs sm:text-sm md:text-base max-w-xl mx-auto leading-relaxed px-2">Browse the seed vault. Tap any card for photos and details, or tap the (+) to instantly save it to your list.</p>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-2 sm:px-6 -mt-12 sm:-mt-16 relative z-20 space-y-6">
-        
         <div className="bg-white/90 backdrop-blur-md p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg border border-stone-200 flex flex-col sm:flex-row gap-2 sm:gap-4 items-center">
           <div className="relative w-full sm:flex-1">
             <input type="text" placeholder="Search varieties, notes..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-9 sm:pl-10 pr-4 text-xs sm:text-sm shadow-inner focus:border-emerald-500 outline-none" />
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 absolute left-3 top-3 sm:top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-
           <div className="flex w-full sm:w-auto gap-2">
             <div className="relative flex-1 sm:w-40">
               <select value={activeCategory} onChange={(e) => setActiveCategory(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none">
@@ -347,14 +289,9 @@ export default function WishlistCatalog() {
               </select>
               <svg className="w-4 h-4 text-stone-400 absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </div>
-
             <div className="relative flex-1 sm:w-40">
               <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-7 sm:pr-8 text-xs sm:text-sm font-bold shadow-inner focus:border-emerald-500 outline-none appearance-none">
-                <option value="name_asc">Name (A-Z)</option>
-                <option value="name_desc">Name (Z-A)</option>
-                <option value="category">Category</option>
-                <option value="dtm_asc">Fastest</option>
-                <option value="dtm_desc">Longest</option>
+                <option value="name_asc">Name (A-Z)</option><option value="name_desc">Name (Z-A)</option><option value="category">Category</option><option value="dtm_asc">Fastest</option><option value="dtm_desc">Longest</option>
               </select>
               <svg className="w-4 h-4 text-stone-400 absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </div>
@@ -363,8 +300,7 @@ export default function WishlistCatalog() {
 
         <div className="flex justify-between items-center px-2">
           <button onClick={() => setShowSelectedOnly(!showSelectedOnly)} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap transition-all shadow-sm flex items-center gap-1.5 border ${showSelectedOnly ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'}`}>
-            <span className={`w-2 h-2 rounded-full ${selectedSeedIds.length > 0 ? 'bg-emerald-500' : 'bg-stone-300'}`}></span>
-            Show Selected ({selectedSeedIds.length})
+            <span className={`w-2 h-2 rounded-full ${selectedSeedIds.length > 0 ? 'bg-emerald-500' : 'bg-stone-300'}`}></span>Show Selected ({selectedSeedIds.length})
           </button>
           <p className="text-[9px] sm:text-[10px] font-black text-stone-400 uppercase tracking-widest">{filteredAndSortedSeeds.length} Results</p>
         </div>
@@ -397,7 +333,6 @@ export default function WishlistCatalog() {
           </button>
         </div>
       </div>
-
     </main>
   );
 }
