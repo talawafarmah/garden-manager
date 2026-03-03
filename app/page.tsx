@@ -15,6 +15,7 @@ import TrayEdit from '../components/TrayEdit';
 import SeedlingsList from '../components/SeedlingsList';
 import AdminSeasons from '../components/AdminSeasons';
 import AdminDemand from '../components/AdminDemand';
+import GrowPlanner from '../components/GrowPlanner'; 
 
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>('dashboard');
@@ -150,7 +151,8 @@ export default function App() {
     // FIX: Removed the ternary operator here. TrayEdit can now render even if selectedTray is null!
     case 'tray_edit':
       return <TrayEdit key={selectedTray?.id || 'new_tray'} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
-    
+    case 'grow_planner':
+      return <GrowPlanner navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'seedlings':
       return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_seasons':
