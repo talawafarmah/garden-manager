@@ -19,6 +19,7 @@ interface DemandItem {
 
 interface CustomRequest { id: string; requester: string; request: string; created_at: string; }
 
+// Planning Helpers
 const resolveNurseryWeeks = (seed: InventorySeed, categories: SeedCategory[]) => {
   if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) return seed.custom_nursery_weeks;
   const cat = categories.find(c => c.name === seed.category);
@@ -51,6 +52,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
+  // Scheduling Modal State
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
   const [editingItem, setEditingItem] = useState<DemandItem | null>(null);
   const [formWeeks, setFormWeeks] = useState(6);
@@ -101,6 +103,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         const { data: selections, error: selectionsErr } = await supabase.from('wishlist_selections').select('*, seed:seed_inventory(*)').in('session_id', validSessionIds);
         if (selectionsErr) throw selectionsErr;
 
+        // Fetch Both Ledgers and Plans!
         const [{ data: ledgers }, { data: growPlans }] = await Promise.all([
           supabase.from('season_seedlings').select('*').eq('season_id', activeSeasonId),
           supabase.from('grow_plan').select('*').eq('season_id', activeSeasonId)
@@ -130,12 +133,20 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                 const l = ledgerMap.get(sel.seed_id);
                 seedLedger = { growing: l.qty_growing, keep: l.allocate_keep, reserve: l.allocate_reserve, available: Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve) };
               }
+              
               let seedPlan;
               if (planMap.has(sel.seed_id)) {
                 const p = planMap.get(sel.seed_id);
                 seedPlan = { id: p.id, planned_qty: p.planned_qty, indoor_start_date: p.indoor_start_date };
               }
-              demandMap.set(sel.seed_id, { seed: sel.seed as InventorySeed, count: 1, requesters: [requesterName], ledger: seedLedger, plan: seedPlan });
+
+              demandMap.set(sel.seed_id, { 
+                seed: sel.seed as InventorySeed, 
+                count: 1, 
+                requesters: [requesterName], 
+                ledger: seedLedger,
+                plan: seedPlan
+              });
             }
           } else if (sel.custom_request) {
             customReqs.push({ id: sel.id, requester: requesterName, request: sel.custom_request, created_at: sel.created_at });
@@ -166,6 +177,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
+      // Update local state to reflect it's planned
       setAggregatedDemand(aggregatedDemand.map(d => d.seed.id === editingItem.seed.id ? { ...d, plan: { id: data.id, planned_qty: formQty, indoor_start_date: startDate } } : d));
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
@@ -184,9 +196,9 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-4 space-y-6 mt-4">
+      <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-xl mx-auto">
+        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-2xl mx-auto">
           <div className="flex items-center gap-4">
             <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -219,7 +231,8 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
               {aggregatedDemand.length === 0 ? (
                 <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                // FIX: Added sm:grid-cols-2 and lg:grid-cols-3 so it scales across devices!
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {aggregatedDemand.map((item) => (
                     <div key={item.seed.id} className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-3 hover:border-emerald-200 transition-colors">
                       <div className="flex gap-4 items-start">
@@ -232,7 +245,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                             <h3 className="font-black text-stone-800 text-lg leading-tight truncate pr-2 cursor-pointer hover:text-emerald-600 transition-colors" onClick={() => navigateTo('seed_detail', item.seed)}>{item.seed.variety_name}</h3>
                             {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-widest flex-shrink-0">Out of Stock</span>}
                           </div>
-                          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{item.seed.category}</p>
+                          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5 mb-2">{item.seed.category}</p>
                           
                           <div className="mt-2 flex flex-wrap gap-1 border-t border-stone-100 pt-2">
                             {item.requesters.map((req, i) => (
