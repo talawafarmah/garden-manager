@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Season, WishlistSession, AppView } from '../types';
 
-interface Props { navigateTo: (view: AppView) => void; handleGoBack: (view: AppView) => void; userRole?: string; }
+interface Props {
+  navigateTo: (view: AppView) => void;
+  handleGoBack: (view: AppView) => void;
+  userRole?: string;
+}
 
 export default function AdminSeasons({ handleGoBack, userRole }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -12,10 +16,8 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
   const [newSeasonName, setNewSeasonName] = useState("");
   const [newListName, setNewListName] = useState("");
   const [newExpiryDate, setNewExpiryDate] = useState("");
-  
   const [isLoading, setIsLoading] = useState(true);
 
-  // Inline Editing States
   const [editingSeason, setEditingSeason] = useState<boolean>(false);
   const [editSeasonName, setEditSeasonName] = useState("");
   const [editSeasonStatus, setEditSeasonStatus] = useState<'Planning' | 'Active' | 'Archived'>('Planning');
@@ -29,7 +31,11 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     const { data, error } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
     if (data) {
       setSeasons(data as Season[]);
-      if (data.length > 0 && !activeSeasonId) setActiveSeasonId(data[0].id);
+      if (data.length > 0 && !activeSeasonId) {
+        // FIX: Look for the Active season, fallback to the newest
+        const active = data.find(s => s.status === 'Active');
+        setActiveSeasonId(active ? active.id : data[0].id);
+      }
     }
     setIsLoading(false);
   };
@@ -52,11 +58,7 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newListName.trim() || !activeSeasonId) return;
-    const payload = { 
-      list_name: newListName.trim(), 
-      season_id: activeSeasonId,
-      expires_at: newExpiryDate ? new Date(newExpiryDate).toISOString() : null
-    };
+    const payload = { list_name: newListName.trim(), season_id: activeSeasonId, expires_at: newExpiryDate ? new Date(newExpiryDate).toISOString() : null };
     const { data, error } = await supabase.from('wishlist_sessions').insert([payload]).select().single();
     if (!error && data) { setSessions([data as WishlistSession, ...sessions]); setNewListName(""); setNewExpiryDate(""); }
   };
@@ -84,15 +86,11 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     }
   };
 
-const saveSessionEdit = async (id: string) => {
+  const saveSessionEdit = async (id: string) => {
     if (!editSessionName.trim()) return;
-    const payload = { 
-      list_name: editSessionName.trim(),
-      expires_at: editSessionExpiry ? new Date(editSessionExpiry).toISOString() : null
-    };
+    const payload = { list_name: editSessionName.trim(), expires_at: editSessionExpiry ? new Date(editSessionExpiry).toISOString() : null };
     const { error } = await supabase.from('wishlist_sessions').update(payload).eq('id', id);
     if (!error) {
-      // FIX: Added 'as WishlistSession' to satisfy strict null/undefined typing
       setSessions(sessions.map(s => s.id === id ? { ...s, ...payload } as WishlistSession : s));
       setEditingSessionId(null);
     }
@@ -162,7 +160,6 @@ const saveSessionEdit = async (id: string) => {
           </div>
         </section>
 
-        {/* Link Generation */}
         {activeSeasonId && (
           <section className="bg-emerald-50 p-6 rounded-3xl shadow-sm border border-emerald-100">
             <h2 className="font-black text-emerald-900 mb-2">2. Wishlist Links</h2>
