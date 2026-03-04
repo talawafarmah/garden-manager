@@ -47,6 +47,10 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
 
+  // NEW: Calendar State
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+  const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
+
   const [manualSearch, setManualSearch] = useState("");
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
   const [editingSeed, setEditingSeed] = useState<InventorySeed | null>(null);
@@ -164,30 +168,19 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents });
   };
 
-  // FIX: Bulk Recalculator Function
   const handleSyncDates = async () => {
     if (!confirm("This will recalculate all start dates on your calendar based on your latest seed data and category settings. Proceed?")) return;
-    
     setIsLoading(true);
     try {
       let updates: { id: string, indoor_start_date: string }[] = [];
-
       for (const plan of plans) {
         if (!plan.seed) continue;
-        
         const weeks = resolveNurseryWeeks(plan.seed, categories);
         const newStartDate = calculateStartDate(plan.target_plant_date, weeks, plan.seed.germination_days);
-        
-        if (newStartDate !== plan.indoor_start_date) {
-          updates.push({ id: plan.id, indoor_start_date: newStartDate });
-        }
+        if (newStartDate !== plan.indoor_start_date) { updates.push({ id: plan.id, indoor_start_date: newStartDate }); }
       }
-
       if (updates.length > 0) {
-        for (const u of updates) {
-          await supabase.from('grow_plan').update({ indoor_start_date: u.indoor_start_date }).eq('id', u.id);
-        }
-        
+        for (const u of updates) await supabase.from('grow_plan').update({ indoor_start_date: u.indoor_start_date }).eq('id', u.id);
         setPlans(plans.map(p => {
           const update = updates.find(u => u.id === p.id);
           return update ? { ...p, indoor_start_date: update.indoor_start_date } : p;
@@ -196,19 +189,21 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
       } else {
         alert("Everything is already perfectly up to date!");
       }
-    } catch (err: any) {
-      alert("Error syncing dates: " + err.message);
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (err: any) { alert("Error syncing dates: " + err.message); } finally { setIsLoading(false); }
   };
 
-  const today = new Date(); today.setHours(0,0,0,0);
+  const todayObj = new Date();
+  const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+  
   const filteredPlans = plans.filter(p => {
     const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
     return showCompleted || totalSown < p.planned_qty;
   });
+  
   const sortedPlans = [...filteredPlans].sort((a, b) => new Date(a.indoor_start_date).getTime() - new Date(b.indoor_start_date).getTime());
+  
+  // Apply Calendar Filter
+  const displayPlans = selectedDateFilter ? sortedPlans.filter(p => p.indoor_start_date === selectedDateFilter) : sortedPlans;
 
   const plannedSeedIds = new Set(plans.map(p => p.seed_id));
   const manualSearchResults = useMemo(() => {
@@ -216,6 +211,20 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     const q = manualSearch.toLowerCase();
     return inventory.filter(s => !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(q)).slice(0, 5);
   }, [manualSearch, inventory, plannedSeedIds]);
+
+  // Calendar Math
+  const activeDates = useMemo(() => {
+    const dates = new Set<string>();
+    filteredPlans.forEach(p => dates.add(p.indoor_start_date));
+    return dates;
+  }, [filteredPlans]);
+
+  const year = calendarViewDate.getFullYear();
+  const month = calendarViewDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDay = new Date(year, month, 1).getDay();
+  const calendarDays = Array(startDay).fill(null).concat(Array.from({length: daysInMonth}, (_, i) => i + 1));
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   if (userRole !== 'admin') return <div className="p-10 text-center">Access Denied</div>;
 
@@ -228,9 +237,9 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-4 space-y-6 mt-4">
+      <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6 items-start md:items-center max-w-3xl mx-auto">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6 items-start md:items-center">
           <div className="flex-1 w-full border-b md:border-b-0 md:border-r border-stone-100 pb-4 md:pb-0 md:pr-6">
             <div className="flex items-center gap-3 mb-2">
               <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
@@ -273,103 +282,156 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
         {isLoading ? (
            <div className="flex justify-center py-20 text-stone-400"><svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
         ) : (
-          <div className="space-y-4">
+          <div className="flex flex-col lg:flex-row gap-6">
             
-            {/* FIX: Sync Dates Button added to the Timeline Header */}
-            <div className="flex justify-between items-end border-b border-stone-200 pb-2 px-2">
-              <h3 className="font-black text-xs uppercase tracking-widest text-stone-400">Timeline ({sortedPlans.length} Seeds)</h3>
-              <div className="flex items-center gap-3 sm:gap-4">
-                <button onClick={handleSyncDates} className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  Sync Dates
-                </button>
-                <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold text-stone-500">
-                  <span>Show Completed</span>
-                  <button onClick={() => setShowCompleted(!showCompleted)} className={`w-8 h-4 rounded-full transition-colors relative ${showCompleted ? 'bg-emerald-500' : 'bg-stone-300'}`}>
-                    <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${showCompleted ? 'translate-x-[18px]' : 'translate-x-1'}`} />
-                  </button>
+            {/* NEW: VISUAL CALENDAR WIDGET */}
+            <div className="w-full lg:w-[320px] flex-shrink-0">
+              <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-sm sticky top-24">
+                <div className="flex justify-between items-center mb-4">
+                   <button onClick={() => setCalendarViewDate(new Date(year, month - 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
+                   <h3 className="font-black text-stone-800 tracking-tight">{monthNames[month]} {year}</h3>
+                   <button onClick={() => setCalendarViewDate(new Date(year, month + 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
                 </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
+                   {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-sm font-bold">
+                   {calendarDays.map((d, i) => {
+                      if (!d) return <div key={i} className="p-2" />;
+                      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                      const hasPlan = activeDates.has(dateStr);
+                      const isSelected = selectedDateFilter === dateStr;
+                      const isToday = dateStr === todayStr;
+                      
+                      return (
+                         <button
+                            key={i}
+                            onClick={() => setSelectedDateFilter(isSelected ? null : dateStr)}
+                            className={`h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all ${
+                              isSelected ? 'bg-emerald-600 text-white shadow-md' :
+                              hasPlan ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-100' :
+                              'hover:bg-stone-100 text-stone-600'
+                            }`}
+                         >
+                            <span className={`${isToday && !isSelected ? 'text-blue-600 font-black' : ''}`}>{d}</span>
+                            {hasPlan && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`} />}
+                         </button>
+                      )
+                   })}
+                </div>
+                {selectedDateFilter && (
+                  <button onClick={() => setSelectedDateFilter(null)} className="w-full mt-4 py-2 bg-stone-100 text-stone-500 hover:text-stone-800 text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors">
+                    Clear Filter
+                  </button>
+                )}
               </div>
             </div>
 
-            {sortedPlans.length === 0 ? (
-              <div className="bg-white p-10 rounded-3xl border border-stone-200 text-center shadow-sm max-w-xl mx-auto"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🌱</div><h4 className="font-black text-stone-800">Your timeline is empty</h4><p className="text-xs text-stone-500 mt-1">Add seeds from the top bar or send requests from the Demand Planner.</p></div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4">
-                {sortedPlans.map(plan => {
-                  const isSelected = selectedPlanIds.includes(plan.id);
-                  const planDate = new Date(plan.indoor_start_date);
-                  const diffDays = Math.round((planDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  
-                  const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
-                  const isComplete = totalSown >= plan.planned_qty;
-                  let badgeColor = "bg-stone-100 text-stone-600 border-stone-200"; let statusTxt = "Future";
-                  
-                  if (isComplete) { badgeColor = "bg-emerald-100 text-emerald-700 border-emerald-200"; statusTxt = "Sown ✓"; }
-                  else if (diffDays < 0) { badgeColor = "bg-red-100 text-red-700 border-red-200"; statusTxt = "Overdue"; }
-                  else if (diffDays <= 7) { badgeColor = "bg-amber-100 text-amber-700 border-amber-300"; statusTxt = "This Week"; }
-                  else if (diffDays <= 14) { badgeColor = "bg-blue-100 text-blue-700 border-blue-200"; statusTxt = "Next Week"; }
+            {/* TIMELINE LIST */}
+            <div className="flex-1 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b border-stone-200 pb-2 px-2 gap-2">
+                <h3 className="font-black text-xs uppercase tracking-widest text-stone-400 flex items-center flex-wrap gap-2">
+                  Timeline ({displayPlans.length} Seeds)
+                  {selectedDateFilter && (
+                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                       {new Date(selectedDateFilter + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                       <button onClick={() => setSelectedDateFilter(null)} className="hover:text-emerald-500 ml-0.5"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <button onClick={handleSyncDates} className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Sync Dates
+                  </button>
+                  <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold text-stone-500">
+                    <span>Show Completed</span>
+                    <button onClick={() => setShowCompleted(!showCompleted)} className={`w-8 h-4 rounded-full transition-colors relative ${showCompleted ? 'bg-emerald-500' : 'bg-stone-300'}`}>
+                      <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${showCompleted ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-                  const progressPercent = Math.min(100, Math.round((totalSown / plan.planned_qty) * 100));
+              {displayPlans.length === 0 ? (
+                <div className="bg-white p-10 rounded-3xl border border-stone-200 text-center shadow-sm max-w-xl mx-auto"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🌱</div><h4 className="font-black text-stone-800">Your timeline is empty</h4><p className="text-xs text-stone-500 mt-1">Add seeds from the top bar or send requests from the Demand Planner.</p></div>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
+                  {displayPlans.map(plan => {
+                    const isSelected = selectedPlanIds.includes(plan.id);
+                    const planDate = new Date(plan.indoor_start_date);
+                    const diffDays = Math.round((planDate.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
+                    
+                    const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
+                    const isComplete = totalSown >= plan.planned_qty;
+                    let badgeColor = "bg-stone-100 text-stone-600 border-stone-200"; let statusTxt = "Future";
+                    
+                    if (isComplete) { badgeColor = "bg-emerald-100 text-emerald-700 border-emerald-200"; statusTxt = "Sown ✓"; }
+                    else if (diffDays < 0) { badgeColor = "bg-red-100 text-red-700 border-red-200"; statusTxt = "Overdue"; }
+                    else if (diffDays <= 7) { badgeColor = "bg-amber-100 text-amber-700 border-amber-300"; statusTxt = "This Week"; }
+                    else if (diffDays <= 14) { badgeColor = "bg-blue-100 text-blue-700 border-blue-200"; statusTxt = "Next Week"; }
 
-                  return (
-                    <div key={plan.id} className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`} onClick={() => !isComplete && toggleSelection(plan.id)}>
-                      <div className="flex justify-between items-start">
-                        <div className="flex gap-3 items-start pr-2 min-w-0">
-                          {!isComplete && (
-                            <div className={`w-5 h-5 rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-stone-50 border-stone-300 text-transparent'}`}>
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                    const progressPercent = Math.min(100, Math.round((totalSown / plan.planned_qty) * 100));
+
+                    return (
+                      <div key={plan.id} className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-stone-200 hover:shadow-md hover:border-emerald-300'}`} onClick={() => !isComplete && toggleSelection(plan.id)}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex gap-3 items-start pr-2 min-w-0">
+                            {!isComplete && (
+                              <div className={`w-5 h-5 rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-stone-50 border-stone-300 text-transparent'}`}>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
+                              <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
-                            <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{planDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">{plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}</div>
                           </div>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{planDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
-                          <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">{plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}</div>
+
+                        <div className="mt-1 pt-3 border-t border-stone-100 flex items-center justify-between gap-3" onClick={e => e.stopPropagation()}>
+                           <div className="flex-1 min-w-0">
+                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest mb-1.5">
+                               <div className="flex items-center gap-1.5 text-stone-500">
+                                 Goal: <span className="text-stone-800">{plan.planned_qty}</span>
+                                 <div className="flex bg-stone-100 rounded border border-stone-200">
+                                   <button onClick={() => updatePlannedQty(plan.id, -1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">-</button>
+                                   <div className="w-[1px] bg-stone-200"></div>
+                                   <button onClick={() => updatePlannedQty(plan.id, 1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">+</button>
+                                 </div>
+                               </div>
+                               <span className="text-emerald-600">Sown: {totalSown}</span>
+                             </div>
+                             <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
+                               <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+                             </div>
+                           </div>
+
+                           <div className="flex items-center gap-2">
+                             <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
+                               <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
+                               <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
+                             </div>
+                             <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                           </div>
                         </div>
                       </div>
-
-                      <div className="mt-1 pt-3 border-t border-stone-100 flex items-center justify-between gap-3" onClick={e => e.stopPropagation()}>
-                         <div className="flex-1 min-w-0">
-                           <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest mb-1.5">
-                             <div className="flex items-center gap-1.5 text-stone-500">
-                               Goal: <span className="text-stone-800">{plan.planned_qty}</span>
-                               <div className="flex bg-stone-100 rounded border border-stone-200">
-                                 <button onClick={() => updatePlannedQty(plan.id, -1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">-</button>
-                                 <div className="w-[1px] bg-stone-200"></div>
-                                 <button onClick={() => updatePlannedQty(plan.id, 1)} className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 hover:text-stone-800 transition-colors">+</button>
-                               </div>
-                             </div>
-                             <span className="text-emerald-600">Sown: {totalSown}</span>
-                           </div>
-                           <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
-                             <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-                           </div>
-                         </div>
-
-                         <div className="flex items-center gap-2">
-                           <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
-                             <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
-                             <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
-                           </div>
-                           <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {selectedPlanIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-stone-200 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-40 animate-in slide-in-from-bottom-5">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 px-2">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-2">
             <div className="flex flex-col">
               <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Action Required</span>
               <span className="font-black text-sm md:text-lg text-emerald-700">{selectedPlanIds.length} Seeds Selected</span>
@@ -401,7 +463,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                  </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seedling Target Date</label>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
