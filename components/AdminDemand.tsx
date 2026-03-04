@@ -19,7 +19,6 @@ interface DemandItem {
 
 interface CustomRequest { id: string; requester: string; request: string; created_at: string; }
 
-// Planning Helpers
 const resolveNurseryWeeks = (seed: InventorySeed, categories: SeedCategory[]) => {
   if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) return seed.custom_nursery_weeks;
   const cat = categories.find(c => c.name === seed.category);
@@ -34,18 +33,21 @@ const parseGermDays = (str?: string) => {
   return 7;
 };
 
+// FIX: Safe local date math that prevents Timezone shifting
 const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
-  const targetDate = new Date(target);
+  const targetDate = new Date(target + 'T12:00:00');
   const germDays = parseGermDays(germStr);
   targetDate.setDate(targetDate.getDate() - ((weeks * 7) + germDays));
-  return targetDate.toISOString().split('T')[0];
+  
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 export default function AdminDemand({ categories, navigateTo, handleGoBack, userRole }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
-  
-  // NEW: State to hold raw data so we can filter instantly without network calls
   const [seasonData, setSeasonData] = useState<{sessions: any[], selections: any[], ledgers: any[], plans: any[]} | null>(null);
   
   const [aggregatedDemand, setAggregatedDemand] = useState<DemandItem[]>([]);
@@ -56,11 +58,9 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
-  // NEW: Filtering State
   const [availableLists, setAvailableLists] = useState<{id: string, name: string, isSubmitted: boolean}[]>([]);
   const [activeListId, setActiveListId] = useState<string>('ALL');
 
-  // Scheduling Modal State
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
   const [editingItem, setEditingItem] = useState<DemandItem | null>(null);
   const [formWeeks, setFormWeeks] = useState(6);
@@ -84,12 +84,10 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     fetchSeasons();
   }, []);
 
-  // Fetch all raw data for the season ONCE
   useEffect(() => {
     const fetchRawData = async () => {
       if (!activeSeasonId) return;
       setIsLoading(true);
-
       try {
         const { data: sessions } = await supabase.from('wishlist_sessions').select('id, list_name, submitted_at').eq('season_id', activeSeasonId);
         
@@ -115,47 +113,31 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
       } catch (err) { console.error("Failed to load demand data:", err); } 
       finally { setIsLoading(false); }
     };
-
     fetchRawData();
   }, [activeSeasonId]);
 
-  // Aggregate data locally whenever filters change
   useEffect(() => {
     if (!seasonData) return;
-
     const { sessions, selections, ledgers, plans } = seasonData;
 
-    // 1. Setup the Dropdown Lists
     const lists = sessions
        .filter(s => showDrafts || s.submitted_at)
        .map(s => ({ id: s.id, name: s.list_name, isSubmitted: !!s.submitted_at }))
        .sort((a, b) => a.name.localeCompare(b.name));
     
     setAvailableLists(lists);
-
-    // Reset filter if the currently selected list becomes hidden (e.g. drafts turned off)
     const effectiveListId = (activeListId !== 'ALL' && lists.find(l => l.id === activeListId)) ? activeListId : 'ALL';
     if (effectiveListId !== activeListId) setActiveListId('ALL');
 
-    // 2. Tally global counts
-    setCounts({
-      submitted: sessions.filter(s => s.submitted_at).length,
-      drafts: sessions.filter(s => !s.submitted_at).length
-    });
+    setCounts({ submitted: sessions.filter(s => s.submitted_at).length, drafts: sessions.filter(s => !s.submitted_at).length });
 
-    // 3. Determine which sessions to aggregate
     const validSessionIds = sessions
       .filter(s => showDrafts || s.submitted_at)
       .filter(s => effectiveListId === 'ALL' || s.id === effectiveListId)
       .map(s => s.id);
 
-    if (validSessionIds.length === 0) {
-      setAggregatedDemand([]);
-      setCustomRequests([]);
-      return;
-    }
+    if (validSessionIds.length === 0) { setAggregatedDemand([]); setCustomRequests([]); return; }
 
-    // 4. Build Lookups
     const sessionMap = new Map(sessions.map(s => [s.id, { name: s.list_name, isSubmitted: !!s.submitted_at }]));
     const ledgerMap = new Map(ledgers.map(l => [l.seed_id, l]));
     const planMap = new Map(plans.map(p => [p.seed_id, p]));
@@ -163,7 +145,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     const demandMap = new Map<string, DemandItem>();
     const customReqs: CustomRequest[] = [];
 
-    // 5. Aggregate selections
     selections.filter(sel => validSessionIds.includes(sel.session_id)).forEach(sel => {
       const sessionInfo = sessionMap.get(sel.session_id) || { name: 'Unknown', isSubmitted: false };
       const requesterName = sessionInfo.isSubmitted ? sessionInfo.name : `${sessionInfo.name} (Draft)`;
@@ -212,7 +193,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
-      // Update local seasonData so it triggers a re-render seamlessly
       setSeasonData(prev => prev ? { ...prev, plans: [...prev.plans, { id: data.id, seed_id: item.seed.id, planned_qty: item.count, indoor_start_date: startDate }] } : prev);
     } else {
       alert("Error saving plan: " + error?.message);
@@ -252,7 +232,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
       <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        {/* Responsive Control Panel */}
         <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4 max-w-5xl mx-auto">
           
           <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -275,15 +254,12 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
             <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
           </div>
 
-          {/* NEW: Dropdown Filter for Specific Lists */}
           <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
             <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest hidden lg:block">Filter</h2></div>
             <div className="relative w-full sm:w-48">
               <select value={activeListId} onChange={e => setActiveListId(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner appearance-none pr-8">
                 <option value="ALL">-- All Lists --</option>
-                {availableLists.map(l => (
-                  <option key={l.id} value={l.id}>{l.name} {!l.isSubmitted ? '(Draft)' : ''}</option>
-                ))}
+                {availableLists.map(l => <option key={l.id} value={l.id}>{l.name} {!l.isSubmitted ? '(Draft)' : ''}</option>)}
               </select>
               <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </div>
@@ -405,7 +381,8 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                {/* FIX: Modal rendering safe noon start date */}
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               </div>
               <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
             </div>

@@ -41,10 +41,14 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
 
 export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo, handleGoBack }: any) {
   
+  // FIX: Build a safe local date string so 8PM doesn't turn into Tomorrow UTC
+  const todayObj = new Date();
+  const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
   const defaultTray: SeedlingTray = {
     id: crypto.randomUUID(), 
     name: `Tray ${Math.floor(Math.random() * 10000)}`,
-    sown_date: new Date().toISOString().split('T')[0],
+    sown_date: localToday,
     cell_count: 72,
     contents: [],
     images: [],
@@ -104,7 +108,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
   const handleAddCellContent = () => {
     const newIdx = (trayFormData.contents || []).length;
-    // FIX: Default sown_count to 1 instead of setting the "cell" string
     setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), { seed_id: '', sown_count: 1 }] });
     setSeedSearchRow(newIdx);
   };
@@ -374,7 +377,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                 return (
                   <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
                     <div className="w-16">
-                      {/* FIX: Bind this input to sown_count instead of cell */}
                       <input 
                         type="number" 
                         min="0"

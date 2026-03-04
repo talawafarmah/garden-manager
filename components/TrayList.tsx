@@ -11,11 +11,10 @@ interface TrayListProps {
   userRole?: string;
 }
 
-// Safe date parsing to avoid timezone timezone shifts
+// FIX: Safe date parsing using Noon to avoid timezone/DST shifts
 const parseDateString = (dateStr: string) => {
   if (!dateStr) return new Date();
-  const [y, m, d] = dateStr.split('-');
-  return new Date(Number(y), Number(m) - 1, Number(d));
+  return new Date(dateStr + 'T12:00:00');
 };
 
 export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
@@ -137,16 +136,15 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               });
               const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
-              // --- Dynamic Germination Calculations ---
+              // FIX: Anchor 'today' to noon locally
               const today = new Date();
-              today.setHours(0, 0, 0, 0);
+              today.setHours(12, 0, 0, 0);
 
               let statusText = "Est. Sprout: Unknown";
               let statusColor = "text-stone-500 bg-stone-100 border-stone-200";
               let showSproutIcon = false;
 
               if (tray.first_germination_date) {
-                // Already sprouted: Calculate days ago
                 const germDate = parseDateString(tray.first_germination_date);
                 const diffDays = Math.round((today.getTime() - germDate.getTime()) / (1000 * 60 * 60 * 24));
                 
@@ -158,7 +156,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                 showSproutIcon = true;
 
               } else if (tray.sown_date) {
-                // Not sprouted yet: Calculate minimum estimated time based on seeds
                 let minGerm = Infinity;
                 uniqueSeedIds.forEach(id => {
                    const s = inventory.find((i: InventorySeed) => i.id === id);

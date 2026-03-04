@@ -239,7 +239,8 @@ export default function WishlistCatalog() {
           <h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Submitted!</h1>
           <p className="text-stone-500 text-sm mb-6">
             Thank you, {session.list_name}! Your garden requests for {seasonName} have been recorded. 
-            {session.seasons?.seedling_target_date && ` Your seedlings should be ready around ${new Date(session.seasons.seedling_target_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric'})}.`}
+            {/* FIX: Render safe Noon Date */}
+            {session.seasons?.seedling_target_date && ` Your seedlings should be ready around ${new Date(session.seasons.seedling_target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric'})}.`}
           </p>
           <button onClick={() => setIsSuccess(false)} className="px-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 active:scale-95 transition-all shadow-sm">Make Changes</button>
         </div>
@@ -261,13 +262,15 @@ export default function WishlistCatalog() {
             {session.expires_at && (
               <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {/* Note: session.expires_at is already a full ISO timestamp, so new Date() is safe here! */}
                 <span>Access expires: <strong>{new Date(session.expires_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
               </div>
             )}
             {session.seasons?.seedling_target_date && (
               <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                <span>Target Availability: <strong>{new Date(session.seasons.seedling_target_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong></span>
+                {/* FIX: Safe Noon Date string for Target Availability */}
+                <span>Target Availability: <strong>{new Date(session.seasons.seedling_target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong></span>
               </div>
             )}
           </div>

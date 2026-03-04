@@ -35,6 +35,18 @@ const parseGermDays = (str?: string) => {
   return 7;
 };
 
+// FIX: Safe local date math that prevents Timezone shifting
+const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
+  const targetDate = new Date(target + 'T12:00:00');
+  const germDays = parseGermDays(germStr);
+  targetDate.setDate(targetDate.getDate() - ((weeks * 7) + germDays));
+  
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export default function GrowPlanner({ categories, navigateTo, handleGoBack, userRole }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
@@ -47,7 +59,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
 
-  // NEW: Calendar State
   const [calendarViewDate, setCalendarViewDate] = useState(new Date());
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
 
@@ -101,13 +112,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
       const plansWithTrayData = currentPlans.map(p => ({ ...p, tray_sown_qty: traySownMap[p.seed_id] || 0 }));
       setPlans(plansWithTrayData);
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
-  };
-
-  const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
-    const targetDate = new Date(target);
-    const germDays = parseGermDays(germStr);
-    targetDate.setDate(targetDate.getDate() - ((weeks * 7) + germDays));
-    return targetDate.toISOString().split('T')[0];
   };
 
   const openPlanModal = (seed: InventorySeed) => {
@@ -192,7 +196,9 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     } catch (err: any) { alert("Error syncing dates: " + err.message); } finally { setIsLoading(false); }
   };
 
+  // FIX: Normalize 'Today' to Noon locally so date math aligns perfectly
   const todayObj = new Date();
+  todayObj.setHours(12, 0, 0, 0);
   const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
   
   const filteredPlans = plans.filter(p => {
@@ -200,9 +206,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     return showCompleted || totalSown < p.planned_qty;
   });
   
-  const sortedPlans = [...filteredPlans].sort((a, b) => new Date(a.indoor_start_date).getTime() - new Date(b.indoor_start_date).getTime());
-  
-  // Apply Calendar Filter
+  const sortedPlans = [...filteredPlans].sort((a, b) => a.indoor_start_date.localeCompare(b.indoor_start_date));
   const displayPlans = selectedDateFilter ? sortedPlans.filter(p => p.indoor_start_date === selectedDateFilter) : sortedPlans;
 
   const plannedSeedIds = new Set(plans.map(p => p.seed_id));
@@ -212,7 +216,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     return inventory.filter(s => !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(q)).slice(0, 5);
   }, [manualSearch, inventory, plannedSeedIds]);
 
-  // Calendar Math
   const activeDates = useMemo(() => {
     const dates = new Set<string>();
     filteredPlans.forEach(p => dates.add(p.indoor_start_date));
@@ -284,7 +287,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">
             
-            {/* NEW: VISUAL CALENDAR WIDGET */}
             <div className="w-full lg:w-[320px] flex-shrink-0">
               <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-sm sticky top-24">
                 <div className="flex justify-between items-center mb-4">
@@ -327,11 +329,11 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
               </div>
             </div>
 
-            {/* TIMELINE LIST */}
             <div className="flex-1 space-y-4">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b border-stone-200 pb-2 px-2 gap-2">
                 <h3 className="font-black text-xs uppercase tracking-widest text-stone-400 flex items-center flex-wrap gap-2">
                   Timeline ({displayPlans.length} Seeds)
+                  {/* FIX: Re-Render Header with Safe Noon Math */}
                   {selectedDateFilter && (
                     <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm">
                        {new Date(selectedDateFilter + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -359,7 +361,8 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
                   {displayPlans.map(plan => {
                     const isSelected = selectedPlanIds.includes(plan.id);
-                    const planDate = new Date(plan.indoor_start_date);
+                    // FIX: Safe local math for cards
+                    const planDate = new Date(plan.indoor_start_date + 'T12:00:00');
                     const diffDays = Math.round((planDate.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
                     
                     const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
@@ -467,7 +470,8 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                {/* FIX: Modal rendering safe noon start date */}
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               </div>
               <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
             </div>

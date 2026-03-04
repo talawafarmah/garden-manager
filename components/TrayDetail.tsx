@@ -51,15 +51,19 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
 
   const handleDuplicateTray = () => {
     setIsDuplicating(true);
+    
+    // FIX: Safe local string generation
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+    
     const duplicatedTray: SeedlingTray = {
       ...localTray,
       id: crypto.randomUUID(),
       name: `${localTray.name || 'Tray'} (Copy)`,
-      sown_date: new Date().toISOString().split('T')[0],
+      sown_date: localToday,
       first_germination_date: "",
       first_planted_date: "",
       images: [],
-      // FIX: Retain what was sown, but reset germinated and planted out counts!
       contents: localTray.contents.map((item: any) => ({ 
         ...item, 
         sown_count: item.sown_count || 0, 
@@ -108,11 +112,15 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
       const { data: existingLedger } = await supabase.from('season_seedlings')
         .select('*').eq('seed_id', potUpState.seedId).eq('season_id', sId).maybeSingle();
 
-      // FIX: Journal entry now correctly references the tray name instead of the raw ID
       const trayReference = localTray.name || 'a tray';
+      
+      // FIX: Safe local string generation
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
       const journalEntry: SeedlingJournalEntry = {
         id: crypto.randomUUID(),
-        date: new Date().toISOString().split('T')[0],
+        date: localToday,
         type: 'UPPOT',
         note: `Potted up ${potUpState.count} from ${trayReference}. ${potUpState.note}`
       };

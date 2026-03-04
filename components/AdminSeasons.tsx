@@ -85,7 +85,7 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     }
   };
 
- const saveSeasonEdit = async () => {
+  const saveSeasonEdit = async () => {
     if (!activeSeasonId || !editSeasonName.trim()) return;
     const payload = { 
       name: editSeasonName.trim(), 
@@ -94,11 +94,11 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     };
     const { error } = await supabase.from('seasons').update(payload).eq('id', activeSeasonId);
     if (!error) { 
-      // FIX: Added 'as Season' to the merged object
       setSeasons(seasons.map(s => s.id === activeSeasonId ? { ...s, ...payload } as Season : s)); 
       setEditingSeason(false); 
     }
   };
+
   const deleteSeason = async () => {
     if (!activeSeasonId) return;
     if (confirm("Are you sure? This will permanently delete this season AND all associated wishlist links and requests!")) {
@@ -167,7 +167,8 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
             </div>
           ) : (
             <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 mb-6 appearance-none">
-              {seasons.map(s => <option key={s.id} value={s.id}>{s.name} ({s.status}) {s.seedling_target_date ? `• Target: ${new Date(s.seedling_target_date).toLocaleDateString()}` : ''}</option>)}
+              {/* FIX: Use safe local T12 parse for dropdown view */}
+              {seasons.map(s => <option key={s.id} value={s.id}>{s.name} ({s.status}) {s.seedling_target_date ? `• Target: ${new Date(s.seedling_target_date + 'T12:00:00').toLocaleDateString()}` : ''}</option>)}
             </select>
           )}
 
