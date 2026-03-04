@@ -199,7 +199,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
              const varietyName = fullSeed?.variety_name || seedRecord.seed_id;
              const isPottable = (seedRecord.germinated_count || 0) - (seedRecord.planted_count || 0) > 0;
 
-             // FIX: Render Per-Seed Status Badges
              const today = new Date();
              today.setHours(12, 0, 0, 0);
              let seedStatusBadge = null;
@@ -242,7 +241,8 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
                         <div className="flex items-center mt-1 flex-wrap gap-y-1">
-                          <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-600 border border-stone-200">{seedRecord.seed_id}</span>
+                          {/* FIX 2: Explicit ID tag */}
+                          <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-500 border border-stone-200 shadow-sm">ID: {seedRecord.seed_id}</span>
                           {seedStatusBadge}
                         </div>
                       </div>

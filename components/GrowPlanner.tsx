@@ -35,7 +35,6 @@ const parseGermDays = (str?: string) => {
   return 7;
 };
 
-// FIX: Safe local date math that prevents Timezone shifting
 const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
   const targetDate = new Date(target + 'T12:00:00');
   const germDays = parseGermDays(germStr);
@@ -196,7 +195,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
     } catch (err: any) { alert("Error syncing dates: " + err.message); } finally { setIsLoading(false); }
   };
 
-  // FIX: Normalize 'Today' to Noon locally so date math aligns perfectly
   const todayObj = new Date();
   todayObj.setHours(12, 0, 0, 0);
   const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
@@ -259,7 +257,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
             </div>
             <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 flex items-center justify-between">
               <div><h2 className="font-black text-amber-900 text-xs">Seedling Target</h2></div>
-              <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm font-bold text-amber-900 outline-none focus:border-amber-500 shadow-sm" />
+              <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm font-bold text-amber-900 outline-none focus:border-amber-50 shadow-sm" />
             </div>
           </div>
           
@@ -333,7 +331,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end border-b border-stone-200 pb-2 px-2 gap-2">
                 <h3 className="font-black text-xs uppercase tracking-widest text-stone-400 flex items-center flex-wrap gap-2">
                   Timeline ({displayPlans.length} Seeds)
-                  {/* FIX: Re-Render Header with Safe Noon Math */}
                   {selectedDateFilter && (
                     <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded flex items-center gap-1 shadow-sm">
                        {new Date(selectedDateFilter + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -361,7 +358,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
                   {displayPlans.map(plan => {
                     const isSelected = selectedPlanIds.includes(plan.id);
-                    // FIX: Safe local math for cards
                     const planDate = new Date(plan.indoor_start_date + 'T12:00:00');
                     const diffDays = Math.round((planDate.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
                     
@@ -388,6 +384,9 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                             <div className="min-w-0">
                               <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
                               <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
+                              
+                              {/* FIX 2: Explicit ID Tag */}
+                              <span className="text-[10px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded mt-1 inline-block shadow-sm">ID: {plan.seed?.id}</span>
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
@@ -470,7 +469,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                {/* FIX: Modal rendering safe noon start date */}
                 <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               </div>
               <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>

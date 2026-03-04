@@ -6,9 +6,7 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   const byteString = atob(base64.split(',')[1]);
   const ab = new ArrayBuffer(byteString.length);
   const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
+  for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
   return new Blob([ab], { type: mimeType });
 };
 
@@ -19,8 +17,7 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
     img.crossOrigin = "anonymous"; 
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
+      let width = img.width; let height = img.height;
       if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
       else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
       canvas.width = width; canvas.height = height;
@@ -39,28 +36,11 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
   });
 };
 
-export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo, handleGoBack }: any) {
+export default function TrayEdit({ tray, trays = [], setTrays, inventory, navigateTo, handleGoBack }: any) {
   
-  // FIX: Build a safe local date string so 8PM doesn't turn into Tomorrow UTC
-  const todayObj = new Date();
-  const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
-  const defaultTray: SeedlingTray = {
-    id: crypto.randomUUID(), 
-    name: `Tray ${Math.floor(Math.random() * 10000)}`,
-    sown_date: localToday,
-    cell_count: 72,
-    contents: [],
-    images: [],
-    notes: '',
-    humidity_dome: true,
-    grow_light: true,
-    potting_mix: '',
-    location: '',
-    season_id: ''
-  };
-
-  const [trayFormData, setTrayFormData] = useState<SeedlingTray>(tray || defaultTray);
+  // FIX 3: Prevent Next.js Hydration Crash by initializing state after mount
+  const [trayFormData, setTrayFormData] = useState<SeedlingTray | null>(null);
+  
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -70,14 +50,36 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
 
   useEffect(() => {
+    if (tray) {
+      setTrayFormData(tray);
+    } else {
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      setTrayFormData({
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+        name: `Tray ${Math.floor(Math.random() * 10000)}`,
+        sown_date: localToday,
+        cell_count: 72,
+        contents: [],
+        images: [],
+        notes: '',
+        humidity_dome: true,
+        grow_light: true,
+        potting_mix: '',
+        location: '',
+        season_id: ''
+      });
+    }
+
     const fetchSeasons = async () => {
       const { data } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
       if (data) setSeasons(data as Season[]);
     };
     fetchSeasons();
-  }, []);
+  }, [tray]);
 
   useEffect(() => {
+    if (!trayFormData) return;
     let isMounted = true;
     const loadUrls = async () => {
       try {
@@ -95,7 +97,11 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
     };
     loadUrls();
     return () => { isMounted = false; };
-  }, [trayFormData.images]);
+  }, [trayFormData?.images]);
+
+  if (!trayFormData) {
+    return <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-400">Loading editor...</div>;
+  }
 
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,7 +132,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
   const handleSaveEdit = async () => {
     setIsSaving(true);
-    
     try {
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
       const folderName = trayFormData.id; 
@@ -164,22 +169,20 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         if (error) throw new Error("Update Error: " + error.message);
       }
       
-      const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
-      setTrays(updatedTrays);
+      if (typeof setTrays === 'function') {
+        const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
+        setTrays(updatedTrays);
+      }
       navigateTo('trays', null, true);
       
-    } catch (e: any) { 
-      alert(e.message); 
-    } finally { 
-      setIsSaving(false); 
-    }
+    } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
   };
 
   const handleDeleteTray = async () => {
     if (confirm(`Are you sure you want to delete this tray?`)) {
       const { error } = await supabase.from('seedling_trays').delete().eq('id', trayFormData.id);
       if (!error) { 
-        setTrays(trays.filter((t: SeedlingTray) => t.id !== trayFormData.id)); 
+        if (typeof setTrays === 'function') setTrays(trays.filter((t: SeedlingTray) => t.id !== trayFormData.id)); 
         navigateTo('trays', null, true); 
       } else {
         alert("Failed to delete tray: " + error.message);
@@ -201,14 +204,7 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
           <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
               <div className="relative flex-1">
-                <input 
-                  type="text" 
-                  autoFocus 
-                  placeholder="Search 300+ seeds..." 
-                  value={seedSearchQuery} 
-                  onChange={e => setSeedSearchQuery(e.target.value)} 
-                  className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" 
-                />
+                <input type="text" autoFocus placeholder="Search 300+ seeds..." value={seedSearchQuery} onChange={e => setSeedSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" />
                 <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>
               <button onClick={() => { setSeedSearchRow(null); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors">
@@ -223,25 +219,19 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                 filteredInventory.map((s: InventorySeed) => (
                   <button 
                     key={s.id} 
-                    onClick={() => { 
-                      handleUpdateCellContent(seedSearchRow, 'seed_id', s.id); 
-                      setSeedSearchRow(null); 
-                      setSeedSearchQuery(""); 
-                    }} 
+                    onClick={() => { handleUpdateCellContent(seedSearchRow, 'seed_id', s.id); setSeedSearchRow(null); setSeedSearchQuery(""); }} 
                     className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-emerald-100"
                   >
                     <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 group-hover:border-emerald-300">
-                      {s.thumbnail ? (
-                        <img src={s.thumbnail} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-stone-300">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg>
-                        </div>
-                      )}
+                      {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-stone-800 text-sm truncate">{s.variety_name}</h4>
-                      <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate">{s.category}</p>
+                      {/* FIX 2: Added ID Badge to search results */}
+                      <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">
+                        {s.variety_name}
+                        <span className="text-[9px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">{s.id}</span>
+                      </h4>
+                      <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate mt-0.5">{s.category}</p>
                     </div>
                   </button>
                 ))
@@ -255,9 +245,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
         <div className="flex items-center gap-2">
           <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
             {trays.some((t: SeedlingTray) => t.id === tray?.id) ? 'Edit Tray' : 'New Tray'}
@@ -302,7 +289,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Setup</h3>
-          
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Tray Name</label>
@@ -313,26 +299,12 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               <input type="date" value={trayFormData.sown_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Cell Count</label>
               <div className="relative">
-                <input 
-                  type="number" 
-                  list="cell-counts"
-                  value={trayFormData.cell_count || ''} 
-                  onChange={(e) => setTrayFormData({ ...trayFormData, cell_count: Number(e.target.value) })} 
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm"
-                  placeholder="e.g., 72"
-                />
-                <datalist id="cell-counts">
-                  <option value={6} />
-                  <option value={50} />
-                  <option value={72} />
-                  <option value={128} />
-                  <option value={200} />
-                </datalist>
+                <input type="number" list="cell-counts" value={trayFormData.cell_count || ''} onChange={(e) => setTrayFormData({ ...trayFormData, cell_count: Number(e.target.value) })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" placeholder="e.g., 72" />
+                <datalist id="cell-counts"><option value={6} /><option value={50} /><option value={72} /><option value={128} /><option value={200} /></datalist>
                 <span className="absolute right-4 top-3.5 text-sm font-bold text-stone-400 pointer-events-none">Cells</span>
               </div>
             </div>
@@ -344,19 +316,13 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               </select>
             </div>
           </div>
-
           <div>
             <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Potting Mix / Soil</label>
             <input type="text" value={trayFormData.potting_mix || ''} onChange={(e) => setTrayFormData({ ...trayFormData, potting_mix: e.target.value })} placeholder="e.g., ProMix BX, Coco Coir..." className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
           </div>
-
           <div className="flex flex-wrap gap-2 pt-2">
-            <button onClick={() => setTrayFormData({...trayFormData, humidity_dome: !trayFormData.humidity_dome})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.humidity_dome ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>
-              Humidity Dome ON
-            </button>
-            <button onClick={() => setTrayFormData({...trayFormData, grow_light: !trayFormData. grow_light})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.grow_light ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>
-              Grow Lights ON
-            </button>
+            <button onClick={() => setTrayFormData({...trayFormData, humidity_dome: !trayFormData.humidity_dome})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.humidity_dome ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>Humidity Dome ON</button>
+            <button onClick={() => setTrayFormData({...trayFormData, grow_light: !trayFormData. grow_light})} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${trayFormData.grow_light ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}>Grow Lights ON</button>
           </div>
         </section>
 
@@ -377,22 +343,20 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
                 return (
                   <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
                     <div className="w-16">
-                      <input 
-                        type="number" 
-                        min="0"
-                        placeholder="Qty Sown" 
-                        value={content.sown_count ?? ''} 
-                        onChange={(e) => handleUpdateCellContent(idx, 'sown_count', Number(e.target.value))} 
-                        className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" 
-                        title="Number of seeds sown"
-                      />
+                      <input type="number" min="0" placeholder="Qty" value={content.sown_count ?? ''} onChange={(e) => handleUpdateCellContent(idx, 'sown_count', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" title="Number of seeds sown" />
                     </div>
                     <div className="flex-1">
+                      {/* FIX 2: Show Seed ID directly inside the selected row cell */}
                       <button 
                         onClick={() => setSeedSearchRow(idx)}
-                        className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2.5 text-xs font-bold outline-none hover:border-emerald-400 transition-colors shadow-sm ${content.seed_id ? 'text-stone-800' : 'text-stone-400'}`}
+                        className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none hover:border-emerald-400 transition-colors shadow-sm flex flex-col justify-center min-h-[42px] ${content.seed_id ? 'text-stone-800' : 'text-stone-400 font-bold'}`}
                       >
-                        {seedName || "Tap to search seeds..."}
+                        {seedName ? (
+                          <>
+                            <span className="font-bold truncate w-full block">{seedName}</span>
+                            <span className="text-[9px] font-mono text-stone-500 bg-stone-50 px-1 rounded mt-0.5 inline-block border border-stone-100">ID: {content.seed_id}</span>
+                          </>
+                        ) : "Tap to search seeds..."}
                       </button>
                     </div>
                     <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
@@ -405,7 +369,6 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Milestones & Notes</h3>
-          
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">1st Germination</label>
@@ -416,12 +379,10 @@ export default function TrayEdit({ tray, trays, setTrays, inventory, navigateTo,
               <input type="date" value={trayFormData.first_planted_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, first_planted_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
           </div>
-
           <div>
             <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Location</label>
             <input type="text" value={trayFormData.location || ''} onChange={(e) => setTrayFormData({ ...trayFormData, location: e.target.value })} placeholder="e.g., Garage Rack 2, Greenhouse..." className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
           </div>
-
           <div>
             <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">General Notes</label>
             <textarea value={trayFormData.notes || ''} onChange={(e) => setTrayFormData({ ...trayFormData, notes: e.target.value })} rows={4} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm resize-none outline-none focus:border-emerald-500" placeholder="Issues with damping off, watering schedule, etc..." />
