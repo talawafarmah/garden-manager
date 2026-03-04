@@ -109,6 +109,8 @@ export interface Season {
   name: string;
   status: 'Planning' | 'Active' | 'Archived';
   seedling_target_date?: string; // Updated name
+  last_pickup_date?: string;         
+  min_nursery_percentage?: number;
   created_at: string;
 }
 export interface WishlistSession {

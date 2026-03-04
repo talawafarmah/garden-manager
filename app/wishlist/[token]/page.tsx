@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
-import { InventorySeed, WishlistSession } from '../../../types';
+import { InventorySeed, WishlistSession, SeedCategory } from '../../../types';
 
 const getHeatProfile = (shu: number) => {
   if (shu === 0) return { label: 'Sweet', color: 'bg-green-500 text-white' };
@@ -14,14 +14,80 @@ const getHeatProfile = (shu: number) => {
   return { label: 'Extreme', color: 'bg-purple-900 text-white' };
 };
 
-const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls }: { seed: InventorySeed; isSelected: boolean; onClose: () => void; onToggle: (id: string) => void; signedUrls: Record<string, string>; }) => {
+const getSeedStatus = (seed: InventorySeed, season: any, categories: SeedCategory[], activeSeedIds: Set<string>) => {
+  if (!season?.seedling_target_date) return { canSelect: true, badge: null, modalWarning: null };
+
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  const targetDate = new Date(season.seedling_target_date + 'T12:00:00');
+  const lastPickupDate = season.last_pickup_date ? new Date(season.last_pickup_date + 'T12:00:00') : new Date(targetDate.getTime() + (14 * 24 * 60 * 60 * 1000)); 
+  
+  const daysToTarget = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const daysToLastPickup = Math.round((lastPickupDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  let maxGerm = 7;
+  if (seed.germination_days) {
+      const nums = seed.germination_days.match(/\d+/g);
+      if (nums) maxGerm = Math.max(...nums.map(Number));
+  }
+
+  let nurseryWeeks = 4;
+  if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) {
+      nurseryWeeks = seed.custom_nursery_weeks;
+  } else {
+      const cat = categories.find(c => c.name === seed.category);
+      if (cat && cat.default_nursery_weeks) nurseryWeeks = cat.default_nursery_weeks;
+  }
+
+  const shippingPenalty = seed.out_of_stock ? 14 : 0;
+  const totalNurseryDays = nurseryWeeks * 7;
+  const minPct = season.min_nursery_percentage ?? 25;
+  const minNurseryDays = totalNurseryDays * (minPct / 100);
+
+  const idealDaysRequired = shippingPenalty + maxGerm + totalNurseryDays;
+  const minDaysRequired = shippingPenalty + maxGerm + minNurseryDays;
+
+  if (minDaysRequired > daysToLastPickup) {
+      if (activeSeedIds.has(seed.id)) {
+          return {
+              canSelect: false,
+              badge: { text: 'Growing (Check at Pickup)', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+              modalWarning: "It's too late to start a new batch of these, but we are already growing some! They may be available at pickup."
+          };
+      } else {
+          return {
+              canSelect: false,
+              badge: { text: 'Too Late to Start', color: 'bg-red-100 text-red-800 border-red-200' },
+              modalWarning: "Given the germination and growing time required, it is unfortunately too late to start these from seed for this season."
+          };
+      }
+  } else if (idealDaysRequired > daysToTarget) {
+      return {
+          canSelect: true,
+          badge: { text: seed.out_of_stock ? 'Small at pickup (OOS)' : 'Smaller at pickup', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+          modalWarning: `Because of growing times${seed.out_of_stock ? ' and shipping delays' : ''}, this variety will be slightly smaller than usual at the target pickup date.`
+      };
+  } else if (seed.out_of_stock) {
+      return {
+          canSelect: true,
+          badge: { text: 'Needs Ordering', color: 'bg-stone-100 text-stone-600 border-stone-200' },
+          modalWarning: null
+      }
+  }
+
+  return { canSelect: true, badge: null, modalWarning: null };
+};
+
+const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls, status }: any) => {
   const [currentIdx, setCurrentIdx] = useState(0);
-  const rawImages = useMemo(() => { const imgs = (seed.images || []).filter(img => img && typeof img === 'string' && img.trim() !== ''); if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) { imgs.unshift(seed.thumbnail); } return imgs; }, [seed]);
+  const rawImages = useMemo(() => { const imgs = (seed.images || []).filter((img: string) => img && typeof img === 'string' && img.trim() !== ''); if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) { imgs.unshift(seed.thumbnail); } return imgs; }, [seed]);
   const showCarousel = rawImages.length > 1;
   const rawDisplayImage = rawImages.length > 0 ? rawImages[currentIdx] : null;
   const isPepper = seed.category.toLowerCase().includes('pepper');
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:')) ? rawDisplayImage : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
+  
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
 
   return (
@@ -30,12 +96,12 @@ const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls }: { seed: 
       <div className="relative bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-4 z-50 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-full flex items-center justify-center backdrop-blur-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
         <div className="aspect-[4/3] sm:aspect-[16/10] w-full bg-stone-100 relative shrink-0 group">
-          {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${seed.out_of_stock ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
+          {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${(!status.canSelect || seed.out_of_stock) ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
           {showCarousel && (
             <>
               <button onClick={() => setCurrentIdx((prev) => (prev - 1 + rawImages.length) % rawImages.length)} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all backdrop-blur-sm z-10"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
               <button onClick={() => setCurrentIdx((prev) => (prev + 1) % rawImages.length)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full transition-all backdrop-blur-sm z-10"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
-              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">{rawImages.map((_, i) => (<div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 shadow-sm ${i === currentIdx ? 'bg-white scale-110' : 'bg-white/50'}`} />))}</div>
+              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">{rawImages.map((_: any, i: number) => (<div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 shadow-sm ${i === currentIdx ? 'bg-white scale-110' : 'bg-white/50'}`} />))}</div>
             </>
           )}
           {seed.out_of_stock && <div className="absolute inset-x-0 bottom-0 bg-stone-900/80 text-stone-200 text-xs font-black uppercase tracking-widest text-center py-2 backdrop-blur-sm z-20">Currently Out of Stock</div>}
@@ -48,22 +114,37 @@ const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls }: { seed: 
           </div>
           <h2 className="text-2xl font-black text-stone-900 leading-tight mb-1">{seed.variety_name}</h2>
           <p className="text-sm font-medium text-stone-500 italic mb-6">{seed.species}</p>
+          
+          {status.modalWarning && (
+            <div className={`p-4 rounded-xl mb-4 border text-sm flex gap-3 ${!status.canSelect ? 'bg-red-50 text-red-800 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+              <span className="text-xl">⚠️</span>
+              <p>{status.modalWarning}</p>
+            </div>
+          )}
+
           <div>
             <h3 className="text-xs font-black uppercase tracking-widest text-stone-400 mb-2">Notes</h3>
             {seed.notes ? <p className="text-sm text-stone-700 leading-relaxed bg-stone-50 p-4 rounded-2xl border border-stone-100">{seed.notes}</p> : <p className="text-sm text-stone-400 italic">No additional notes available for this variety.</p>}
           </div>
         </div>
         <div className="p-4 border-t border-stone-100 bg-stone-50 shrink-0">
-          <button onClick={() => onToggle(seed.id)} className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isSelected ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500'}`}>
-            {isSelected ? <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Remove from List</> : <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>Add to Wishlist</>}
-          </button>
+          {!status.canSelect ? (
+            <button disabled className="w-full py-4 rounded-2xl font-black uppercase tracking-widest bg-stone-200 text-stone-500 border border-stone-300 flex items-center justify-center gap-2 cursor-not-allowed">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              Unavailable
+            </button>
+          ) : (
+            <button onClick={() => onToggle(seed.id)} className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isSelected ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500'}`}>
+              {isSelected ? <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Remove from List</> : <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>Add to Wishlist</>}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const SeedCard = ({ seed, isSelected, onToggle, onView, signedUrls }: { seed: InventorySeed; isSelected: boolean; onToggle: (id: string) => void; onView: (seed: InventorySeed) => void; signedUrls: Record<string, string>; }) => {
+const SeedCard = ({ seed, isSelected, onToggle, onView, signedUrls, status }: any) => {
   const rawDisplayImage = seed.thumbnail || (seed.images && seed.images.length > 0 ? seed.images[0] : null);
   const isOutOfStock = seed.out_of_stock;
   const isPepper = seed.category.toLowerCase().includes('pepper');
@@ -71,13 +152,17 @@ const SeedCard = ({ seed, isSelected, onToggle, onView, signedUrls }: { seed: In
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:')) ? rawDisplayImage : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
 
   return (
-    <div onClick={() => onView(seed)} className={`group relative bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm transition-all duration-200 cursor-pointer flex flex-col h-full border-2 ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-md z-10' : 'border-transparent hover:border-emerald-200 hover:shadow-md'}`}>
-      <button onClick={(e) => { e.stopPropagation(); onToggle(seed.id); }} className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-30 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm border-2 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white scale-100' : 'bg-white/90 backdrop-blur-sm border-stone-200 text-stone-400 hover:border-emerald-400 hover:text-emerald-500 scale-95 hover:scale-105'}`} aria-label="Select Seed">
-        {isSelected ? <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg> : <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>}
-      </button>
+    <div onClick={() => onView(seed)} className={`group relative bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm transition-all duration-200 cursor-pointer flex flex-col h-full border-2 ${isSelected ? 'border-emerald-500 shadow-emerald-500/20 shadow-md z-10' : 'border-transparent hover:border-emerald-200 hover:shadow-md'} ${!status.canSelect ? 'opacity-75' : ''}`}>
+      {status.canSelect && (
+        <button onClick={(e) => { e.stopPropagation(); onToggle(seed.id); }} className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-30 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm border-2 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white scale-100' : 'bg-white/90 backdrop-blur-sm border-stone-200 text-stone-400 hover:border-emerald-400 hover:text-emerald-500 scale-95 hover:scale-105'}`} aria-label="Select Seed">
+          {isSelected ? <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg> : <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>}
+        </button>
+      )}
+      
       {isOutOfStock && <div className="absolute top-1.5 left-1.5 bg-stone-900/90 text-stone-200 text-[6px] sm:text-[9px] font-black uppercase tracking-widest px-1 sm:px-2 py-0.5 sm:py-1 rounded shadow-sm z-20 pointer-events-none">Out of Stock</div>}
+      
       <div className="aspect-[4/3] w-full bg-stone-200 relative overflow-hidden border-b border-stone-100">
-        {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} loading="lazy" className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${isOutOfStock ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-400"><svg className="w-6 h-6 sm:w-12 sm:h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
+        {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} loading="lazy" className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${(!status.canSelect || isOutOfStock) ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-400"><svg className="w-6 h-6 sm:w-12 sm:h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
         <div className="absolute inset-0 bg-gradient-to-t from-stone-900/90 via-stone-900/10 to-transparent opacity-80 z-0 pointer-events-none" />
         <div className="absolute bottom-1.5 left-1.5 flex flex-wrap gap-1 z-10 pr-1 pointer-events-none">
           <span className="bg-emerald-600 text-white text-[6px] sm:text-[9px] font-black uppercase px-1 sm:px-1.5 py-0.5 rounded-sm shadow-sm leading-none flex items-center">{seed.category}</span>
@@ -87,7 +172,12 @@ const SeedCard = ({ seed, isSelected, onToggle, onView, signedUrls }: { seed: In
       </div>
       <div className="p-1.5 sm:p-3 flex flex-col flex-1 pointer-events-none">
         <h3 className="font-black text-[11px] sm:text-base text-stone-800 leading-tight sm:mb-0.5 line-clamp-2 sm:line-clamp-1">{seed.variety_name}</h3>
-        {seed.species && <p className="text-stone-400 text-[8px] sm:text-[10px] italic mb-1 sm:mb-1.5 truncate">{seed.species}</p>}
+        {status.badge && (
+          <span className={`inline-block mt-1 text-[8px] sm:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border shadow-sm w-fit ${status.badge.color}`}>
+            {status.badge.text}
+          </span>
+        )}
+        {!status.badge && seed.species && <p className="text-stone-400 text-[8px] sm:text-[10px] italic mt-0.5 truncate">{seed.species}</p>}
       </div>
     </div>
   );
@@ -100,6 +190,8 @@ export default function WishlistCatalog() {
   const [session, setSession] = useState<any>(null);
   const [seasonName, setSeasonName] = useState("");
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
+  const [categories, setCategories] = useState<SeedCategory[]>([]);
+  const [activeGrowingIds, setActiveGrowingIds] = useState<Set<string>>(new Set());
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({}); 
   
   const [selectedSeedIds, setSelectedSeedIds] = useState<string[]>([]);
@@ -123,7 +215,7 @@ export default function WishlistCatalog() {
       try {
         const { data: sessionData, error: sessionError } = await supabase
           .from('wishlist_sessions')
-          .select('*, seasons(name, status, seedling_target_date)')
+          .select('*, seasons(name, status, seedling_target_date, last_pickup_date, min_nursery_percentage)')
           .eq('id', token)
           .single();
 
@@ -139,9 +231,20 @@ export default function WishlistCatalog() {
         setSession(sessionData);
         setSeasonName(sessionData.seasons?.name || "the upcoming season");
 
-        const { data: seedData, error: seedError } = await supabase.from('seed_inventory').select('*');
-        if (seedError) throw seedError;
-        setSeeds(seedData as InventorySeed[]);
+        const [ { data: seedData }, { data: catData }, { data: growData }, { data: seedlingData } ] = await Promise.all([
+           supabase.from('seed_inventory').select('*'),
+           supabase.from('seed_categories').select('*'),
+           supabase.from('grow_plan').select('seed_id').eq('season_id', sessionData.season_id),
+           supabase.from('season_seedlings').select('seed_id').eq('season_id', sessionData.season_id).gt('qty_growing', 0)
+        ]);
+
+        if (seedData) setSeeds(seedData as InventorySeed[]);
+        if (catData) setCategories(catData as SeedCategory[]);
+
+        const growingSet = new Set<string>();
+        growData?.forEach(g => growingSet.add(g.seed_id));
+        seedlingData?.forEach(s => growingSet.add(s.seed_id));
+        setActiveGrowingIds(growingSet);
 
         const { data: existingSelections } = await supabase.from('wishlist_selections').select('*').eq('session_id', sessionData.id);
         if (existingSelections && existingSelections.length > 0) {
@@ -239,7 +342,6 @@ export default function WishlistCatalog() {
           <h1 className="text-2xl font-black text-stone-800 mb-3">Wishlist Submitted!</h1>
           <p className="text-stone-500 text-sm mb-6">
             Thank you, {session.list_name}! Your garden requests for {seasonName} have been recorded. 
-            {/* FIX: Render safe Noon Date */}
             {session.seasons?.seedling_target_date && ` Your seedlings should be ready around ${new Date(session.seasons.seedling_target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric'})}.`}
           </p>
           <button onClick={() => setIsSuccess(false)} className="px-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 active:scale-95 transition-all shadow-sm">Make Changes</button>
@@ -250,7 +352,7 @@ export default function WishlistCatalog() {
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
-      {viewedSeed && <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} />}
+      {viewedSeed && <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} status={getSeedStatus(viewedSeed, session.seasons, categories, activeGrowingIds)} />}
 
       <header className="bg-emerald-800 text-white pt-10 pb-20 px-4 sm:px-6 rounded-b-[2rem] sm:rounded-b-[3rem] shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
@@ -262,14 +364,12 @@ export default function WishlistCatalog() {
             {session.expires_at && (
               <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                {/* Note: session.expires_at is already a full ISO timestamp, so new Date() is safe here! */}
                 <span>Access expires: <strong>{new Date(session.expires_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
               </div>
             )}
             {session.seasons?.seedling_target_date && (
               <div className="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-700/50">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                {/* FIX: Safe Noon Date string for Target Availability */}
                 <span>Target Availability: <strong>{new Date(session.seasons.seedling_target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong></span>
               </div>
             )}
@@ -313,7 +413,7 @@ export default function WishlistCatalog() {
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-4">
             {filteredAndSortedSeeds.map((seed) => (
-              <SeedCard key={seed.id} seed={seed} isSelected={selectedSeedIds.includes(seed.id)} onToggle={toggleSeedSelection} onView={setViewedSeed} signedUrls={signedUrls} />
+              <SeedCard key={seed.id} seed={seed} isSelected={selectedSeedIds.includes(seed.id)} onToggle={toggleSeedSelection} onView={setViewedSeed} signedUrls={signedUrls} status={getSeedStatus(seed, session.seasons, categories, activeGrowingIds)} />
             ))}
           </div>
         )}

@@ -15,6 +15,9 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
   
   const [newSeasonName, setNewSeasonName] = useState("");
   const [newSeasonTargetDate, setNewSeasonTargetDate] = useState(""); 
+  const [newLastPickupDate, setNewLastPickupDate] = useState(""); 
+  const [newMinNurseryPct, setNewMinNurseryPct] = useState<number>(25);
+
   const [newListName, setNewListName] = useState("");
   const [newExpiryDate, setNewExpiryDate] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +26,8 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
   const [editSeasonName, setEditSeasonName] = useState("");
   const [editSeasonStatus, setEditSeasonStatus] = useState<'Planning' | 'Active' | 'Archived'>('Planning');
   const [editSeasonTargetDate, setEditSeasonTargetDate] = useState(""); 
+  const [editLastPickupDate, setEditLastPickupDate] = useState("");
+  const [editMinNurseryPct, setEditMinNurseryPct] = useState<number>(25);
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editSessionName, setEditSessionName] = useState("");
@@ -56,7 +61,9 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     const payload = { 
       name: newSeasonName.trim(), 
       status: 'Planning', 
-      seedling_target_date: newSeasonTargetDate || null 
+      seedling_target_date: newSeasonTargetDate || null,
+      last_pickup_date: newLastPickupDate || null,
+      min_nursery_percentage: newMinNurseryPct
     };
     const { data, error } = await supabase.from('seasons').insert([payload]).select().single();
     if (!error && data) { 
@@ -64,6 +71,8 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
       setActiveSeasonId(data.id); 
       setNewSeasonName(""); 
       setNewSeasonTargetDate("");
+      setNewLastPickupDate("");
+      setNewMinNurseryPct(25);
     }
   };
 
@@ -81,6 +90,8 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
       setEditSeasonName(s.name); 
       setEditSeasonStatus(s.status); 
       setEditSeasonTargetDate(s.seedling_target_date || "");
+      setEditLastPickupDate(s.last_pickup_date || "");
+      setEditMinNurseryPct(s.min_nursery_percentage ?? 25);
       setEditingSeason(true); 
     }
   };
@@ -90,7 +101,9 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
     const payload = { 
       name: editSeasonName.trim(), 
       status: editSeasonStatus, 
-      seedling_target_date: editSeasonTargetDate || null 
+      seedling_target_date: editSeasonTargetDate || null,
+      last_pickup_date: editLastPickupDate || null,
+      min_nursery_percentage: editMinNurseryPct
     };
     const { error } = await supabase.from('seasons').update(payload).eq('id', activeSeasonId);
     if (!error) { 
@@ -153,12 +166,28 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
           {editingSeason ? (
             <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 mb-6 space-y-3 animate-in fade-in">
                <input type="text" value={editSeasonName} onChange={e => setEditSeasonName(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500" />
-               <div className="flex gap-2">
-                 <select value={editSeasonStatus} onChange={e => setEditSeasonStatus(e.target.value as any)} className="flex-1 bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 appearance-none">
-                   <option value="Planning">Planning</option><option value="Active">Active</option><option value="Archived">Archived</option>
-                 </select>
-                 <input type="date" value={editSeasonTargetDate} onChange={e => setEditSeasonTargetDate(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 text-stone-600" title="Target Availability Date" />
+               <select value={editSeasonStatus} onChange={e => setEditSeasonStatus(e.target.value as any)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 appearance-none">
+                 <option value="Planning">Planning</option><option value="Active">Active</option><option value="Archived">Archived</option>
+               </select>
+               
+               <div className="grid grid-cols-2 gap-2 p-2 bg-stone-100 rounded-xl border border-stone-200">
+                 <div>
+                   <label className="block text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-1">Target Date</label>
+                   <input type="date" value={editSeasonTargetDate} onChange={e => setEditSeasonTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none focus:border-emerald-500" />
+                 </div>
+                 <div>
+                   <label className="block text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-1">Last Pickup</label>
+                   <input type="date" value={editLastPickupDate} onChange={e => setEditLastPickupDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none focus:border-emerald-500" />
+                 </div>
+                 <div className="col-span-2 mt-1">
+                   <label className="block text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-1">Min. Nursery % Required</label>
+                   <div className="flex items-center gap-2">
+                     <input type="range" min="0" max="100" step="5" value={editMinNurseryPct} onChange={e => setEditMinNurseryPct(Number(e.target.value))} className="flex-1" />
+                     <span className="text-xs font-bold text-stone-600 w-8">{editMinNurseryPct}%</span>
+                   </div>
+                 </div>
                </div>
+
                <div className="flex gap-2 pt-2">
                  <button onClick={saveSeasonEdit} className="flex-1 bg-emerald-600 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform">Save</button>
                  <button onClick={() => setEditingSeason(false)} className="flex-1 bg-stone-200 text-stone-700 font-bold py-3 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform">Cancel</button>
@@ -167,7 +196,6 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
             </div>
           ) : (
             <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 mb-6 appearance-none">
-              {/* FIX: Use safe local T12 parse for dropdown view */}
               {seasons.map(s => <option key={s.id} value={s.id}>{s.name} ({s.status}) {s.seedling_target_date ? `• Target: ${new Date(s.seedling_target_date + 'T12:00:00').toLocaleDateString()}` : ''}</option>)}
             </select>
           )}
@@ -175,11 +203,18 @@ export default function AdminSeasons({ handleGoBack, userRole }: Props) {
           <div className="border-t border-stone-100 pt-4">
             <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 ml-1">Create New Season</label>
             <form onSubmit={handleCreateSeason} className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input type="text" placeholder="e.g. Spring 2026" value={newSeasonName} onChange={e => setNewSeasonName(e.target.value)} className="flex-[2] bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500" />
-                <input type="date" value={newSeasonTargetDate} onChange={e => setNewSeasonTargetDate(e.target.value)} className="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 text-stone-500" title="Target Availability Date" />
+              <input type="text" placeholder="Season Name (e.g. Spring 2026)" value={newSeasonName} onChange={e => setNewSeasonName(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[9px] font-bold uppercase text-stone-400 mb-1 ml-1">Target Date</label>
+                  <input type="date" value={newSeasonTargetDate} onChange={e => setNewSeasonTargetDate(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 text-stone-600" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold uppercase text-stone-400 mb-1 ml-1">Last Pickup</label>
+                  <input type="date" value={newLastPickupDate} onChange={e => setNewLastPickupDate(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 text-stone-600" />
+                </div>
               </div>
-              <button type="submit" disabled={!newSeasonName.trim()} className="w-full bg-stone-800 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-700 active:scale-95 transition-all disabled:opacity-50">Add Season</button>
+              <button type="submit" disabled={!newSeasonName.trim()} className="w-full bg-stone-800 text-white py-3 mt-1 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-stone-700 active:scale-95 transition-all disabled:opacity-50">Add Season</button>
             </form>
           </div>
         </section>
