@@ -45,6 +45,9 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   
+  // NEW: State to hold raw data so we can filter instantly without network calls
+  const [seasonData, setSeasonData] = useState<{sessions: any[], selections: any[], ledgers: any[], plans: any[]} | null>(null);
+  
   const [aggregatedDemand, setAggregatedDemand] = useState<DemandItem[]>([]);
   const [customRequests, setCustomRequests] = useState<CustomRequest[]>([]);
   
@@ -52,6 +55,10 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   const [showDrafts, setShowDrafts] = useState(false);
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
+
+  // NEW: Filtering State
+  const [availableLists, setAvailableLists] = useState<{id: string, name: string, isSubmitted: boolean}[]>([]);
+  const [activeListId, setActiveListId] = useState<string>('ALL');
 
   // Scheduling Modal State
   const [activeModal, setActiveModal] = useState<'PLAN_SEED' | null>(null);
@@ -67,8 +74,9 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
       if (data) { 
         setSeasons(data as Season[]); 
         if (data.length > 0 && !activeSeasonId) {
-          const active = data.find(s => s.status === 'Active');
-          setActiveSeasonId(active ? active.id : data[0].id);
+          const active = data.find(s => s.status === 'Active') || data[0];
+          setActiveSeasonId(active.id);
+          if (active.seedling_target_date) setGlobalTargetDate(active.seedling_target_date);
         }
       }
       setIsLoading(false);
@@ -76,92 +84,117 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     fetchSeasons();
   }, []);
 
+  // Fetch all raw data for the season ONCE
   useEffect(() => {
-    const fetchDemandData = async () => {
+    const fetchRawData = async () => {
       if (!activeSeasonId) return;
       setIsLoading(true);
 
       try {
-        const { data: sessions, error: sessionsErr } = await supabase.from('wishlist_sessions').select('id, list_name, submitted_at').eq('season_id', activeSeasonId);
-        if (sessionsErr) throw sessionsErr;
+        const { data: sessions } = await supabase.from('wishlist_sessions').select('id, list_name, submitted_at').eq('season_id', activeSeasonId);
         
         if (!sessions || sessions.length === 0) {
-           setAggregatedDemand([]); setCustomRequests([]); setCounts({ submitted: 0, drafts: 0 }); setIsLoading(false); return;
+           setSeasonData({ sessions: [], selections: [], ledgers: [], plans: [] });
+           setIsLoading(false); return;
         }
 
-        const sessionMap = new Map(sessions.map(s => [s.id, { name: s.list_name, isSubmitted: !!s.submitted_at }]));
-        const validSessionIds = sessions.filter(s => showDrafts || s.submitted_at).map(s => s.id);
-        
-        setCounts({
-          submitted: sessions.filter(s => s.submitted_at).length,
-          drafts: sessions.filter(s => !s.submitted_at).length
-        });
-
-        if (validSessionIds.length === 0) {
-           setAggregatedDemand([]); setCustomRequests([]); setIsLoading(false); return;
-        }
-
-        const { data: selections, error: selectionsErr } = await supabase.from('wishlist_selections').select('*, seed:seed_inventory(*)').in('session_id', validSessionIds);
-        if (selectionsErr) throw selectionsErr;
-
-        const [{ data: ledgers }, { data: growPlans }] = await Promise.all([
+        const sessionIds = sessions.map(s => s.id);
+        const [ { data: selections }, { data: ledgers }, { data: plans } ] = await Promise.all([
+          supabase.from('wishlist_selections').select('*, seed:seed_inventory(*)').in('session_id', sessionIds),
           supabase.from('season_seedlings').select('*').eq('season_id', activeSeasonId),
           supabase.from('grow_plan').select('*').eq('season_id', activeSeasonId)
         ]);
-        
-        const ledgerMap = new Map();
-        if (ledgers) ledgers.forEach(l => ledgerMap.set(l.seed_id, l));
 
-        const planMap = new Map();
-        if (growPlans) growPlans.forEach(p => planMap.set(p.seed_id, p));
-
-        const demandMap = new Map<string, DemandItem>();
-        const customReqs: CustomRequest[] = [];
-
-        (selections || []).forEach((sel: any) => {
-          const sessionInfo = sessionMap.get(sel.session_id) || { name: 'Unknown', isSubmitted: false };
-          const requesterName = sessionInfo.isSubmitted ? sessionInfo.name : `${sessionInfo.name} (Draft)`;
-
-          if (sel.seed_id && sel.seed) {
-            if (demandMap.has(sel.seed_id)) {
-              const existing = demandMap.get(sel.seed_id)!;
-              existing.count += 1;
-              if (!existing.requesters.includes(requesterName)) existing.requesters.push(requesterName);
-            } else {
-              let seedLedger;
-              if (ledgerMap.has(sel.seed_id)) {
-                const l = ledgerMap.get(sel.seed_id);
-                seedLedger = { growing: l.qty_growing, keep: l.allocate_keep, reserve: l.allocate_reserve, available: Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve) };
-              }
-              
-              let seedPlan;
-              if (planMap.has(sel.seed_id)) {
-                const p = planMap.get(sel.seed_id);
-                seedPlan = { id: p.id, planned_qty: p.planned_qty, indoor_start_date: p.indoor_start_date };
-              }
-
-              demandMap.set(sel.seed_id, { 
-                seed: sel.seed as InventorySeed, 
-                count: 1, 
-                requesters: [requesterName], 
-                ledger: seedLedger,
-                plan: seedPlan
-              });
-            }
-          } else if (sel.custom_request) {
-            customReqs.push({ id: sel.id, requester: requesterName, request: sel.custom_request, created_at: sel.created_at });
-          }
+        setSeasonData({
+          sessions: sessions || [],
+          selections: selections || [],
+          ledgers: ledgers || [],
+          plans: plans || []
         });
-
-        setAggregatedDemand(Array.from(demandMap.values()).sort((a, b) => b.count - a.count));
-        setCustomRequests(customReqs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
 
       } catch (err) { console.error("Failed to load demand data:", err); } 
       finally { setIsLoading(false); }
     };
 
-    fetchDemandData();
-  }, [activeSeasonId, showDrafts]);
+    fetchRawData();
+  }, [activeSeasonId]);
+
+  // Aggregate data locally whenever filters change
+  useEffect(() => {
+    if (!seasonData) return;
+
+    const { sessions, selections, ledgers, plans } = seasonData;
+
+    // 1. Setup the Dropdown Lists
+    const lists = sessions
+       .filter(s => showDrafts || s.submitted_at)
+       .map(s => ({ id: s.id, name: s.list_name, isSubmitted: !!s.submitted_at }))
+       .sort((a, b) => a.name.localeCompare(b.name));
+    
+    setAvailableLists(lists);
+
+    // Reset filter if the currently selected list becomes hidden (e.g. drafts turned off)
+    const effectiveListId = (activeListId !== 'ALL' && lists.find(l => l.id === activeListId)) ? activeListId : 'ALL';
+    if (effectiveListId !== activeListId) setActiveListId('ALL');
+
+    // 2. Tally global counts
+    setCounts({
+      submitted: sessions.filter(s => s.submitted_at).length,
+      drafts: sessions.filter(s => !s.submitted_at).length
+    });
+
+    // 3. Determine which sessions to aggregate
+    const validSessionIds = sessions
+      .filter(s => showDrafts || s.submitted_at)
+      .filter(s => effectiveListId === 'ALL' || s.id === effectiveListId)
+      .map(s => s.id);
+
+    if (validSessionIds.length === 0) {
+      setAggregatedDemand([]);
+      setCustomRequests([]);
+      return;
+    }
+
+    // 4. Build Lookups
+    const sessionMap = new Map(sessions.map(s => [s.id, { name: s.list_name, isSubmitted: !!s.submitted_at }]));
+    const ledgerMap = new Map(ledgers.map(l => [l.seed_id, l]));
+    const planMap = new Map(plans.map(p => [p.seed_id, p]));
+
+    const demandMap = new Map<string, DemandItem>();
+    const customReqs: CustomRequest[] = [];
+
+    // 5. Aggregate selections
+    selections.filter(sel => validSessionIds.includes(sel.session_id)).forEach(sel => {
+      const sessionInfo = sessionMap.get(sel.session_id) || { name: 'Unknown', isSubmitted: false };
+      const requesterName = sessionInfo.isSubmitted ? sessionInfo.name : `${sessionInfo.name} (Draft)`;
+
+      if (sel.seed_id && sel.seed) {
+        if (demandMap.has(sel.seed_id)) {
+          const existing = demandMap.get(sel.seed_id)!;
+          existing.count += 1;
+          if (!existing.requesters.includes(requesterName)) existing.requesters.push(requesterName);
+        } else {
+          let seedLedger;
+          if (ledgerMap.has(sel.seed_id)) {
+            const l = ledgerMap.get(sel.seed_id);
+            seedLedger = { growing: l.qty_growing, keep: l.allocate_keep, reserve: l.allocate_reserve, available: Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve) };
+          }
+          let seedPlan;
+          if (planMap.has(sel.seed_id)) {
+            const p = planMap.get(sel.seed_id);
+            seedPlan = { id: p.id, planned_qty: p.planned_qty, indoor_start_date: p.indoor_start_date };
+          }
+          demandMap.set(sel.seed_id, { seed: sel.seed as InventorySeed, count: 1, requesters: [requesterName], ledger: seedLedger, plan: seedPlan });
+        }
+      } else if (sel.custom_request) {
+        customReqs.push({ id: sel.id, requester: requesterName, request: sel.custom_request, created_at: sel.created_at });
+      }
+    });
+
+    setAggregatedDemand(Array.from(demandMap.values()).sort((a, b) => b.count - a.count));
+    setCustomRequests(customReqs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+
+  }, [seasonData, showDrafts, activeListId]);
 
   const handleQuickAdd = async (item: DemandItem) => {
     if (!activeSeasonId) return;
@@ -179,11 +212,8 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
-      setAggregatedDemand(aggregatedDemand.map(d => 
-        d.seed.id === item.seed.id 
-          ? { ...d, plan: { id: data.id, planned_qty: item.count, indoor_start_date: startDate } } 
-          : d
-      ));
+      // Update local seasonData so it triggers a re-render seamlessly
+      setSeasonData(prev => prev ? { ...prev, plans: [...prev.plans, { id: data.id, seed_id: item.seed.id, planned_qty: item.count, indoor_start_date: startDate }] } : prev);
     } else {
       alert("Error saving plan: " + error?.message);
     }
@@ -204,7 +234,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
-      setAggregatedDemand(aggregatedDemand.map(d => d.seed.id === editingItem.seed.id ? { ...d, plan: { id: data.id, planned_qty: formQty, indoor_start_date: startDate } } : d));
+      setSeasonData(prev => prev ? { ...prev, plans: [...prev.plans, { id: data.id, seed_id: editingItem.seed.id, planned_qty: formQty, indoor_start_date: startDate }] } : prev);
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
   };
@@ -215,22 +245,24 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <h1 className="text-xl font-bold">Demand Planner</h1>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto p-4 space-y-6 mt-4">
         
-        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4 max-w-4xl mx-auto">
-          <div className="flex items-center gap-4 flex-1">
-            <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl hidden sm:block">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            </div>
+        {/* Responsive Control Panel */}
+        <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4 max-w-5xl mx-auto">
+          
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl hidden sm:block"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
             <div className="flex-1 relative">
-              <select value={activeSeasonId || ''} onChange={(e) => setActiveSeasonId(e.target.value)} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6">
+              <select value={activeSeasonId || ''} onChange={(e) => {
+                setActiveSeasonId(e.target.value);
+                const s = seasons.find(x => x.id === e.target.value);
+                if (s?.seedling_target_date) setGlobalTargetDate(s.seedling_target_date);
+              }} className="w-full bg-transparent text-lg font-black text-stone-800 outline-none cursor-pointer appearance-none pr-6 truncate">
                 {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               <svg className="w-4 h-4 text-stone-400 absolute right-0 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -238,14 +270,26 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
             </div>
           </div>
           
-          <div className="flex items-center gap-3 px-1 md:px-4 md:border-l border-stone-100">
-            <div>
-              <h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Target Frost</h2>
-            </div>
+          <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
+            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Seedling Target</h2></div>
             <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
           </div>
 
-          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 md:pl-4 md:border-l border-stone-100">
+          {/* NEW: Dropdown Filter for Specific Lists */}
+          <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
+            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest hidden lg:block">Filter</h2></div>
+            <div className="relative w-full sm:w-48">
+              <select value={activeListId} onChange={e => setActiveListId(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner appearance-none pr-8">
+                <option value="ALL">-- All Lists --</option>
+                {availableLists.map(l => (
+                  <option key={l.id} value={l.id}>{l.name} {!l.isSubmitted ? '(Draft)' : ''}</option>
+                ))}
+              </select>
+              <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 lg:pl-4 lg:border-l border-stone-100">
             <span className="text-xs font-bold text-stone-500">Show drafts?</span>
             <button onClick={() => setShowDrafts(!showDrafts)} className={`w-10 h-5 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
               <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-transform ${showDrafts ? 'translate-x-[22px]' : 'translate-x-1'}`} />
@@ -259,11 +303,11 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
           <>
             <section className="space-y-3">
               <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 ml-1 border-b border-stone-200 pb-2 flex justify-between items-end">
-                <span>All Requested Varieties</span>
+                <span>{activeListId === 'ALL' ? 'All Requested Varieties' : 'List Details'}</span>
                 <button onClick={() => navigateTo('grow_planner')} className="text-emerald-600 flex items-center gap-1 hover:text-emerald-700 transition-colors bg-emerald-50 px-2 py-1 rounded">View Calendar <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
               </h2>
               {aggregatedDemand.length === 0 ? (
-                <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds requested for this season yet.</p></div>
+                <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds found for the current filters.</p></div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {aggregatedDemand.map((item) => (
@@ -279,7 +323,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                             {item.seed.out_of_stock && <span className="bg-red-100 text-red-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest flex-shrink-0">OOS</span>}
                           </div>
                           <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{item.seed.category}</p>
-                          
                           <div className="mt-1.5 flex flex-wrap gap-1 border-t border-stone-100 pt-1.5">
                             {item.requesters.map((req, i) => (
                               <span key={i} className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md border ${req.includes('(Draft)') ? 'bg-stone-50 text-stone-400 border-stone-200 border-dashed' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{req}</span>
@@ -303,17 +346,11 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
                         <div className="flex gap-1 justify-end self-end sm:self-auto w-full sm:w-auto">
                           {item.plan ? (
-                             <span className="w-full sm:w-auto justify-center bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 shadow-sm">
-                               🗓️ Planned: {item.plan.planned_qty}
-                             </span>
+                             <span className="w-full sm:w-auto justify-center bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 shadow-sm">🗓️ Planned: {item.plan.planned_qty}</span>
                           ) : (
                              <>
-                               <button onClick={() => openPlanModal(item)} className="flex-1 sm:flex-none justify-center bg-stone-100 text-stone-600 hover:bg-stone-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded transition-colors border border-transparent flex items-center gap-1">
-                                 Edit
-                               </button>
-                               <button onClick={() => handleQuickAdd(item)} className="flex-1 sm:flex-none justify-center bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 hover:bg-emerald-500 active:scale-95 transition-transform shadow-sm">
-                                 ⚡ Quick
-                               </button>
+                               <button onClick={() => openPlanModal(item)} className="flex-1 sm:flex-none justify-center bg-stone-100 text-stone-600 hover:bg-stone-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded transition-colors border border-transparent flex items-center gap-1">Edit</button>
+                               <button onClick={() => handleQuickAdd(item)} className="flex-1 sm:flex-none justify-center bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 hover:bg-emerald-500 active:scale-95 transition-transform shadow-sm">⚡ Quick</button>
                              </>
                           )}
                         </div>
@@ -364,7 +401,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                  </div>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seedling Target Date</label>
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
