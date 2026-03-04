@@ -33,13 +33,16 @@ export default function RootLayout({
 export const metadata: Metadata = {
   title: 'Mi Deh Yah Farms',
   description: 'Select your seeds for the upcoming season! Browse our seed vault and build your custom garden wishlist.',
-  
+  icons: {
+      icon: '/my-square-icon.jpg', // Point this to the file in your public folder
+    },
   // These are the "Open Graph" tags that iMessage, WhatsApp, and Facebook use
   openGraph: {
     title: 'Mi Deh Yah Farms | Seed Wishlist',
     description: 'Select your seeds for the upcoming season! Browse our seed vault and build your custom garden wishlist.',
     url: 'https://garden-manager-git-main-talawafarmah-6352s-projects.vercel.app', // Replace with your actual deployed URL
     siteName: 'Mi Deh Yah Farms',
+    
     images: [
       {
         url: '/og-image.jpg', // This points to the image you put in the public folder
