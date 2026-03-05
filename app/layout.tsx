@@ -33,6 +33,12 @@ export default function RootLayout({
 export const metadata: Metadata = {
   title: 'Mi Deh Yah Farms',
   description: 'Select your seeds for the upcoming season! Browse our seed vault and build your custom garden wishlist.',
+  manifest: '/manifest.json', 
+  appleWebApp: {              
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Garden',
+  },
   icons: {
       icon: '/my-square-icon.jpg', // Point this to the file in your public folder
     },
