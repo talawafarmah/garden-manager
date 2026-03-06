@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SeasonSeedling, Season, AppView, SeedlingJournalEntry } from '../types';
+import { SeasonSeedling, Season, AppView, SeedlingJournalEntry, InventorySeed } from '../types';
 
 export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: any) {
   const [ledgers, setLedgers] = useState<SeasonSeedling[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [inventory, setInventory] = useState<InventorySeed[]>([]);
   const [activeSeason, setActiveSeason] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals
   const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'LOCATIONS' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
+
+  // Direct Add Seedlings State (No Tray)
+  const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
+  const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
+  const [isSubmittingDirectAdd, setIsSubmittingDirectAdd] = useState(false);
+  const [showSeedSearch, setShowSeedSearch] = useState(false);
+  const [seedSearchQuery, setSeedSearchQuery] = useState("");
 
   // Double-Entry Event Form State
   const [eventType, setEventType] = useState<'qty_planted' | 'qty_gifted' | 'qty_sold' | 'qty_dead'>('qty_planted');
@@ -25,15 +33,26 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   // Journal State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
-  const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL'); // NEW: Filter state
+  const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL');
 
   useEffect(() => {
-    fetchSeasonsAndLedgers();
+    fetchBaseData();
   }, []);
 
-  const fetchSeasonsAndLedgers = async () => {
+  // Sync the direct add form's season when the active season dropdown changes
+  useEffect(() => {
+    setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason }));
+  }, [activeSeason]);
+
+  const fetchBaseData = async () => {
     setIsLoading(true);
-    const { data: seasonData } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
+    const [ { data: seasonData }, { data: invData } ] = await Promise.all([
+      supabase.from('seasons').select('*').order('created_at', { ascending: false }),
+      supabase.from('seed_inventory').select('*')
+    ]);
+
+    if (invData) setInventory(invData as InventorySeed[]);
+
     if (seasonData && seasonData.length > 0) {
       setSeasons(seasonData);
       const currentSeason = activeSeason || seasonData[0].id;
@@ -46,7 +65,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const fetchLedgers = async (seasonId: string) => {
     setIsLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('season_seedlings')
       .select('*, seed:seed_inventory(*)')
       .eq('season_id', seasonId);
@@ -85,7 +104,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
     const verb = eventType.replace('qty_', ''); 
     const newJournalEntry: SeedlingJournalEntry = {
-      id: crypto.randomUUID(),
+      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
       date: new Date().toISOString().split('T')[0],
       type: 'EVENT',
       note: `Logged ${totalDeducted} as ${verb.toUpperCase()}. (-${deductKeep} Keep, -${deductReserve} Reserve, -${deductAvailable} Available)`
@@ -110,7 +129,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     if (!selectedLedger) return;
 
     const newJournalEntry: SeedlingJournalEntry = {
-      id: crypto.randomUUID(),
+      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
       date: new Date().toISOString().split('T')[0],
       type: 'ALLOCATE',
       note: `Updated Allocations: Keep (${editKeep}), Reserve (${editReserve})`
@@ -132,9 +151,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const submitJournalNote = async () => {
     if (!selectedLedger || !newNote.trim()) return;
     const newEntry: SeedlingJournalEntry = {
-      id: crypto.randomUUID(),
+      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
       date: new Date().toISOString().split('T')[0],
-      type: noteType,
+      type: noteType as any,
       note: newNote.trim()
     };
     const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
@@ -144,22 +163,165 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     await supabase.from('season_seedlings').update({ journal: updatedJournal }).eq('id', selectedLedger.id);
   };
 
+  // --- DIRECT ADD LOGIC ---
+  const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
+    if (!seedSearchQuery.trim()) return true;
+    const q = seedSearchQuery.toLowerCase();
+    return s.variety_name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+  });
+
+  const handleDirectAddSubmit = async () => {
+    if (!directAddForm.seedId || !directAddForm.seasonId || directAddForm.count < 1) return;
+    setIsSubmittingDirectAdd(true);
+    
+    try {
+      const { data: existingLedger } = await supabase.from('season_seedlings')
+        .select('*').eq('seed_id', directAddForm.seedId).eq('season_id', directAddForm.seasonId).maybeSingle();
+
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+      const journalEntry = {
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+        date: localToday,
+        type: 'EVENT',
+        note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}`
+      };
+
+      if (existingLedger) {
+        await supabase.from('season_seedlings').update({
+          qty_growing: existingLedger.qty_growing + directAddForm.count,
+          journal: [journalEntry, ...(existingLedger.journal || [])]
+        }).eq('id', existingLedger.id);
+      } else {
+        await supabase.from('season_seedlings').insert([{
+          seed_id: directAddForm.seedId,
+          season_id: directAddForm.seasonId,
+          qty_growing: directAddForm.count,
+          allocate_keep: 0,
+          allocate_reserve: 0,
+          qty_planted: 0,
+          qty_gifted: 0,
+          qty_sold: 0,
+          qty_dead: 0,
+          locations: {},
+          journal: [journalEntry]
+        }]);
+      }
+
+      setIsDirectAddOpen(false);
+      setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: activeSeason });
+      fetchLedgers(activeSeason); // Refresh the UI!
+      alert("Successfully added to your nursery ledger!");
+    } catch (err: any) {
+      alert("Failed to add seedlings: " + err.message);
+    } finally {
+      setIsSubmittingDirectAdd(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
+      
+      {/* DIRECT ADD MODAL */}
+      {isDirectAddOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          {showSeedSearch ? (
+            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
+                <div className="relative flex-1">
+                  <input type="text" autoFocus placeholder="Search 300+ seeds..." value={seedSearchQuery} onChange={e => setSeedSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" />
+                  <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </div>
+                <button onClick={() => { setShowSeedSearch(false); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {filteredInventoryForDirectAdd.length === 0 ? (
+                  <div className="text-center py-10 text-stone-400 text-sm">No seeds found matching "{seedSearchQuery}"</div>
+                ) : (
+                  filteredInventoryForDirectAdd.map((s: InventorySeed) => (
+                    <button key={s.id} onClick={() => { setDirectAddForm({ ...directAddForm, seedId: s.id }); setShowSeedSearch(false); setSeedSearchQuery(""); }} className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-emerald-100">
+                      <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 group-hover:border-emerald-300">
+                        {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">
+                          {s.variety_name}
+                          <span className="text-[9px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">{s.id}</span>
+                        </h4>
+                        <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate mt-0.5">{s.category}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex justify-between items-center">
+                <h2 className="font-black text-emerald-900 tracking-tight flex items-center gap-2">🌱 Direct Add Seedlings</h2>
+                <button onClick={() => setIsDirectAddOpen(false)} className="p-1 rounded-full text-emerald-600 hover:bg-emerald-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              </div>
+              <div className="p-5 space-y-4">
+                
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seed Variety</label>
+                  <button onClick={() => setShowSeedSearch(true)} className={`w-full text-left bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none hover:border-emerald-400 transition-colors shadow-inner flex items-center justify-between ${directAddForm.seedId ? 'text-stone-800 font-bold' : 'text-stone-400'}`}>
+                    {directAddForm.seedId ? inventory.find(s => s.id === directAddForm.seedId)?.variety_name : "Tap to select variety..."}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Quantity Added</span>
+                    <input type="number" min="1" value={directAddForm.count} onChange={(e) => setDirectAddForm({ ...directAddForm, count: Number(e.target.value) })} className="w-full text-center bg-transparent text-xl font-black text-emerald-600 outline-none border-b border-stone-300 focus:border-emerald-500" />
+                  </div>
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center flex flex-col justify-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Season</span>
+                    <select value={directAddForm.seasonId} onChange={(e) => setDirectAddForm({ ...directAddForm, seasonId: e.target.value })} className="w-full bg-transparent text-sm font-bold text-stone-800 outline-none cursor-pointer appearance-none text-center">
+                      {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Source / Notes</label>
+                  <input type="text" placeholder="e.g. Bought from local nursery..." value={directAddForm.note} onChange={(e) => setDirectAddForm({ ...directAddForm, note: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
+                </div>
+
+                <button onClick={handleDirectAddSubmit} disabled={isSubmittingDirectAdd || !directAddForm.seedId || directAddForm.count < 1} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50 mt-2 hover:bg-emerald-500">
+                  {isSubmittingDirectAdd ? 'Saving...' : 'Add to Ledger'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900">
         <div className="flex items-center gap-2">
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
-          <h1 className="text-xl font-bold ml-1">Seedling Nursery</h1>
+          <h1 className="text-xl font-bold ml-1 truncate">Seedling Nursery</h1>
         </div>
-        <select 
-          value={activeSeason} 
-          onChange={(e) => { setActiveSeason(e.target.value); fetchLedgers(e.target.value); }}
-          className="bg-emerald-900 border border-emerald-700 text-sm font-bold rounded-xl px-3 py-1.5 outline-none appearance-none cursor-pointer"
-        >
-          {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <div className="flex items-center gap-3">
+            {userRole === 'admin' && (
+              <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50" title="Direct Add Seedlings">
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
+              </button>
+            )}
+            <select 
+              value={activeSeason} 
+              onChange={(e) => { setActiveSeason(e.target.value); fetchLedgers(e.target.value); }}
+              className="bg-emerald-900 border border-emerald-700 text-sm font-bold rounded-xl px-3 py-1.5 outline-none appearance-none cursor-pointer max-w-[120px] truncate"
+            >
+              {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+        </div>
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-4">
@@ -171,7 +333,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
            <div className="text-center py-20 bg-white rounded-3xl border border-stone-200 shadow-sm">
              <svg className="w-16 h-16 mx-auto text-stone-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
              <h2 className="text-lg font-black text-stone-800">No Seedlings Found</h2>
-             <p className="text-stone-500 text-sm">Pot up some seeds from your trays to start a ledger.</p>
+             <p className="text-stone-500 text-sm mt-1">Pot up some seeds from your trays to start a ledger.</p>
            </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -187,7 +349,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-black text-lg text-stone-900 truncate">{seed?.variety_name || 'Unknown Seed'}</h3>
-                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">{seed?.category || 'Plant'}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
+                        <p className="text-[9px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">ID: {seed?.id || 'Unknown'}</p>
+                      </div>
                     </div>
                   </div>
 
@@ -255,7 +420,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setEventType('qty_planted')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_planted' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>🌱 Planted</button>
                   <button onClick={() => setEventType('qty_gifted')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_gifted' ? 'bg-blue-100 text-blue-800 border-blue-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>🎁 Gifted</button>
-                  <button onClick={() => setEventType('qty_sold')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_sold' ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>💰 Sold</button>
+                  <button onClick={() => setEventType('qty_sold')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_sold' ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>🏷️ Sold</button>
                   <button onClick={() => setEventType('qty_dead')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_dead' ? 'bg-red-100 text-red-800 border-red-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>💀 Dead</button>
                 </div>
               </div>
@@ -305,7 +470,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-purple-50 p-4 border-b border-purple-100 flex justify-between items-center">
-              <h2 className="font-black text-purple-900 tracking-tight flex items-center gap-2">🎯 Update Allocations</h2>
+              <h2 className="font-black text-purple-900 tracking-tight flex items-center gap-2">🧮 Update Allocations</h2>
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-purple-400 hover:bg-purple-200 hover:text-purple-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
             
@@ -361,7 +526,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            {/* NEW: Journal Quick Filters */}
             <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
                {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT', 'ALLOCATE'].map(f => (
                  <button 

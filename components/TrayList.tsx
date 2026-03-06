@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SeedlingTray, AppView, InventorySeed } from '../types';
+import { SeedlingTray, AppView, InventorySeed, Season } from '../types';
 
 interface TrayListProps {
   trays: SeedlingTray[];
@@ -19,6 +19,26 @@ const parseDateString = (dateStr: string) => {
 export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [seasons, setSeasons] = useState<Season[]>([]);
+
+  // Direct Add Seedlings State (No Tray)
+  const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
+  const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSeedSearch, setShowSeedSearch] = useState(false);
+  const [seedSearchQuery, setSeedSearchQuery] = useState("");
+
+  useEffect(() => {
+    const fetchSeasons = async () => {
+      const { data } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setSeasons(data as Season[]);
+        const active = data.find(s => s.status === 'Active') || data[0];
+        if (active) setDirectAddForm(prev => ({ ...prev, seasonId: active.id }));
+      }
+    };
+    fetchSeasons();
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -26,7 +46,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       try {
         const trayImgUrls = trays.map(t => (t.images || [])[0]).filter(img => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
         
-        // FIX 1: Fetch signed URLs for seed thumbnails as well so we can build the collage!
         const seedThumbUrls = trays
           .flatMap(t => t.contents || [])
           .map(c => {
@@ -64,18 +83,165 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
     );
   });
 
+  const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
+    if (!seedSearchQuery.trim()) return true;
+    const q = seedSearchQuery.toLowerCase();
+    return s.variety_name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+  });
+
+  const handleDirectAddSubmit = async () => {
+    if (!directAddForm.seedId || !directAddForm.seasonId || directAddForm.count < 1) return;
+    setIsSubmitting(true);
+    
+    try {
+      const { data: existingLedger } = await supabase.from('season_seedlings')
+        .select('*').eq('seed_id', directAddForm.seedId).eq('season_id', directAddForm.seasonId).maybeSingle();
+
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+      const journalEntry = {
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+        date: localToday,
+        type: 'ADD',
+        note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}`
+      };
+
+      if (existingLedger) {
+        await supabase.from('season_seedlings').update({
+          qty_growing: existingLedger.qty_growing + directAddForm.count,
+          journal: [journalEntry, ...(existingLedger.journal || [])]
+        }).eq('id', existingLedger.id);
+      } else {
+        await supabase.from('season_seedlings').insert([{
+          seed_id: directAddForm.seedId,
+          season_id: directAddForm.seasonId,
+          qty_growing: directAddForm.count,
+          allocate_keep: 0,
+          allocate_reserve: 0,
+          qty_planted: 0,
+          qty_gifted: 0,
+          qty_sold: 0,
+          qty_dead: 0,
+          locations: {},
+          journal: [journalEntry]
+        }]);
+      }
+
+      setIsDirectAddOpen(false);
+      setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: directAddForm.seasonId });
+      alert("Successfully added to your nursery ledger!");
+    } catch (err: any) {
+      alert("Failed to add seedlings: " + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       
+      {/* DIRECT ADD MODAL */}
+      {isDirectAddOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          {showSeedSearch ? (
+            <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
+                <div className="relative flex-1">
+                  <input type="text" autoFocus placeholder="Search 300+ seeds..." value={seedSearchQuery} onChange={e => setSeedSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" />
+                  <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </div>
+                <button onClick={() => { setShowSeedSearch(false); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {filteredInventoryForDirectAdd.length === 0 ? (
+                  <div className="text-center py-10 text-stone-400 text-sm">No seeds found matching "{seedSearchQuery}"</div>
+                ) : (
+                  filteredInventoryForDirectAdd.map((s: InventorySeed) => (
+                    <button key={s.id} onClick={() => { setDirectAddForm({ ...directAddForm, seedId: s.id }); setShowSeedSearch(false); setSeedSearchQuery(""); }} className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-emerald-100">
+                      <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 group-hover:border-emerald-300">
+                        {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">
+                          {s.variety_name}
+                          <span className="text-[9px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">{s.id}</span>
+                        </h4>
+                        <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate mt-0.5">{s.category}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex justify-between items-center">
+                <h2 className="font-black text-emerald-900 tracking-tight flex items-center gap-2">🌱 Direct Add Seedlings</h2>
+                <button onClick={() => setIsDirectAddOpen(false)} className="p-1 rounded-full text-emerald-600 hover:bg-emerald-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              </div>
+              <div className="p-5 space-y-4">
+                
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seed Variety</label>
+                  <button onClick={() => setShowSeedSearch(true)} className={`w-full text-left bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none hover:border-emerald-400 transition-colors shadow-inner flex items-center justify-between ${directAddForm.seedId ? 'text-stone-800 font-bold' : 'text-stone-400'}`}>
+                    {directAddForm.seedId ? inventory.find(s => s.id === directAddForm.seedId)?.variety_name : "Tap to select variety..."}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Quantity Added</span>
+                    <input type="number" min="1" value={directAddForm.count} onChange={(e) => setDirectAddForm({ ...directAddForm, count: Number(e.target.value) })} className="w-full text-center bg-transparent text-xl font-black text-emerald-600 outline-none border-b border-stone-300 focus:border-emerald-500" />
+                  </div>
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center flex flex-col justify-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Season</span>
+                    <select value={directAddForm.seasonId} onChange={(e) => setDirectAddForm({ ...directAddForm, seasonId: e.target.value })} className="w-full bg-transparent text-sm font-bold text-stone-800 outline-none cursor-pointer appearance-none text-center">
+                      {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Source / Notes</label>
+                  <input type="text" placeholder="e.g. Bought from local nursery..." value={directAddForm.note} onChange={(e) => setDirectAddForm({ ...directAddForm, note: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
+                </div>
+
+                <button onClick={handleDirectAddSubmit} disabled={isSubmitting || !directAddForm.seedId || directAddForm.count < 1} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50 mt-2 hover:bg-emerald-500">
+                  {isSubmitting ? 'Saving...' : 'Add to Ledger'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Go Back"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg></button>
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Go Back">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          </button>
         </div>
+
         <h1 className="text-xl font-bold truncate">Nursery Trays</h1>
-        <div className="flex justify-end min-w-[80px]">
+        
+        <div className="flex items-center gap-2">
           {userRole === 'admin' && (
-            <button onClick={() => navigateTo('tray_edit')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="New Tray"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button>
+            <>
+              {/* FIX: New Direct Add Button */}
+              <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-800 text-emerald-100 rounded-lg hover:bg-emerald-600 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-600/50" title="Direct Add Seedlings">
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
+              </button>
+              <button onClick={() => navigateTo('tray_edit')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="New Tray">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -88,7 +254,9 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
 
         <div className="space-y-3">
           {isLoadingDB ? (
-            <div className="flex justify-center items-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+            <div className="flex justify-center items-center py-10 text-emerald-600">
+               <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            </div>
           ) : filteredTrays.length > 0 ? (
             filteredTrays.map((tray) => {
               const firstImage = (tray.images || [])[0];
@@ -101,7 +269,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               });
               const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
-              // FIX 1: Composite Thumbnail Logic
               let thumbnailContent = null;
               if (displayImg) {
                   thumbnailContent = <img src={displayImg} alt="Tray" className="w-full h-full object-cover" />;
@@ -202,10 +369,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               return (
                 <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className="bg-white p-3 rounded-xl border border-stone-200 shadow-sm flex gap-4 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer">
                   <div className="w-20 h-20 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 relative">
-                    
-                    {/* Render the new composite thumbnail */}
                     {thumbnailContent}
-                    
                     <div className="absolute bottom-1 right-1 flex gap-1 z-10">
                       {tray.humidity_dome && <span className="bg-blue-500/90 text-white p-0.5 rounded shadow-sm backdrop-blur-sm" title="Humidity Dome On"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg></span>}
                       {tray.grow_light && <span className="bg-amber-500/90 text-white p-0.5 rounded shadow-sm backdrop-blur-sm" title="Grow Lights On"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg></span>}
