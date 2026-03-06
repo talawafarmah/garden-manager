@@ -188,22 +188,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   };
 
   const handleSaveEdit = async () => {
-    if (!editFormData.id.trim()) { alert("ID is required."); return; }
     setIsSaving(true);
     
     try {
       const isNewRecord = !inventory.some((s: InventorySeed) => s.id === seed.id);
       
       let finalCatName = editFormData.category;
+      let finalCatPrefix = "";
+
       if (editFormData.category === '__NEW__' && newCatName.trim() !== '') {
         finalCatName = newCatName.trim();
-        const finalPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
+        finalCatPrefix = newCatPrefix.trim().toUpperCase() || finalCatName.substring(0, 2).toUpperCase();
         
-        await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalPrefix }]);
-        setCategories([...categories, { name: finalCatName, prefix: finalPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
+        await supabase.from('seed_categories').insert([{ name: finalCatName, prefix: finalCatPrefix }]);
+        setCategories([...categories, { name: finalCatName, prefix: finalCatPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
       }
 
-      const folderName = btoa(editFormData.id).replace(/=/g, ''); 
+      // FIX: Auto-Generate an ID based on Category if it is left blank!
+      let finalId = editFormData.id?.trim();
+      if (!finalId) {
+         let prefix = "SD";
+         if (editFormData.category === '__NEW__' && finalCatPrefix) {
+            prefix = finalCatPrefix;
+         } else if (editFormData.category) {
+            const cat = categories.find((c: any) => c.name === editFormData.category);
+            if (cat && cat.prefix) prefix = cat.prefix;
+            else prefix = editFormData.category.substring(0, 3).toUpperCase();
+         }
+         const randomNum = Math.floor(1000 + Math.random() * 9000);
+         finalId = `${prefix}-${randomNum}`.replace(/[^A-Z0-9-]/g, '');
+      }
+
+      // Secure the folder name using the guaranteed finalId
+      const folderName = btoa(finalId).replace(/=/g, ''); 
       
       const uploadPromises = (editFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
@@ -251,9 +268,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
       
-      // FIX: Added custom_nursery_weeks to the save payload
       const payloadToSave: any = { 
         ...editFormData, 
+        id: finalId, // Inject the generated ID
         category: finalCatName,
         images: uploadedImagePaths, 
         thumbnail: newThumbnail,
@@ -403,8 +420,17 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Basic Info</h3>
           
           <div>
-            <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Shortcode ID</label>
-            <input type="text" value={editFormData.id} onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-mono uppercase font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" />
+            <div className="flex justify-between items-end mb-1.5 ml-1">
+              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest">Shortcode ID</label>
+              <span className="text-[9px] text-stone-400 font-bold italic">Leave blank to auto-generate</span>
+            </div>
+            <input 
+              type="text" 
+              value={editFormData.id || ''} 
+              onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} 
+              placeholder="e.g. TOM-01" 
+              className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-mono uppercase font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" 
+            />
           </div>
           
           <div className="grid grid-cols-2 gap-4">
@@ -476,7 +502,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           )}
         </section>
 
-        {/* LINEAGE & GENETICS SECTION */}
         <section className="bg-purple-50 p-6 rounded-3xl shadow-sm border border-purple-200 space-y-4">
           <h3 className="font-black text-purple-800 border-b border-purple-200/50 pb-2 uppercase text-[10px] tracking-[0.2em] flex items-center gap-2">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -583,7 +608,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             </div>
           )}
 
-          {/* FIX: NEW CUSTOM NURSERY WEEKS OVERRIDE */}
           <div className="mt-4 p-4 bg-stone-100 rounded-2xl border border-stone-200">
             <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Nursery Weeks Override</label>
             <p className="text-[10px] text-stone-400 mb-2 leading-tight">Leave blank to use the default time for this seed's category.</p>
