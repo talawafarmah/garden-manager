@@ -10,7 +10,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals
-  const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'LOCATIONS' | null>(null);
+  const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'ADJUST' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
 
   // Direct Add Seedlings State (No Tray)
@@ -30,6 +30,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [editKeep, setEditKeep] = useState(0);
   const [editReserve, setEditReserve] = useState(0);
 
+  // NEW: Audit/Adjust State
+  const [adjustQty, setAdjustQty] = useState(0);
+
   // Journal State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
@@ -39,7 +42,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     fetchBaseData();
   }, []);
 
-  // Sync the direct add form's season when the active season dropdown changes
   useEffect(() => {
     setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason }));
   }, [activeSeason]);
@@ -56,7 +58,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     if (seasonData && seasonData.length > 0) {
       setSeasons(seasonData as Season[]);
       
-      // FIX: Explicitly find the 'Active' season
       const active = seasonData.find((s: any) => s.status === 'Active');
       const defaultSeasonId = active ? active.id : seasonData[0].id;
       
@@ -95,6 +96,12 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     setEditKeep(ledger.allocate_keep);
     setEditReserve(ledger.allocate_reserve);
     setActiveModal('ALLOCATE');
+  };
+
+  const openAdjustModal = (ledger: SeasonSeedling) => {
+    setSelectedLedger(ledger);
+    setAdjustQty(ledger.qty_growing);
+    setActiveModal('ADJUST');
   };
 
   const submitEvent = async () => {
@@ -153,11 +160,47 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
   };
 
+  // NEW: Audit / Adjust Logic
+  const submitAdjustment = async () => {
+    if (!selectedLedger) return;
+    
+    const delta = adjustQty - selectedLedger.qty_growing;
+    if (delta === 0) {
+      setActiveModal(null);
+      return; 
+    }
+
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+    const newJournalEntry: SeedlingJournalEntry = {
+      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+      date: localToday,
+      type: 'EVENT',
+      note: `Inventory Audit: Corrected total growing from ${selectedLedger.qty_growing} to ${adjustQty} (${delta > 0 ? '+' : ''}${delta}).`
+    };
+
+    const updatedJournal = [newJournalEntry, ...(selectedLedger.journal || [])];
+
+    const updates = {
+      qty_growing: adjustQty,
+      journal: updatedJournal
+    };
+
+    setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
+    setActiveModal(null);
+    await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
+  };
+
   const submitJournalNote = async () => {
     if (!selectedLedger || !newNote.trim()) return;
+    
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
     const newEntry: SeedlingJournalEntry = {
       id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-      date: new Date().toISOString().split('T')[0],
+      date: localToday,
       type: noteType as any,
       note: newNote.trim()
     };
@@ -168,7 +211,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     await supabase.from('season_seedlings').update({ journal: updatedJournal }).eq('id', selectedLedger.id);
   };
 
-  // --- DIRECT ADD LOGIC ---
   const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
     if (!seedSearchQuery.trim()) return true;
     const q = seedSearchQuery.toLowerCase();
@@ -228,7 +270,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
       
-      {/* DIRECT ADD MODAL */}
       {isDirectAddOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           {showSeedSearch ? (
@@ -389,6 +430,12 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">
                       Allocate
                     </button>
+                    
+                    {/* NEW: ADJUST BUTTON */}
+                    <button onClick={() => openAdjustModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-amber-100">
+                      ⚖️ Adjust
+                    </button>
+
                     <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
                       Journal
                     </button>
@@ -407,6 +454,60 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
           </div>
         )}
       </div>
+
+      {/* ========================================================= */}
+      {/* MODAL: ADJUST (Correct Miscounts)                           */}
+      {/* ========================================================= */}
+      {activeModal === 'ADJUST' && selectedLedger && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-amber-50 p-4 border-b border-amber-200 flex justify-between items-center">
+              <h2 className="font-black text-amber-900 tracking-tight flex items-center gap-2">⚖️ Inventory Audit</h2>
+              <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-amber-600 hover:bg-amber-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-stone-500 leading-relaxed">Fix a miscount without logging them as "Dead" or doing another "Direct Add". This will add a note to your journal.</p>
+
+              <div className="flex items-center justify-between bg-white border border-stone-200 p-4 rounded-2xl shadow-sm">
+                <div>
+                  <span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Current Total</span>
+                  <span className="text-2xl font-black text-stone-400 line-through decoration-red-500 decoration-2">{selectedLedger.qty_growing}</span>
+                </div>
+                
+                <div className="text-xl text-stone-300">➡️</div>
+
+                <div className="text-right">
+                  <span className="block text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Actual Total</span>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    value={adjustQty === 0 && adjustQty !== selectedLedger.qty_growing ? '' : adjustQty} 
+                    onChange={(e) => setAdjustQty(Number(e.target.value))} 
+                    className="w-24 text-center border-b-2 border-amber-300 py-1 text-2xl font-black text-stone-800 outline-none focus:border-amber-500" 
+                  />
+                </div>
+              </div>
+
+              {adjustQty !== selectedLedger.qty_growing && (
+                <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center text-sm font-bold text-stone-600 animate-in fade-in">
+                  Difference: <span className={adjustQty > selectedLedger.qty_growing ? 'text-emerald-600' : 'text-red-600'}>
+                    {adjustQty > selectedLedger.qty_growing ? '+' : ''}{adjustQty - selectedLedger.qty_growing}
+                  </span>
+                </div>
+              )}
+
+              <button 
+                onClick={submitAdjustment}
+                disabled={adjustQty === selectedLedger.qty_growing}
+                className="w-full py-4 bg-amber-500 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-amber-900/20 active:scale-95 transition-all mt-2 hover:bg-amber-600 disabled:opacity-50 disabled:grayscale"
+              >
+                Confirm Adjustment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* MODAL: LOG EVENT (Double Entry Bookkeeping)                 */}
