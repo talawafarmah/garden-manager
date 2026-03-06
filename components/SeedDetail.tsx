@@ -93,6 +93,19 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
     }); 
   };
 
+  // FIX: Added the Duplicate Seed handler!
+  const handleDuplicateSeed = () => {
+    const duplicatedSeed = {
+      ...seed,
+      id: '', // Blank ID forces the user to assign a new one
+      variety_name: `${seed.variety_name} (Copy)`,
+      images: [], // Don't copy images to save storage
+      thumbnail: '',
+      out_of_stock: false // Assume the new listing needs stock review
+    };
+    navigateTo('seed_edit', duplicatedSeed);
+  };
+
   const handleBreedSeed = () => {
     const nextGenSeed = {
       id: '', 
@@ -142,7 +155,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
       )}
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        {/* NEW: Left Side Buttons Group */}
         <div className="flex items-center gap-2">
           <button onClick={onBack} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Go Back">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,6 +174,11 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
         <div className="flex gap-2 min-w-[80px] justify-end">
           {userRole === 'admin' && (
             <>
+               <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Duplicate Seed">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                 </svg>
+               </button>
                <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -178,7 +195,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
       </header>
 
       <div className="max-w-md mx-auto">
-        {/* Hero Image Section */}
         <div className="relative aspect-square bg-stone-200 overflow-hidden group">
           {displayImg ? (
             <img 
@@ -209,7 +225,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
           </div>
         </div>
 
-        {/* Gallery Thumbnails */}
         {seed.images && seed.images.length > 1 && (
           <div className="flex gap-2 p-4 bg-white border-b border-stone-100 overflow-x-auto scrollbar-hide">
             {seed.images.map((path, idx) => {
@@ -233,7 +248,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
 
         <div className="p-4 space-y-4">
           
-          {/* GENETICS & LINEAGE CARD */}
           {(seed.parent_id_female || seed.parent_id_male || seed.generation) && (
              <section className="bg-purple-50 border border-purple-100 p-4 rounded-3xl shadow-sm">
                 <h3 className="text-[10px] font-black text-purple-800 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -271,7 +285,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
              </section>
           )}
 
-          {/* Key Indicators (Tomato/Pepper Data) */}
           {(isTomato || isPepper) && (
             <div className="grid grid-cols-1 gap-2">
               {isTomato && seed.tomato_type && (
@@ -295,7 +308,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           )}
 
-          {/* Vendor & Sourcing */}
           {(seed.vendor || seed.lifecycle) && (
             <section className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex justify-between items-center shadow-sm">
               {seed.vendor && (
@@ -313,7 +325,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </section>
           )}
 
-          {/* Germination Protocol */}
           <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-4 border-b border-stone-100 pb-2">Germination Protocol</h3>
             
@@ -337,7 +348,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
               </div>
             )}
 
-            {/* NEW: CUSTOM NURSERY WEEKS OVERRIDE BADGE */}
             {seed.custom_nursery_weeks != null && seed.custom_nursery_weeks !== undefined && (
               <div className="mb-4 bg-purple-50 border border-purple-100 p-3 rounded-xl flex items-start gap-3">
                 <div className="text-purple-500 mt-0.5">🌱</div>
@@ -360,7 +370,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           </section>
 
-          {/* Core Botanical Data */}
           <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200 grid grid-cols-2 gap-y-5 gap-x-4">
             <div className="col-span-2 border-b border-stone-100 pb-2 mb-1">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em]">Growing Requirements</h3>
@@ -383,7 +392,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </div>
           </section>
 
-          {/* Companion Planting */}
           {seed.companion_plants && seed.companion_plants.length > 0 && (
             <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 border-b border-stone-100 pb-2">
@@ -400,7 +408,6 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
             </section>
           )}
 
-          {/* Growing Notes */}
           <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 border-b border-stone-100 pb-2">
               <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
