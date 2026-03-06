@@ -54,8 +54,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     if (invData) setInventory(invData as InventorySeed[]);
 
     if (seasonData && seasonData.length > 0) {
-      setSeasons(seasonData);
-      const currentSeason = activeSeason || seasonData[0].id;
+      setSeasons(seasonData as Season[]);
+      
+      // FIX: Explicitly find the 'Active' season
+      const active = seasonData.find((s: any) => s.status === 'Active');
+      const defaultSeasonId = active ? active.id : seasonData[0].id;
+      
+      const currentSeason = activeSeason || defaultSeasonId;
       setActiveSeason(currentSeason);
       fetchLedgers(currentSeason);
     } else {
@@ -211,7 +216,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
       setIsDirectAddOpen(false);
       setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: activeSeason });
-      fetchLedgers(activeSeason); // Refresh the UI!
+      fetchLedgers(activeSeason); 
       alert("Successfully added to your nursery ledger!");
     } catch (err: any) {
       alert("Failed to add seedlings: " + err.message);
