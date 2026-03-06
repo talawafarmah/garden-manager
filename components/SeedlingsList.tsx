@@ -30,7 +30,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [editKeep, setEditKeep] = useState(0);
   const [editReserve, setEditReserve] = useState(0);
 
-  // NEW: Audit/Adjust State
+  // Audit/Adjust State
   const [adjustQty, setAdjustQty] = useState(0);
 
   // Journal State
@@ -160,7 +160,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
   };
 
-  // NEW: Audit / Adjust Logic
   const submitAdjustment = async () => {
     if (!selectedLedger) return;
     
@@ -270,6 +269,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
       
+      {/* DIRECT ADD MODAL */}
       {isDirectAddOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           {showSeedSearch ? (
@@ -402,8 +402,16 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     </div>
                   </div>
 
+                  {/* Section Header with Adjust Button */}
+                  <div className="px-4 pt-3 flex justify-between items-end">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-stone-400">Inventory Status</span>
+                    <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md active:scale-95 transition-all hover:bg-amber-100 flex items-center gap-1 shadow-sm">
+                      ⚖️ Adjust
+                    </button>
+                  </div>
+
                   {/* Active Allocation Math */}
-                  <div className="p-4 grid grid-cols-4 gap-2 text-center relative">
+                  <div className="px-4 pb-4 pt-2 grid grid-cols-4 gap-2 text-center relative">
                     <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100">
                       <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Growing</div>
                       <div className="text-2xl font-black text-emerald-600">{ledger.qty_growing}</div>
@@ -430,12 +438,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">
                       Allocate
                     </button>
-                    
-                    {/* NEW: ADJUST BUTTON */}
-                    <button onClick={() => openAdjustModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-amber-100">
-                      ⚖️ Adjust
-                    </button>
-
                     <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
                       Journal
                     </button>
