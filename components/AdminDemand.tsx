@@ -33,7 +33,6 @@ const parseGermDays = (str?: string) => {
   return 7;
 };
 
-// FIX: Safe local date math that prevents Timezone shifting
 const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
   const targetDate = new Date(target + 'T12:00:00');
   const germDays = parseGermDays(germStr);
@@ -55,6 +54,10 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   
   const [globalTargetDate, setGlobalTargetDate] = useState<string>(`${new Date().getFullYear()}-05-10`);
   const [showDrafts, setShowDrafts] = useState(false);
+  
+  // FIX 4: New Filter State
+  const [hidePlanned, setHidePlanned] = useState(false);
+  
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -219,6 +222,13 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     } else alert("Error saving plan: " + error?.message);
   };
 
+  // Apply the "Hide Planned" Filter
+  const displayedDemand = aggregatedDemand.filter(item => {
+     if (!hidePlanned) return true;
+     if (!item.plan) return true;
+     return item.plan.planned_qty < item.count;
+  });
+
   if (userRole !== 'admin') return <div className="p-10 text-center">Access Denied</div>;
 
   return (
@@ -250,13 +260,13 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
           </div>
           
           <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
-            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Seedling Target</h2></div>
+            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Target Date</h2></div>
             <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
           </div>
 
           <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
-            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest hidden lg:block">Filter</h2></div>
-            <div className="relative w-full sm:w-48">
+            <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest hidden lg:block">List</h2></div>
+            <div className="relative w-full sm:w-40">
               <select value={activeListId} onChange={e => setActiveListId(e.target.value)} className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner appearance-none pr-8">
                 <option value="ALL">-- All Lists --</option>
                 {availableLists.map(l => <option key={l.id} value={l.id}>{l.name} {!l.isSubmitted ? '(Draft)' : ''}</option>)}
@@ -265,11 +275,21 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
             </div>
           </div>
 
-          <div className="flex items-center justify-between sm:justify-start gap-3 px-1 lg:pl-4 lg:border-l border-stone-100">
-            <span className="text-xs font-bold text-stone-500">Show drafts?</span>
-            <button onClick={() => setShowDrafts(!showDrafts)} className={`w-10 h-5 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
-              <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-transform ${showDrafts ? 'translate-x-[22px]' : 'translate-x-1'}`} />
-            </button>
+          <div className="flex items-center justify-between sm:justify-start gap-4 px-1 lg:pl-4 lg:border-l border-stone-100">
+            <div className="flex items-center gap-2">
+               <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Drafts</span>
+               <button onClick={() => setShowDrafts(!showDrafts)} className={`w-8 h-4 rounded-full transition-colors relative ${showDrafts ? 'bg-blue-500' : 'bg-stone-300'}`}>
+                 <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${showDrafts ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+               </button>
+            </div>
+            
+            {/* FIX 4: The Hide Planned Filter Toggle */}
+            <div className="flex items-center gap-2">
+               <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Hide Planned</span>
+               <button onClick={() => setHidePlanned(!hidePlanned)} className={`w-8 h-4 rounded-full transition-colors relative ${hidePlanned ? 'bg-emerald-500' : 'bg-stone-300'}`}>
+                 <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-[3px] transition-transform ${hidePlanned ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+               </button>
+            </div>
           </div>
         </div>
 
@@ -282,16 +302,16 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                 <span>{activeListId === 'ALL' ? 'All Requested Varieties' : 'List Details'}</span>
                 <button onClick={() => navigateTo('grow_planner')} className="text-emerald-600 flex items-center gap-1 hover:text-emerald-700 transition-colors bg-emerald-50 px-2 py-1 rounded">View Calendar <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
               </h2>
-              {aggregatedDemand.length === 0 ? (
+              {displayedDemand.length === 0 ? (
                 <div className="text-center py-10 bg-white rounded-3xl border border-stone-200 max-w-xl mx-auto"><p className="text-stone-400 italic">No seeds found for the current filters.</p></div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {aggregatedDemand.map((item) => (
-                    <div key={item.seed.id} className="bg-white p-3 rounded-2xl border border-stone-200 shadow-sm flex flex-col h-full justify-between gap-2 hover:border-emerald-200 transition-colors">
+                  {displayedDemand.map((item) => (
+                    <div key={item.seed.id} className={`bg-white p-3 rounded-2xl border shadow-sm flex flex-col h-full justify-between gap-2 transition-colors hover:border-emerald-300 ${item.plan && item.plan.planned_qty >= item.count ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-stone-200'}`}>
                       <div className="flex gap-3 items-start">
-                        <div className="flex flex-col items-center justify-center bg-stone-50 border border-stone-200 rounded-xl w-10 h-10 flex-shrink-0">
-                          <span className="text-[7px] font-black text-stone-400 leading-none uppercase tracking-widest">Req</span>
-                          <span className="text-base font-black text-blue-600 leading-none mt-0.5">{item.count}</span>
+                        <div className={`flex flex-col items-center justify-center border rounded-xl w-10 h-10 flex-shrink-0 ${item.plan && item.plan.planned_qty >= item.count ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+                          <span className={`text-[7px] font-black leading-none uppercase tracking-widest ${item.plan && item.plan.planned_qty >= item.count ? 'text-emerald-600' : 'text-stone-400'}`}>Req</span>
+                          <span className={`text-base font-black leading-none mt-0.5 ${item.plan && item.plan.planned_qty >= item.count ? 'text-emerald-700' : 'text-blue-600'}`}>{item.count}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
@@ -322,7 +342,9 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
 
                         <div className="flex gap-1 justify-end self-end sm:self-auto w-full sm:w-auto">
                           {item.plan ? (
-                             <span className="w-full sm:w-auto justify-center bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 shadow-sm">🗓️ Planned: {item.plan.planned_qty}</span>
+                             <span className={`w-full sm:w-auto justify-center border text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 shadow-sm ${item.plan.planned_qty >= item.count ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                               🗓️ Planned: {item.plan.planned_qty}
+                             </span>
                           ) : (
                              <>
                                <button onClick={() => openPlanModal(item)} className="flex-1 sm:flex-none justify-center bg-stone-100 text-stone-600 hover:bg-stone-200 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded transition-colors border border-transparent flex items-center gap-1">Edit</button>
@@ -381,7 +403,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                 <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                {/* FIX: Modal rendering safe noon start date */}
                 <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               </div>
               <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>

@@ -93,6 +93,9 @@ export interface TraySeedRecord {
   sown_count?: number;
   germinated_count?: number;
   planted_count?: number;
+  sown_date?: string;       
+  germination_date?: string;
+  planted_date?: string;    
 }
 
 export interface SeedlingTray {

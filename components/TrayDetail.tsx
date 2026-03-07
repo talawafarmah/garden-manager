@@ -52,6 +52,15 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
   };
 
+  // FIX 1: Quick Update for Dates directly on the detail screen
+  const handleQuickDateUpdate = async (index: number, field: string, val: string) => {
+    if (userRole !== 'admin') return;
+    const updatedContents = [...localTray.contents];
+    (updatedContents[index] as any)[field] = val || null;
+    setLocalTray({ ...localTray, contents: updatedContents });
+    await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
+  };
+
   const handleDuplicateTray = () => {
     setIsDuplicating(true);
     const todayObj = new Date();
@@ -177,7 +186,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
             </div>
             
             <div className="grid grid-cols-3 gap-2 bg-stone-50 rounded-xl p-3 border border-stone-200 mb-4 text-center">
-               <div><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sown</div><div className="text-sm font-bold text-stone-800">{localTray.sown_date || '--'}</div></div>
+               <div><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Global Sown</div><div className="text-sm font-bold text-stone-800">{localTray.sown_date || '--'}</div></div>
                <div className="border-l border-stone-200"><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sprout</div><div className="text-sm font-bold text-emerald-600">{localTray.first_germination_date || '--'}</div></div>
                <div className="border-l border-stone-200"><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Potted</div><div className="text-sm font-bold text-blue-600">{localTray.first_planted_date || '--'}</div></div>
             </div>
@@ -203,16 +212,19 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
              today.setHours(12, 0, 0, 0);
              let seedStatusBadge = null;
 
-             if (seedRecord.germinated_count > 0) {
+             const rowSownDate = seedRecord.sown_date || localTray.sown_date;
+             const rowGermDate = seedRecord.germination_date || seedRecord.germinated_count > 0;
+
+             if (rowGermDate) {
                  seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 ml-2 shadow-sm flex-shrink-0 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> Sprouted</span>;
-             } else if (localTray.sown_date && fullSeed?.germination_days) {
+             } else if (rowSownDate && fullSeed?.germination_days) {
                  const nums = fullSeed.germination_days.match(/\d+/g);
                  if (nums && nums.length > 0) {
                      const parsed = nums.map((n: string) => parseInt(n, 10)).filter((n: number) => n > 0);
                      if (parsed.length > 0) {
                          const seedMin = Math.min(...parsed);
                          const seedMax = Math.max(...parsed);
-                         const sownDate = parseDateString(localTray.sown_date);
+                         const sownDate = parseDateString(rowSownDate);
                          
                          const minTarget = new Date(sownDate); minTarget.setDate(minTarget.getDate() + seedMin);
                          const maxTarget = new Date(sownDate); maxTarget.setDate(maxTarget.getDate() + seedMax);
@@ -241,7 +253,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
                         <div className="flex items-center mt-1 flex-wrap gap-y-1">
-                          {/* FIX 2: Explicit ID tag */}
                           <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-500 border border-stone-200 shadow-sm">ID: {seedRecord.seed_id}</span>
                           {seedStatusBadge}
                         </div>
@@ -284,6 +295,22 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                        <span className="font-black text-blue-600 text-lg">{seedRecord.planted_count || 0}</span>
                      </div>
                    </div>
+                 </div>
+
+                 {/* FIX 1: Inline Row Date Adjustments */}
+                 <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
                  </div>
                </div>
              );

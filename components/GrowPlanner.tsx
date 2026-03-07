@@ -164,9 +164,14 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
   const handleBulkSow = () => {
     const selected = plans.filter(p => selectedPlanIds.includes(p.id));
     if (selected.length === 0) return;
+
+    // FIX 2: Default Sown Date to Today!
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
     const trayContents = selected.map(p => {
       const totalAlreadySown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
-      return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown) };
+      return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown), sown_date: localToday };
     });
     navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents });
   };
@@ -384,8 +389,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
                             <div className="min-w-0">
                               <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border inline-block mb-1 ${badgeColor}`}>{statusTxt}</span>
                               <h4 className="font-black text-stone-800 text-lg leading-tight hover:text-emerald-600 truncate" onClick={(e) => { e.stopPropagation(); navigateTo('seed_detail', plan.seed); }}>{plan.seed?.variety_name}</h4>
-                              
-                              {/* FIX 2: Explicit ID Tag */}
                               <span className="text-[10px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded mt-1 inline-block shadow-sm">ID: {plan.seed?.id}</span>
                             </div>
                           </div>

@@ -37,8 +37,6 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
 };
 
 export default function TrayEdit({ tray, trays = [], setTrays, inventory, navigateTo, handleGoBack }: any) {
-  
-  // FIX 3: Prevent Next.js Hydration Crash by initializing state after mount
   const [trayFormData, setTrayFormData] = useState<SeedlingTray | null>(null);
   
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -99,9 +97,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
     return () => { isMounted = false; };
   }, [trayFormData?.images]);
 
-  if (!trayFormData) {
-    return <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-400">Loading editor...</div>;
-  }
+  if (!trayFormData) return <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-400">Loading editor...</div>;
 
   const handleEditPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -152,13 +148,24 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
+      // FIX 3: Filter out blank rows that cause the Hydration Crash!
+      const cleanedContents = (trayFormData.contents || [])
+        .filter((c: any) => c.seed_id && c.seed_id.trim() !== '')
+        .map((c: any) => ({
+          ...c,
+          sown_date: c.sown_date || null,
+          germination_date: c.germination_date || null,
+          planted_date: c.planted_date || null
+        }));
+
       const payloadToSave: any = { 
         ...trayFormData, 
+        contents: cleanedContents,
         images: uploadedImagePaths,
         season_id: trayFormData.season_id || null,
-        sown_date: trayFormData.sown_date || null,
-        first_germination_date: trayFormData.first_germination_date || null,
-        first_planted_date: trayFormData.first_planted_date || null,
+        sown_date: trayFormData.sown_date ? trayFormData.sown_date : null,
+        first_germination_date: trayFormData.first_germination_date ? trayFormData.first_germination_date : null,
+        first_planted_date: trayFormData.first_planted_date ? trayFormData.first_planted_date : null,
       };
       
       if (isNewRecord) {
@@ -226,7 +233,6 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
                       {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      {/* FIX 2: Added ID Badge to search results */}
                       <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">
                         {s.variety_name}
                         <span className="text-[9px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">{s.id}</span>
@@ -295,7 +301,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
               <input type="text" value={trayFormData.name || ''} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} placeholder="e.g., Spring Tomatoes" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sown Date</label>
+              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Global Sown Date</label>
               <input type="date" value={trayFormData.sown_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
           </div>
@@ -341,25 +347,42 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
               (trayFormData.contents || []).map((content, idx) => {
                 const seedName = inventory.find((s: InventorySeed) => s.id === content.seed_id)?.variety_name;
                 return (
-                  <div key={idx} className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
-                    <div className="w-16">
-                      <input type="number" min="0" placeholder="Qty" value={content.sown_count ?? ''} onChange={(e) => handleUpdateCellContent(idx, 'sown_count', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" title="Number of seeds sown" />
+                  <div key={idx} className="bg-stone-50 p-2 rounded-xl border border-stone-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-16">
+                        <input type="number" min="0" placeholder="Qty" value={content.sown_count ?? ''} onChange={(e) => handleUpdateCellContent(idx, 'sown_count', Number(e.target.value))} className="w-full bg-white border border-stone-200 rounded-lg p-2 text-xs font-bold outline-none focus:border-emerald-500 text-center" title="Number of seeds sown" />
+                      </div>
+                      <div className="flex-1">
+                        <button 
+                          onClick={() => setSeedSearchRow(idx)}
+                          className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none hover:border-emerald-400 transition-colors shadow-sm flex flex-col justify-center min-h-[42px] ${content.seed_id ? 'text-stone-800' : 'text-stone-400 font-bold'}`}
+                        >
+                          {seedName ? (
+                            <>
+                              <span className="font-bold truncate w-full block">{seedName}</span>
+                              <span className="text-[9px] font-mono text-stone-500 bg-stone-50 px-1 rounded mt-0.5 inline-block border border-stone-100">ID: {content.seed_id}</span>
+                            </>
+                          ) : "Tap to search seeds..."}
+                        </button>
+                      </div>
+                      <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                     </div>
-                    <div className="flex-1">
-                      {/* FIX 2: Show Seed ID directly inside the selected row cell */}
-                      <button 
-                        onClick={() => setSeedSearchRow(idx)}
-                        className={`w-full text-left bg-white border border-stone-200 rounded-lg p-2 text-xs outline-none hover:border-emerald-400 transition-colors shadow-sm flex flex-col justify-center min-h-[42px] ${content.seed_id ? 'text-stone-800' : 'text-stone-400 font-bold'}`}
-                      >
-                        {seedName ? (
-                          <>
-                            <span className="font-bold truncate w-full block">{seedName}</span>
-                            <span className="text-[9px] font-mono text-stone-500 bg-stone-50 px-1 rounded mt-0.5 inline-block border border-stone-100">ID: {content.seed_id}</span>
-                          </>
-                        ) : "Tap to search seeds..."}
-                      </button>
+
+                    {/* FIX 1: INDIVIDUAL ROW DATES */}
+                    <div className="w-full mt-2 pt-2 border-t border-stone-100 grid grid-cols-3 gap-2">
+                       <div>
+                         <label className="block text-[8px] font-black uppercase text-stone-400 mb-0.5 text-center">Sown</label>
+                         <input type="date" value={content.sown_date || ''} onChange={(e) => handleUpdateCellContent(idx, 'sown_date', e.target.value)} className="w-full text-[10px] p-1.5 border border-stone-200 rounded-md outline-none focus:border-emerald-500 bg-white" />
+                       </div>
+                       <div>
+                         <label className="block text-[8px] font-black uppercase text-stone-400 mb-0.5 text-center">Sprouted</label>
+                         <input type="date" value={content.germination_date || ''} onChange={(e) => handleUpdateCellContent(idx, 'germination_date', e.target.value)} className="w-full text-[10px] p-1.5 border border-stone-200 rounded-md outline-none focus:border-emerald-500 bg-white" />
+                       </div>
+                       <div>
+                         <label className="block text-[8px] font-black uppercase text-stone-400 mb-0.5 text-center">Potted</label>
+                         <input type="date" value={content.planted_date || ''} onChange={(e) => handleUpdateCellContent(idx, 'planted_date', e.target.value)} className="w-full text-[10px] p-1.5 border border-stone-200 rounded-md outline-none focus:border-emerald-500 bg-white" />
+                       </div>
                     </div>
-                    <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                   </div>
                 );
               })
