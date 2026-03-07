@@ -54,10 +54,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   
   const [globalTargetDate, setGlobalTargetDate] = useState<string>(`${new Date().getFullYear()}-05-10`);
   const [showDrafts, setShowDrafts] = useState(false);
-  
-  // FIX 4: New Filter State
-  const [hidePlanned, setHidePlanned] = useState(false);
-  
+  const [hidePlanned, setHidePlanned] = useState(false); // FIX 4: Hide Planned Filter State
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -222,7 +219,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     } else alert("Error saving plan: " + error?.message);
   };
 
-  // Apply the "Hide Planned" Filter
+  // FIX 4: Apply the "Hide Planned" Filter logic
   const displayedDemand = aggregatedDemand.filter(item => {
      if (!hidePlanned) return true;
      if (!item.plan) return true;
@@ -283,7 +280,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                </button>
             </div>
             
-            {/* FIX 4: The Hide Planned Filter Toggle */}
+            {/* FIX 4: Visual Toggle Switch for Hide Planned filter */}
             <div className="flex items-center gap-2">
                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Hide Planned</span>
                <button onClick={() => setHidePlanned(!hidePlanned)} className={`w-8 h-4 rounded-full transition-colors relative ${hidePlanned ? 'bg-emerald-500' : 'bg-stone-300'}`}>

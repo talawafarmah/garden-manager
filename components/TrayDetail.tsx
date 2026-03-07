@@ -48,11 +48,24 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     const newVal = Math.max(0, (currentVal as number) + delta);
     
     (updatedContents[index][field as keyof typeof updatedContents[0]] as any) = newVal;
+
+    // FIX 1: Auto-stamp today's date if we are incrementing and the date is currently blank
+    if (delta > 0) {
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      
+      if (field === 'germinated_count' && !updatedContents[index].germination_date) {
+         updatedContents[index].germination_date = localToday;
+      }
+      if (field === 'planted_count' && !updatedContents[index].planted_date) {
+         updatedContents[index].planted_date = localToday;
+      }
+    }
+
     setLocalTray({ ...localTray, contents: updatedContents });
     await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
   };
 
-  // FIX 1: Quick Update for Dates directly on the detail screen
   const handleQuickDateUpdate = async (index: number, field: string, val: string) => {
     if (userRole !== 'admin') return;
     const updatedContents = [...localTray.contents];
@@ -297,7 +310,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                    </div>
                  </div>
 
-                 {/* FIX 1: Inline Row Date Adjustments */}
                  <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>

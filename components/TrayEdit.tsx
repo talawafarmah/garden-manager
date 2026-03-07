@@ -110,7 +110,17 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
   const handleAddCellContent = () => {
     const newIdx = (trayFormData.contents || []).length;
-    setTrayFormData({ ...trayFormData, contents: [...(trayFormData.contents || []), { seed_id: '', sown_count: 1 }] });
+    // FIX 2: Default row addition to today's date
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+    
+    setTrayFormData({ 
+      ...trayFormData, 
+      contents: [
+        ...(trayFormData.contents || []), 
+        { seed_id: '', sown_count: 1, sown_date: localToday }
+      ] 
+    });
     setSeedSearchRow(newIdx);
   };
 
@@ -148,7 +158,6 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
-      // FIX 3: Filter out blank rows that cause the Hydration Crash!
       const cleanedContents = (trayFormData.contents || [])
         .filter((c: any) => c.seed_id && c.seed_id.trim() !== '')
         .map((c: any) => ({
@@ -176,13 +185,19 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         if (error) throw new Error("Update Error: " + error.message);
       }
       
-      if (typeof setTrays === 'function') {
-        const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
-        setTrays(updatedTrays);
-      }
-      navigateTo('trays', null, true);
+      // FIX 3: Timeout decouples the AppRouter state change, completely preventing the Client-Side Exception!
+      setTimeout(() => {
+        if (typeof setTrays === 'function') {
+          const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
+          setTrays(updatedTrays);
+        }
+        navigateTo('trays', null, true);
+      }, 50);
       
-    } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
+    } catch (e: any) { 
+      alert(e.message); 
+      setIsSaving(false); 
+    } 
   };
 
   const handleDeleteTray = async () => {
@@ -368,7 +383,6 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
                       <button onClick={() => handleRemoveCellContent(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                     </div>
 
-                    {/* FIX 1: INDIVIDUAL ROW DATES */}
                     <div className="w-full mt-2 pt-2 border-t border-stone-100 grid grid-cols-3 gap-2">
                        <div>
                          <label className="block text-[8px] font-black uppercase text-stone-400 mb-0.5 text-center">Sown</label>
