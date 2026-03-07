@@ -11,12 +11,50 @@ interface SeedDetailProps {
   userRole?: string;
 }
 
-export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
+// Scheduling Helpers
+const resolveNurseryWeeks = (seed: any, categories: any[]) => {
+  if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) return seed.custom_nursery_weeks;
+  const cat = categories?.find(c => c.name === seed.category);
+  if (cat && cat.default_nursery_weeks !== null && cat.default_nursery_weeks !== undefined) return cat.default_nursery_weeks;
+  return 4; 
+};
+
+const parseGermDays = (str?: string) => {
+  if (!str) return 7;
+  const nums = str.match(/\d+/g);
+  if (nums) return Math.max(...nums.map(Number));
+  return 7;
+};
+
+const calculateStartDate = (target: string, weeks: number, germStr?: string) => {
+  if (!target) return "";
+  const targetDate = new Date(target + 'T12:00:00');
+  const germDays = parseGermDays(germStr);
+  targetDate.setDate(targetDate.getDate() - ((weeks * 7) + germDays));
+  
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   
   const [parents, setParents] = useState<{mother?: string, father?: string}>({});
+
+  // Planner Modal State
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [seasons, setSeasons] = useState<any[]>([]);
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    seasonId: '',
+    targetDate: '',
+    qty: 1,
+    weeks: 6
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -93,15 +131,14 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
     }); 
   };
 
-  // FIX: Added the Duplicate Seed handler!
   const handleDuplicateSeed = () => {
     const duplicatedSeed = {
       ...seed,
-      id: '', // Blank ID forces the user to assign a new one
+      id: '', 
       variety_name: `${seed.variety_name} (Copy)`,
-      images: [], // Don't copy images to save storage
+      images: [], 
       thumbnail: '',
-      out_of_stock: false // Assume the new listing needs stock review
+      out_of_stock: false 
     };
     navigateTo('seed_edit', duplicatedSeed);
   };
@@ -137,6 +174,53 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
     navigateTo('seed_edit', nextGenSeed);
   };
 
+  // Planner Functions
+  const openPlanModal = async () => {
+    const { data } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      setSeasons(data);
+      const active = data.find((s: any) => s.status === 'Active') || data[0];
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      
+      setPlanForm({
+        seasonId: active.id,
+        targetDate: active.seedling_target_date || localToday,
+        qty: 1,
+        weeks: resolveNurseryWeeks(seed, categories)
+      });
+      setIsPlanModalOpen(true);
+    } else {
+       alert("You need to create a Season in the Admin Settings before scheduling seeds.");
+    }
+  };
+
+  const handleSavePlan = async () => {
+    if (!planForm.seasonId || !planForm.targetDate) return;
+    setIsSavingPlan(true);
+    try {
+      const startDate = calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days);
+      const payload = {
+        season_id: planForm.seasonId,
+        seed_id: seed.id,
+        target_plant_date: planForm.targetDate,
+        planned_qty: planForm.qty,
+        sown_qty: 0,
+        indoor_start_date: startDate
+      };
+      
+      const { error } = await supabase.from('grow_plan').insert([payload]);
+      if (error) throw new Error(error.message);
+      
+      alert(`Successfully added ${seed.variety_name} to the Grow Planner!`);
+      setIsPlanModalOpen(false);
+    } catch (err: any) {
+      alert("Error saving plan: " + err.message);
+    } finally {
+      setIsSavingPlan(false);
+    }
+  };
+
   const rawImgPath = (seed.images && seed.images.length > 0) ? seed.images[viewingImageIndex] : null;
   const displayImg = rawImgPath 
     ? (rawImgPath.startsWith('http') || rawImgPath.startsWith('data:') ? rawImgPath : signedUrls[rawImgPath]) 
@@ -147,10 +231,73 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
   const shu = seed.scoville_rating !== undefined && seed.scoville_rating !== null ? Number(seed.scoville_rating) : null;
 
   return (
-    <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
+    <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans relative">
+      
       {fullScreenImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)}>
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setFullScreenImage(null)}>
           <img src={fullScreenImage} className="max-w-full max-h-full object-contain rounded-lg" alt="Fullscreen" />
+        </div>
+      )}
+
+      {/* SCHEDULE SEED MODAL */}
+      {isPlanModalOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
+              <div>
+                <h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2>
+                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{seed.variety_name}</p>
+              </div>
+              <button onClick={() => setIsPlanModalOpen(false)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Season</label>
+                <select 
+                  value={planForm.seasonId} 
+                  onChange={e => {
+                    const newSeasonId = e.target.value;
+                    const selectedSeason = seasons.find(s => s.id === newSeasonId);
+                    setPlanForm({
+                      ...planForm, 
+                      seasonId: newSeasonId,
+                      targetDate: selectedSeason?.seedling_target_date || planForm.targetDate
+                    });
+                  }} 
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none cursor-pointer"
+                >
+                  {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
+                    <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800">
+                      <input type="number" min="0" value={planForm.weeks} onChange={(e) => setPlanForm({...planForm, weeks: Number(e.target.value)})} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks
+                    </div>
+                 </div>
+                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
+                    <input type="number" min="1" value={planForm.qty} onChange={(e) => setPlanForm({...planForm, qty: Number(e.target.value)})} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
+                 </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                <input type="date" value={planForm.targetDate} onChange={(e) => setPlanForm({...planForm, targetDate: e.target.value})} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2 shadow-sm">
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span>
+                <span className="text-xl font-black text-emerald-600">
+                  {planForm.targetDate ? new Date(calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '--'}
+                </span>
+              </div>
+              <button onClick={handleSavePlan} disabled={isSavingPlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500 disabled:opacity-50">
+                {isSavingPlan ? 'Saving...' : 'Confirm & Add to Calendar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -174,6 +321,11 @@ export default function SeedDetail({ seed, trays, navigateTo, handleGoBack, user
         <div className="flex gap-2 min-w-[80px] justify-end">
           {userRole === 'admin' && (
             <>
+               <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Add to Planner">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                 </svg>
+               </button>
                <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Duplicate Seed">
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
