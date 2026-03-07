@@ -9,8 +9,8 @@ export type AppView =
   | 'tray_detail'
   | 'tray_edit'
   | 'seedlings'
-  | 'admin_hub'         // NEW
-  | 'admin_categories'  // NEW
+  | 'admin_hub'         
+  | 'admin_categories'  
   | 'admin_seasons' 
   | 'admin_demand'
   | 'grow_planner';
@@ -19,7 +19,7 @@ export interface SeedCategory {
   id?: string;
   name: string;
   prefix: string;
-  default_nursery_weeks?: number; // NEW
+  default_nursery_weeks?: number; 
 }
 
 export interface SeedData {
@@ -41,7 +41,14 @@ export interface SeedData {
   stratification_days?: number;
   light_required?: boolean;
   scoville_rating?: number;
-  custom_nursery_weeks?: number; // NEW
+  custom_nursery_weeks?: number; 
+}
+
+export interface SeedlingJournalEntry {
+  id: string;
+  date: string;
+  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE' | 'ALLOCATE' | 'TASTING' | 'HARVEST' | 'OBSERVATION';
+  note: string;
 }
 
 export interface InventorySeed {
@@ -71,7 +78,8 @@ export interface InventorySeed {
   parent_id_female?: string;
   parent_id_male?: string;
   generation?: string;
-  custom_nursery_weeks?: number; // NEW
+  custom_nursery_weeks?: number; 
+  journal?: SeedlingJournalEntry[];
 
   returnTo?: AppView;
   returnPayload?: any;
@@ -108,11 +116,12 @@ export interface Season {
   id: string;
   name: string;
   status: 'Planning' | 'Active' | 'Archived';
-  seedling_target_date?: string; // Updated name
+  seedling_target_date?: string; 
   last_pickup_date?: string;         
   min_nursery_percentage?: number;
   created_at: string;
 }
+
 export interface WishlistSession {
   id: string; 
   list_name: string;
@@ -131,13 +140,6 @@ export interface WishlistSelection {
   seed?: InventorySeed; 
 }
 
-export interface SeedlingJournalEntry {
-  id: string;
-  date: string;
-  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE' | 'ALLOCATE';
-  note: string;
-}
-
 export interface SeasonSeedling {
   id: string;
   seed_id: string;
@@ -151,6 +153,7 @@ export interface SeasonSeedling {
   qty_dead: number;
   locations: Record<string, number>; 
   journal: SeedlingJournalEntry[];
+  images?: string[];
   created_at?: string;
   updated_at?: string;
   seed?: InventorySeed;

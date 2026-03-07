@@ -1,6 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSeedling, Season, AppView, SeedlingJournalEntry, InventorySeed } from '../types';
+
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+  const byteString = atob(base64.split(',')[1]);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
+  return new Blob([ab], { type: mimeType });
+};
+
+const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!source) return resolve("");
+    const img = new Image();
+    img.crossOrigin = "anonymous"; 
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width; let height = img.height;
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+      else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      try { resolve(canvas.toDataURL('image/jpeg', quality)); } catch (e) { resolve(""); }
+    };
+    img.onerror = () => resolve("");
+    let finalSrc = source;
+    if (source.startsWith('http') && !source.includes('supabase.co')) { finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`; }
+    img.src = finalSrc;
+  });
+};
 
 export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: any) {
   const [ledgers, setLedgers] = useState<SeasonSeedling[]>([]);
@@ -8,43 +38,39 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
   const [activeSeason, setActiveSeason] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
   // Modals
   const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'ADJUST' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
 
-  // Direct Add Seedlings State (No Tray)
+  // Direct Add Seedlings State
   const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
   const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
   const [isSubmittingDirectAdd, setIsSubmittingDirectAdd] = useState(false);
   const [showSeedSearch, setShowSeedSearch] = useState(false);
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
 
-  // Double-Entry Event Form State
+  // Event State
   const [eventType, setEventType] = useState<'qty_planted' | 'qty_gifted' | 'qty_sold' | 'qty_dead'>('qty_planted');
   const [deductKeep, setDeductKeep] = useState(0);
   const [deductReserve, setDeductReserve] = useState(0);
   const [deductAvailable, setDeductAvailable] = useState(0);
 
-  // Allocation Form State
+  // Allocation & Audit State
   const [editKeep, setEditKeep] = useState(0);
   const [editReserve, setEditReserve] = useState(0);
-
-  // Audit/Adjust State
   const [adjustQty, setAdjustQty] = useState(0);
 
-  // Journal State
+  // Journal & Photo State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
   const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL');
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  useEffect(() => {
-    fetchBaseData();
-  }, []);
-
-  useEffect(() => {
-    setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason }));
-  }, [activeSeason]);
+  useEffect(() => { fetchBaseData(); }, []);
+  useEffect(() => { setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason })); }, [activeSeason]);
 
   const fetchBaseData = async () => {
     setIsLoading(true);
@@ -57,10 +83,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
     if (seasonData && seasonData.length > 0) {
       setSeasons(seasonData as Season[]);
-      
       const active = seasonData.find((s: any) => s.status === 'Active');
       const defaultSeasonId = active ? active.id : seasonData[0].id;
-      
       const currentSeason = activeSeason || defaultSeasonId;
       setActiveSeason(currentSeason);
       fetchLedgers(currentSeason);
@@ -71,38 +95,70 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const fetchLedgers = async (seasonId: string) => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from('season_seedlings')
-      .select('*, seed:seed_inventory(*)')
-      .eq('season_id', seasonId);
-      
-    if (data) setLedgers(data);
+    const { data } = await supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', seasonId);
+    if (data) {
+       setLedgers(data);
+       
+       const urlsToFetch = data.flatMap(l => l.images || []).filter(img => img && !img.startsWith('http') && !img.startsWith('data:'));
+       if (urlsToFetch.length > 0) {
+          const fetchedUrls: Record<string, string> = {};
+          const { data: sData } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
+          if (sData) sData.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; });
+          setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
+       }
+    }
     setIsLoading(false);
   };
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
-  const openEventModal = (ledger: SeasonSeedling) => {
-    setSelectedLedger(ledger);
-    setEventType('qty_planted');
-    setDeductKeep(0);
-    setDeductReserve(0);
-    setDeductAvailable(0);
-    setActiveModal('LOG_EVENT');
+  const handleCapturePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedLedger) return;
+    
+    setIsUploadingPhoto(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        const optimizedBase64 = await resizeImage(base64, 1600, 0.8);
+        if (optimizedBase64) {
+          const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
+          const fileName = `seedling_${crypto.randomUUID()}.jpg`;
+          const filePath = `seedlings/${selectedLedger.id}/${fileName}`;
+          
+          await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
+          
+          const newImages = [...(selectedLedger.images || []), filePath];
+          
+          const todayObj = new Date();
+          const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+          
+          const newEntry: SeedlingJournalEntry = {
+            id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+            date: localToday,
+            type: 'EVENT',
+            note: '📸 Snapped a progression photo of the seedlings.'
+          };
+          const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
+
+          setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, images: newImages, journal: updatedJournal } : l));
+          setSelectedLedger({ ...selectedLedger, images: newImages, journal: updatedJournal });
+          
+          await supabase.from('season_seedlings').update({ images: newImages, journal: updatedJournal }).eq('id', selectedLedger.id);
+          
+          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
+          if (data?.signedUrl) setSignedUrls(prev => ({...prev, [filePath]: data.signedUrl}));
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) { alert("Upload failed: " + err.message); } 
+    finally { setIsUploadingPhoto(false); }
   };
 
-  const openAllocateModal = (ledger: SeasonSeedling) => {
-    setSelectedLedger(ledger);
-    setEditKeep(ledger.allocate_keep);
-    setEditReserve(ledger.allocate_reserve);
-    setActiveModal('ALLOCATE');
-  };
-
-  const openAdjustModal = (ledger: SeasonSeedling) => {
-    setSelectedLedger(ledger);
-    setAdjustQty(ledger.qty_growing);
-    setActiveModal('ADJUST');
-  };
+  const openEventModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setEventType('qty_planted'); setDeductKeep(0); setDeductReserve(0); setDeductAvailable(0); setActiveModal('LOG_EVENT'); };
+  const openAllocateModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setEditKeep(ledger.allocate_keep); setEditReserve(ledger.allocate_reserve); setActiveModal('ALLOCATE'); };
+  const openAdjustModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setAdjustQty(ledger.qty_growing); setActiveModal('ADJUST'); };
 
   const submitEvent = async () => {
     if (!selectedLedger) return;
@@ -110,10 +166,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     if (totalDeducted === 0) return;
 
     const newGrowing = Math.max(0, selectedLedger.qty_growing - totalDeducted);
-    const newKeep = Math.max(0, selectedLedger.allocate_keep - deductKeep);
-    const newReserve = Math.max(0, selectedLedger.allocate_reserve - deductReserve);
-    const newEventTotal = (selectedLedger[eventType] as number) + totalDeducted;
-
     const verb = eventType.replace('qty_', ''); 
     const newJournalEntry: SeedlingJournalEntry = {
       id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
@@ -122,16 +174,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
       note: `Logged ${totalDeducted} as ${verb.toUpperCase()}. (-${deductKeep} Keep, -${deductReserve} Reserve, -${deductAvailable} Available)`
     };
 
-    const updatedJournal = [newJournalEntry, ...(selectedLedger.journal || [])];
-
-    const updates = {
-      qty_growing: newGrowing,
-      allocate_keep: newKeep,
-      allocate_reserve: newReserve,
-      [eventType]: newEventTotal,
-      journal: updatedJournal
-    };
-
+    const updates = { qty_growing: newGrowing, allocate_keep: Math.max(0, selectedLedger.allocate_keep - deductKeep), allocate_reserve: Math.max(0, selectedLedger.allocate_reserve - deductReserve), [eventType]: (selectedLedger[eventType] as number) + totalDeducted, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
     setActiveModal(null);
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
@@ -139,22 +182,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const submitAllocation = async () => {
     if (!selectedLedger) return;
-
-    const newJournalEntry: SeedlingJournalEntry = {
-      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-      date: new Date().toISOString().split('T')[0],
-      type: 'ALLOCATE',
-      note: `Updated Allocations: Keep (${editKeep}), Reserve (${editReserve})`
-    };
-
-    const updatedJournal = [newJournalEntry, ...(selectedLedger.journal || [])];
-
-    const updates = {
-      allocate_keep: editKeep,
-      allocate_reserve: editReserve,
-      journal: updatedJournal
-    };
-
+    const newJournalEntry: SeedlingJournalEntry = { id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), date: new Date().toISOString().split('T')[0], type: 'ALLOCATE', note: `Updated Allocations: Keep (${editKeep}), Reserve (${editReserve})` };
+    const updates = { allocate_keep: editKeep, allocate_reserve: editReserve, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
     setActiveModal(null);
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
@@ -162,30 +191,14 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const submitAdjustment = async () => {
     if (!selectedLedger) return;
-    
     const delta = adjustQty - selectedLedger.qty_growing;
-    if (delta === 0) {
-      setActiveModal(null);
-      return; 
-    }
-
+    if (delta === 0) { setActiveModal(null); return; }
+    
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
-    const newJournalEntry: SeedlingJournalEntry = {
-      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-      date: localToday,
-      type: 'EVENT',
-      note: `Inventory Audit: Corrected total growing from ${selectedLedger.qty_growing} to ${adjustQty} (${delta > 0 ? '+' : ''}${delta}).`
-    };
-
-    const updatedJournal = [newJournalEntry, ...(selectedLedger.journal || [])];
-
-    const updates = {
-      qty_growing: adjustQty,
-      journal: updatedJournal
-    };
-
+    
+    const newJournalEntry: SeedlingJournalEntry = { id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), date: localToday, type: 'EVENT', note: `Inventory Audit: Corrected total growing from ${selectedLedger.qty_growing} to ${adjustQty} (${delta > 0 ? '+' : ''}${delta}).` };
+    const updates = { qty_growing: adjustQty, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
     setActiveModal(null);
     await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
@@ -193,20 +206,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const submitJournalNote = async () => {
     if (!selectedLedger || !newNote.trim()) return;
-    
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
-    const newEntry: SeedlingJournalEntry = {
-      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-      date: localToday,
-      type: noteType as any,
-      note: newNote.trim()
-    };
+    const newEntry: SeedlingJournalEntry = { id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), date: localToday, type: noteType as any, note: newNote.trim() };
     const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, journal: updatedJournal } : l));
+    setSelectedLedger({ ...selectedLedger, journal: updatedJournal });
     setNewNote('');
-    
     await supabase.from('season_seedlings').update({ journal: updatedJournal }).eq('id', selectedLedger.id);
   };
 
@@ -388,13 +394,12 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               const available = availableCalc(ledger);
               return (
                 <div key={ledger.id} className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden flex flex-col">
-                  {/* Ledger Header */}
                   <div className="p-4 border-b border-stone-100 flex items-center gap-4 bg-stone-50">
-                    <div className="w-16 h-16 bg-stone-200 rounded-xl overflow-hidden shadow-inner flex-shrink-0">
+                    <div className="w-16 h-16 bg-stone-200 rounded-xl overflow-hidden shadow-inner flex-shrink-0 cursor-pointer hover:border-emerald-500 border border-transparent transition-colors" onClick={() => navigateTo('seed_detail', seed)}>
                       {seed?.thumbnail ? <img src={seed.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-400">🌱</div>}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-black text-lg text-stone-900 truncate">{seed?.variety_name || 'Unknown Seed'}</h3>
+                      <h3 className="font-black text-lg text-stone-900 truncate hover:text-emerald-600 cursor-pointer" onClick={() => navigateTo('seed_detail', seed)}>{seed?.variety_name || 'Unknown Seed'}</h3>
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
                         <p className="text-[9px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">ID: {seed?.id || 'Unknown'}</p>
@@ -402,7 +407,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     </div>
                   </div>
 
-                  {/* Section Header with Adjust Button */}
                   <div className="px-4 pt-3 flex justify-between items-end">
                     <span className="text-[9px] font-black uppercase tracking-widest text-stone-400">Inventory Status</span>
                     <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md active:scale-95 transition-all hover:bg-amber-100 flex items-center gap-1 shadow-sm">
@@ -410,40 +414,21 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                     </button>
                   </div>
 
-                  {/* Active Allocation Math */}
                   <div className="px-4 pb-4 pt-2 grid grid-cols-4 gap-2 text-center relative">
-                    <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100">
-                      <div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Growing</div>
-                      <div className="text-2xl font-black text-emerald-600">{ledger.qty_growing}</div>
-                    </div>
-                    <div className="bg-stone-50 rounded-xl p-2 border border-stone-200">
-                      <div className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Keep</div>
-                      <div className="text-xl font-black text-stone-800">{ledger.allocate_keep}</div>
-                    </div>
-                    <div className="bg-purple-50 rounded-xl p-2 border border-purple-100">
-                      <div className="text-[10px] font-black text-purple-800 uppercase tracking-widest mb-1">Reserve</div>
-                      <div className="text-xl font-black text-purple-600">{ledger.allocate_reserve}</div>
-                    </div>
-                    <div className="bg-blue-50 rounded-xl p-2 border border-blue-100 shadow-inner">
-                      <div className="text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Avail</div>
-                      <div className="text-2xl font-black text-blue-600">{available}</div>
-                    </div>
+                    <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100"><div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Growing</div><div className="text-2xl font-black text-emerald-600">{ledger.qty_growing}</div></div>
+                    <div className="bg-stone-50 rounded-xl p-2 border border-stone-200"><div className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Keep</div><div className="text-xl font-black text-stone-800">{ledger.allocate_keep}</div></div>
+                    <div className="bg-purple-50 rounded-xl p-2 border border-purple-100"><div className="text-[10px] font-black text-purple-800 uppercase tracking-widest mb-1">Reserve</div><div className="text-xl font-black text-purple-600">{ledger.allocate_reserve}</div></div>
+                    <div className="bg-blue-50 rounded-xl p-2 border border-blue-100 shadow-inner"><div className="text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Avail</div><div className="text-2xl font-black text-blue-600">{available}</div></div>
                   </div>
 
-                  {/* Action Bar */}
                   <div className="p-3 bg-stone-50 border-t border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide">
-                    <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center shadow-sm">
-                      Log Event
-                    </button>
-                    <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">
-                      Allocate
-                    </button>
-                    <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100">
-                      Journal
+                    <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center shadow-sm">Log Event</button>
+                    <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">Allocate</button>
+                    <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100 gap-1.5">
+                       Journal {(ledger.images && ledger.images.length > 0) && <span className="w-2 h-2 bg-blue-500 rounded-full" />}
                     </button>
                   </div>
 
-                  {/* Terminal Tallies */}
                   <div className="p-3 bg-white grid grid-cols-4 gap-2 text-center text-xs font-bold text-stone-500">
                     <div>Planted <span className="block text-stone-800 font-black text-lg">{ledger.qty_planted}</span></div>
                     <div>Gifted <span className="block text-stone-800 font-black text-lg">{ledger.qty_gifted}</span></div>
@@ -457,9 +442,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
         )}
       </div>
 
-      {/* ========================================================= */}
-      {/* MODAL: ADJUST (Correct Miscounts)                           */}
-      {/* ========================================================= */}
       {activeModal === 'ADJUST' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -467,53 +449,27 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <h2 className="font-black text-amber-900 tracking-tight flex items-center gap-2">⚖️ Inventory Audit</h2>
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-amber-600 hover:bg-amber-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            
             <div className="p-5 space-y-4">
               <p className="text-xs text-stone-500 leading-relaxed">Fix a miscount without logging them as "Dead" or doing another "Direct Add". This will add a note to your journal.</p>
-
               <div className="flex items-center justify-between bg-white border border-stone-200 p-4 rounded-2xl shadow-sm">
-                <div>
-                  <span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Current Total</span>
-                  <span className="text-2xl font-black text-stone-400 line-through decoration-red-500 decoration-2">{selectedLedger.qty_growing}</span>
-                </div>
-                
+                <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Current Total</span><span className="text-2xl font-black text-stone-400 line-through decoration-red-500 decoration-2">{selectedLedger.qty_growing}</span></div>
                 <div className="text-xl text-stone-300">➡️</div>
-
                 <div className="text-right">
                   <span className="block text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Actual Total</span>
-                  <input 
-                    type="number" 
-                    min="0" 
-                    value={adjustQty === 0 && adjustQty !== selectedLedger.qty_growing ? '' : adjustQty} 
-                    onChange={(e) => setAdjustQty(Number(e.target.value))} 
-                    className="w-24 text-center border-b-2 border-amber-300 py-1 text-2xl font-black text-stone-800 outline-none focus:border-amber-500" 
-                  />
+                  <input type="number" min="0" value={adjustQty === 0 && adjustQty !== selectedLedger.qty_growing ? '' : adjustQty} onChange={(e) => setAdjustQty(Number(e.target.value))} className="w-24 text-center border-b-2 border-amber-300 py-1 text-2xl font-black text-stone-800 outline-none focus:border-amber-500" />
                 </div>
               </div>
-
               {adjustQty !== selectedLedger.qty_growing && (
                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center text-sm font-bold text-stone-600 animate-in fade-in">
-                  Difference: <span className={adjustQty > selectedLedger.qty_growing ? 'text-emerald-600' : 'text-red-600'}>
-                    {adjustQty > selectedLedger.qty_growing ? '+' : ''}{adjustQty - selectedLedger.qty_growing}
-                  </span>
+                  Difference: <span className={adjustQty > selectedLedger.qty_growing ? 'text-emerald-600' : 'text-red-600'}>{adjustQty > selectedLedger.qty_growing ? '+' : ''}{adjustQty - selectedLedger.qty_growing}</span>
                 </div>
               )}
-
-              <button 
-                onClick={submitAdjustment}
-                disabled={adjustQty === selectedLedger.qty_growing}
-                className="w-full py-4 bg-amber-500 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-amber-900/20 active:scale-95 transition-all mt-2 hover:bg-amber-600 disabled:opacity-50 disabled:grayscale"
-              >
-                Confirm Adjustment
-              </button>
+              <button onClick={submitAdjustment} disabled={adjustQty === selectedLedger.qty_growing} className="w-full py-4 bg-amber-500 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-amber-900/20 active:scale-95 transition-all mt-2 hover:bg-amber-600 disabled:opacity-50 disabled:grayscale">Confirm Adjustment</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL: LOG EVENT (Double Entry Bookkeeping)                 */}
-      {/* ========================================================= */}
       {activeModal === 'LOG_EVENT' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -521,7 +477,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <h2 className="font-black text-stone-800 tracking-tight">Log Event</h2>
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            
             <div className="p-5 space-y-5">
               <div>
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2">What happened?</label>
@@ -532,48 +487,21 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                   <button onClick={() => setEventType('qty_dead')} className={`py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === 'qty_dead' ? 'bg-red-100 text-red-800 border-red-300 shadow-sm' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}>💀 Dead</button>
                 </div>
               </div>
-
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
                 <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3 text-center">Where are these coming from?</label>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-stone-700 w-24">My Keep</span>
-                    <input type="number" min="0" max={selectedLedger.allocate_keep} value={deductKeep || ''} onChange={(e) => setDeductKeep(Math.min(selectedLedger.allocate_keep, Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" />
-                    <span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {selectedLedger.allocate_keep}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-stone-700 w-24">Reserved</span>
-                    <input type="number" min="0" max={selectedLedger.allocate_reserve} value={deductReserve || ''} onChange={(e) => setDeductReserve(Math.min(selectedLedger.allocate_reserve, Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" />
-                    <span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {selectedLedger.allocate_reserve}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-stone-700 w-24">Available</span>
-                    <input type="number" min="0" max={availableCalc(selectedLedger)} value={deductAvailable || ''} onChange={(e) => setDeductAvailable(Math.min(availableCalc(selectedLedger), Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" />
-                    <span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {availableCalc(selectedLedger)}</span>
-                  </div>
+                  <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">My Keep</span><input type="number" min="0" max={selectedLedger.allocate_keep} value={deductKeep || ''} onChange={(e) => setDeductKeep(Math.min(selectedLedger.allocate_keep, Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" /><span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {selectedLedger.allocate_keep}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">Reserved</span><input type="number" min="0" max={selectedLedger.allocate_reserve} value={deductReserve || ''} onChange={(e) => setDeductReserve(Math.min(selectedLedger.allocate_reserve, Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" /><span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {selectedLedger.allocate_reserve}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">Available</span><input type="number" min="0" max={availableCalc(selectedLedger)} value={deductAvailable || ''} onChange={(e) => setDeductAvailable(Math.min(availableCalc(selectedLedger), Number(e.target.value)))} className="w-16 text-center border border-stone-300 rounded-lg py-1 shadow-inner focus:border-emerald-500 outline-none font-black" placeholder="0" /><span className="text-[10px] font-bold text-stone-400 w-12 text-right">Max {availableCalc(selectedLedger)}</span></div>
                 </div>
-                
-                <div className="mt-4 pt-3 border-t border-stone-200 flex justify-between items-center text-sm font-black">
-                  <span className="uppercase tracking-widest text-stone-500">Total Selected:</span>
-                  <span className="text-xl text-stone-900">{deductKeep + deductReserve + deductAvailable}</span>
-                </div>
+                <div className="mt-4 pt-3 border-t border-stone-200 flex justify-between items-center text-sm font-black"><span className="uppercase tracking-widest text-stone-500">Total Selected:</span><span className="text-xl text-stone-900">{deductKeep + deductReserve + deductAvailable}</span></div>
               </div>
-
-              <button 
-                onClick={submitEvent}
-                disabled={deductKeep + deductReserve + deductAvailable === 0}
-                className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50"
-              >
-                Log & Deduct
-              </button>
+              <button onClick={submitEvent} disabled={deductKeep + deductReserve + deductAvailable === 0} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50">Log & Deduct</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL: ALLOCATE (Set Keep and Reserve amounts)              */}
-      {/* ========================================================= */}
       {activeModal === 'ALLOCATE' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -581,52 +509,26 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <h2 className="font-black text-purple-900 tracking-tight flex items-center gap-2">🧮 Update Allocations</h2>
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-purple-400 hover:bg-purple-200 hover:text-purple-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            
             <div className="p-5 space-y-5">
-              <div className="text-center bg-stone-100 p-3 rounded-xl border border-stone-200 mb-4">
-                 <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Total Growing</span>
-                 <div className="text-3xl font-black text-stone-800">{selectedLedger.qty_growing}</div>
-              </div>
-
+              <div className="text-center bg-stone-100 p-3 rounded-xl border border-stone-200 mb-4"><span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Total Growing</span><div className="text-3xl font-black text-stone-800">{selectedLedger.qty_growing}</div></div>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-stone-700 w-24">My Keep</span>
-                  <input type="number" min="0" value={editKeep === 0 ? '' : editKeep} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-stone-700 w-24">Reserved</span>
-                  <input type="number" min="0" value={editReserve === 0 ? '' : editReserve} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
-                </div>
+                <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">My Keep</span><input type="number" min="0" value={editKeep === 0 ? '' : editKeep} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" /></div>
+                <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">Reserved</span><input type="number" min="0" value={editReserve === 0 ? '' : editReserve} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" /></div>
               </div>
-
               <div className="mt-4 pt-4 border-t border-stone-200 flex justify-between items-center">
-                <span className="text-xs font-black uppercase tracking-widest text-blue-600">Calculated Available</span>
-                <span className={`text-2xl font-black ${selectedLedger.qty_growing - editKeep - editReserve < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                  {selectedLedger.qty_growing - editKeep - editReserve}
-                </span>
+                <span className="text-xs font-black uppercase tracking-widest text-blue-600">Calculated Available</span><span className={`text-2xl font-black ${selectedLedger.qty_growing - editKeep - editReserve < 0 ? 'text-red-500' : 'text-blue-600'}`}>{selectedLedger.qty_growing - editKeep - editReserve}</span>
               </div>
-              {selectedLedger.qty_growing - editKeep - editReserve < 0 && (
-                <p className="text-[10px] text-red-500 font-bold text-center">You have over-allocated your growing plants!</p>
-              )}
-
-              <button 
-                onClick={submitAllocation}
-                className="w-full py-4 bg-purple-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-2"
-              >
-                Save Allocations
-              </button>
+              {selectedLedger.qty_growing - editKeep - editReserve < 0 && <p className="text-[10px] text-red-500 font-bold text-center">You have over-allocated your growing plants!</p>}
+              <button onClick={submitAllocation} className="w-full py-4 bg-purple-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-2">Save Allocations</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL: JOURNAL (Pot sizes, notes, timeline)                 */}
-      {/* ========================================================= */}
       {activeModal === 'JOURNAL' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md h-[85vh] sm:h-[600px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
+            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 rounded-t-3xl">
               <div>
                 <h2 className="font-black text-stone-800 tracking-tight">Ledger Journal</h2>
                 <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{selectedLedger.seed?.variety_name}</p>
@@ -634,13 +536,22 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
-               {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT', 'ALLOCATE'].map(f => (
-                 <button 
-                   key={f} 
-                   onClick={() => setJournalFilter(f as any)} 
-                   className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}
-                 >
+            {selectedLedger.images && selectedLedger.images.length > 0 && (
+               <div className="p-4 bg-white border-b border-stone-100 flex gap-3 overflow-x-auto scrollbar-hide shrink-0">
+                  {selectedLedger.images.map((img, idx) => {
+                     const src = img.startsWith('http') || img.startsWith('data:') ? img : signedUrls[img];
+                     return (
+                        <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border border-stone-200 shadow-sm bg-stone-100 relative">
+                           {src ? <img src={src} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300 animate-pulse">⏳</div>}
+                        </div>
+                     );
+                  })}
+               </div>
+            )}
+
+            <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 shadow-sm z-10">
+               {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT'].map(f => (
+                 <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
                    {f}
                  </button>
                ))}
@@ -648,7 +559,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100">
               {(selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).length === 0 ? (
-                <p className="text-center text-stone-400 text-sm italic py-10">No journal entries match this filter.</p>
+                <p className="text-center text-stone-400 text-sm italic py-10">No journal entries found.</p>
               ) : (
                 (selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).map((entry, idx) => (
                   <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative">
@@ -671,12 +582,17 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
             <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
               <div className="flex gap-2 mb-3">
+                <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50">
+                  {isUploadingPhoto ? '⏳' : '📸'} Photo
+                </button>
+                <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handleCapturePhoto} />
+                
                 {['NOTE', 'UPPOT', 'FERTILIZE'].map(t => (
-                  <button key={t} onClick={() => setNoteType(t as any)} className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-colors ${noteType === t ? 'bg-stone-800 text-white border-stone-800' : 'bg-stone-50 text-stone-500 border-stone-200'}`}>{t}</button>
+                  <button key={t} onClick={() => setNoteType(t as any)} className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-colors shadow-sm ${noteType === t ? 'bg-stone-800 text-white border-stone-800' : 'bg-stone-50 text-stone-500 border-stone-200'}`}>{t}</button>
                 ))}
               </div>
               <div className="flex gap-2">
-                <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Type a note or log pot size..." className="flex-1 border border-stone-200 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 outline-none bg-stone-50 shadow-inner" />
+                <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Type a note or log pot size..." className="flex-1 border border-stone-200 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 outline-none bg-stone-50 shadow-inner font-medium" />
                 <button onClick={submitJournalNote} disabled={!newNote.trim()} className="bg-emerald-600 text-white px-4 rounded-xl shadow-md disabled:opacity-50 active:scale-95 transition-all">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 </button>
@@ -685,7 +601,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
           </div>
         </div>
       )}
-
     </main>
   );
 }
