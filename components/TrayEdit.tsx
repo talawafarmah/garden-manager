@@ -110,7 +110,6 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
   const handleAddCellContent = () => {
     const newIdx = (trayFormData.contents || []).length;
-    // FIX 2: Default row addition to today's date
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     
@@ -138,9 +137,12 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
   const handleSaveEdit = async () => {
     setIsSaving(true);
+    console.log("[TRAY SAVE] 1. Starting save process...");
+    
     try {
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
       const folderName = trayFormData.id; 
+      console.log(`[TRAY SAVE] 2. Is New Record? ${isNewRecord}. ID: ${trayFormData.id}`);
       
       const uploadPromises = (trayFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
@@ -156,8 +158,10 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         return img; 
       });
 
+      console.log("[TRAY SAVE] 3. Uploading images (if any)...");
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
+      console.log("[TRAY SAVE] 4. Cleaning blank rows...");
       const cleanedContents = (trayFormData.contents || [])
         .filter((c: any) => c.seed_id && c.seed_id.trim() !== '')
         .map((c: any) => ({
@@ -176,25 +180,44 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         first_germination_date: trayFormData.first_germination_date ? trayFormData.first_germination_date : null,
         first_planted_date: trayFormData.first_planted_date ? trayFormData.first_planted_date : null,
       };
+
+      console.log("[TRAY SAVE] 5. Payload ready for DB:", payloadToSave);
       
+      let finalSavedRecord = payloadToSave;
+
       if (isNewRecord) {
-        const { error } = await supabase.from('seedling_trays').insert([payloadToSave]);
+        console.log("[TRAY SAVE] 6. Sending INSERT to Supabase...");
+        // Ask Supabase to return the exactly formatted row using .select().single()
+        const { data, error } = await supabase.from('seedling_trays').insert([payloadToSave]).select().single();
         if (error) throw new Error("Insert Error: " + error.message);
+        if (data) finalSavedRecord = data;
+        console.log("[TRAY SAVE] 7. Insert successful!", finalSavedRecord);
       } else {
-        const { error } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', trayFormData.id);
+        console.log("[TRAY SAVE] 6. Sending UPDATE to Supabase...");
+        const { data, error } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', trayFormData.id).select().single();
         if (error) throw new Error("Update Error: " + error.message);
+        if (data) finalSavedRecord = data;
+        console.log("[TRAY SAVE] 7. Update successful!", finalSavedRecord);
       }
       
-      // FIX 3: Timeout decouples the AppRouter state change, completely preventing the Client-Side Exception!
+      console.log("[TRAY SAVE] 8. Starting UI state update timeout...");
+      
       setTimeout(() => {
-        if (typeof setTrays === 'function') {
-          const updatedTrays = isNewRecord ? [payloadToSave, ...trays] : trays.map((t: SeedlingTray) => t.id === trayFormData.id ? payloadToSave : t);
-          setTrays(updatedTrays);
+        try {
+          console.log("[TRAY SAVE] 9. Inside Timeout. Updating React state...");
+          if (typeof setTrays === 'function') {
+            const updatedTrays = isNewRecord ? [finalSavedRecord, ...trays] : trays.map((t: SeedlingTray) => t.id === finalSavedRecord.id ? finalSavedRecord : t);
+            setTrays(updatedTrays);
+          }
+          console.log("[TRAY SAVE] 10. Navigating back to trays view...");
+          navigateTo('trays', null, true);
+        } catch (innerErr: any) {
+          console.error("[TRAY SAVE] CRASH IN TIMEOUT:", innerErr);
         }
-        navigateTo('trays', null, true);
-      }, 50);
+      }, 100);
       
     } catch (e: any) { 
+      console.error("[TRAY SAVE] CRASH:", e);
       alert(e.message); 
       setIsSaving(false); 
     } 
