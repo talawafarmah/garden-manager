@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppView } from '../types';
 
 interface Props {
@@ -9,6 +9,33 @@ interface Props {
 }
 
 export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
+  // NEW: State for our Secret Door
+  const [tapCount, setTapCount] = useState(0);
+  const [isLocalAdmin, setIsLocalAdmin] = useState(false);
+
+  // Check if this device has been previously unlocked
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsLocalAdmin(localStorage.getItem('garden_force_admin') === 'true');
+    }
+  }, []);
+
+  const handleVersionTap = () => {
+    const newCount = tapCount + 1;
+    setTapCount(newCount);
+    
+    if (newCount === 5) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('garden_force_admin', 'true');
+      }
+      setIsLocalAdmin(true);
+      alert('🌱 Admin Mode Permanently Unlocked on this Device!');
+    }
+  };
+
+  // Determine effective role: Either passed from Basic Auth, OR from our local override
+  const effectiveRole = userRole === 'admin' || isLocalAdmin ? 'admin' : 'viewer';
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">
@@ -16,7 +43,13 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-baseline gap-2">
               Garden Manager
-              <span className="text-sm font-normal text-emerald-300">v2.6</span>
+              {/* FIX: Clickable Version Number for the Secret Door */}
+              <span 
+                onClick={handleVersionTap}
+                className="text-sm font-normal text-emerald-300 cursor-pointer select-none"
+              >
+                v2.6
+              </span>
             </h1>
             <p className="text-emerald-100 text-sm mt-1">Zone 5b • Last Frost: May 1-10</p>
           </div>
@@ -68,11 +101,11 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
           </div>
         </section>
 
-        {userRole === 'admin' && (
+        {/* FIX: Checking effectiveRole here instead of userRole */}
+        {effectiveRole === 'admin' && (
           <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">System Administration</h2>
             
-            {/* FIX: Single Admin Hub Button */}
             <button 
               onClick={() => navigateTo('admin_hub')} 
               className="w-full bg-stone-900 p-4 rounded-xl shadow-md border border-stone-800 text-left hover:bg-stone-800 hover:border-stone-600 transition-all active:scale-95 flex items-center justify-between group"
@@ -88,7 +121,6 @@ export default function Dashboard({ navigateTo, userRole = 'viewer' }: Props) {
               </div>
               <svg className="w-5 h-5 text-stone-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             </button>
-
           </section>
         )}
       </div>
