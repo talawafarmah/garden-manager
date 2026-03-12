@@ -44,7 +44,7 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
-export default function AdminDemand({ categories, navigateTo, handleGoBack, userRole }: Props) {
+export default function AdminDemand({ categories, navigateTo, handleGoBack }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   const [seasonData, setSeasonData] = useState<{sessions: any[], selections: any[], ledgers: any[], plans: any[]} | null>(null);
@@ -54,7 +54,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
   
   const [globalTargetDate, setGlobalTargetDate] = useState<string>(`${new Date().getFullYear()}-05-10`);
   const [showDrafts, setShowDrafts] = useState(false);
-  const [hidePlanned, setHidePlanned] = useState(false); // FIX 4: Hide Planned Filter State
+  const [hidePlanned, setHidePlanned] = useState(false);
   const [counts, setCounts] = useState({ submitted: 0, drafts: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -219,14 +219,11 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
     } else alert("Error saving plan: " + error?.message);
   };
 
-  // FIX 4: Apply the "Hide Planned" Filter logic
   const displayedDemand = aggregatedDemand.filter(item => {
      if (!hidePlanned) return true;
      if (!item.plan) return true;
      return item.plan.planned_qty < item.count;
   });
-
-  if (userRole !== 'admin') return <div className="p-10 text-center">Access Denied</div>;
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
@@ -258,7 +255,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
           
           <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
             <div><h2 className="font-black text-stone-800 text-[10px] uppercase tracking-widest">Target Date</h2></div>
-            <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-500 shadow-inner" />
+            <input type="date" value={globalTargetDate} onChange={(e) => setGlobalTargetDate(e.target.value)} className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 outline-none focus:border-emerald-50 shadow-inner" />
           </div>
 
           <div className="flex items-center gap-3 px-1 lg:px-4 lg:border-l border-stone-100">
@@ -280,7 +277,6 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack, user
                </button>
             </div>
             
-            {/* FIX 4: Visual Toggle Switch for Hide Planned filter */}
             <div className="flex items-center gap-2">
                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">Hide Planned</span>
                <button onClick={() => setHidePlanned(!hidePlanned)} className={`w-8 h-4 rounded-full transition-colors relative ${hidePlanned ? 'bg-emerald-500' : 'bg-stone-300'}`}>

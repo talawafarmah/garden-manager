@@ -40,29 +40,24 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [isLoading, setIsLoading] = useState(true);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
-  // Modals
   const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'ADJUST' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
 
-  // Direct Add Seedlings State
   const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
   const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
   const [isSubmittingDirectAdd, setIsSubmittingDirectAdd] = useState(false);
   const [showSeedSearch, setShowSeedSearch] = useState(false);
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
 
-  // Event State
   const [eventType, setEventType] = useState<'qty_planted' | 'qty_gifted' | 'qty_sold' | 'qty_dead'>('qty_planted');
   const [deductKeep, setDeductKeep] = useState(0);
   const [deductReserve, setDeductReserve] = useState(0);
   const [deductAvailable, setDeductAvailable] = useState(0);
 
-  // Allocation & Audit State
   const [editKeep, setEditKeep] = useState(0);
   const [editReserve, setEditReserve] = useState(0);
   const [adjustQty, setAdjustQty] = useState(0);
 
-  // Journal & Photo State
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
   const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL');
@@ -361,11 +356,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
           <h1 className="text-xl font-bold ml-1 truncate">Seedling Nursery</h1>
         </div>
         <div className="flex items-center gap-3">
-            {userRole === 'admin' && (
-              <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50" title="Direct Add Seedlings">
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
-              </button>
-            )}
+            <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50" title="Direct Add Seedlings">
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
+            </button>
             <select 
               value={activeSeason} 
               onChange={(e) => { setActiveSeason(e.target.value); fetchLedgers(e.target.value); }}

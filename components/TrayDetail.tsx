@@ -7,7 +7,7 @@ const parseDateString = (dateStr: string) => {
   return new Date(dateStr + 'T12:00:00');
 };
 
-export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, userRole }: any) {
+export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack }: any) {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -41,7 +41,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
 
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
     e.stopPropagation();
-    if (userRole !== 'admin') return;
 
     const updatedContents = [...localTray.contents];
     const currentVal = updatedContents[index][field as keyof typeof updatedContents[0]] || 0;
@@ -49,7 +48,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
     
     (updatedContents[index][field as keyof typeof updatedContents[0]] as any) = newVal;
 
-    // FIX 1: Auto-stamp today's date if we are incrementing and the date is currently blank
     if (delta > 0) {
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
@@ -67,7 +65,6 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
   };
 
   const handleQuickDateUpdate = async (index: number, field: string, val: string) => {
-    if (userRole !== 'admin') return;
     const updatedContents = [...localTray.contents];
     (updatedContents[index] as any)[field] = val || null;
     setLocalTray({ ...localTray, contents: updatedContents });
@@ -179,7 +176,7 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
         <h1 className="text-xl font-bold truncate flex-1">Tray Details</h1>
         <div className="flex items-center gap-2">
            <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50 text-sm">Copy</button>
-           {userRole === 'admin' && (<button onClick={() => navigateTo('tray_edit', localTray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 text-sm">Edit</button>)}
+           <button onClick={() => navigateTo('tray_edit', localTray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 text-sm">Edit</button>
         </div>
       </header>
 
@@ -272,33 +269,31 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                       </div>
                    </div>
                    
-                   {userRole === 'admin' && (
-                     <button 
-                       onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
-                       disabled={!isPottable}
-                       className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
-                     >
-                       🌱 Pot Up
-                     </button>
-                   )}
+                   <button 
+                     onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
+                     disabled={!isPottable}
+                     className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
+                   >
+                     🌱 Pot Up
+                   </button>
                  </div>
                  
                  <div className="grid grid-cols-3 text-xs pt-1 mt-1">
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 disabled:opacity-50 font-black">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black">-</button>
                        <span className="font-bold text-stone-800 w-5 text-center text-sm">{seedRecord.sown_count || 0}</span>
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 disabled:opacity-50 font-black">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black">+</button>
                      </div>
                    </div>
                    
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 disabled:opacity-50 font-black">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">-</button>
                        <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={userRole !== 'admin'} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 disabled:opacity-50 font-black">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">+</button>
                      </div>
                    </div>
 
@@ -313,15 +308,15 @@ export default function TrayDetail({ tray, inventory, navigateTo, handleGoBack, 
                  <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
-                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
-                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
-                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={userRole !== 'admin'} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
                     </div>
                  </div>
                </div>

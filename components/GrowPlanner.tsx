@@ -46,7 +46,7 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
-export default function GrowPlanner({ categories, navigateTo, handleGoBack, userRole }: Props) {
+export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -164,11 +164,9 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
   const handleBulkSow = () => {
     const selected = plans.filter(p => selectedPlanIds.includes(p.id));
     if (selected.length === 0) return;
-
-    // FIX 2: Default Sown Date to Today!
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
+    
     const trayContents = selected.map(p => {
       const totalAlreadySown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
       return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown), sown_date: localToday };
@@ -231,8 +229,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack, user
   const startDay = new Date(year, month, 1).getDay();
   const calendarDays = Array(startDay).fill(null).concat(Array.from({length: daysInMonth}, (_, i) => i + 1));
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-  if (userRole !== 'admin') return <div className="p-10 text-center">Access Denied</div>;
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-32 font-sans relative">

@@ -11,7 +11,6 @@ interface SeedDetailProps {
   userRole?: string;
 }
 
-// Scheduling Helpers
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
   if (seed.custom_nursery_weeks !== null && seed.custom_nursery_weeks !== undefined) return seed.custom_nursery_weeks;
   const cat = categories?.find(c => c.name === seed.category);
@@ -38,7 +37,7 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
-export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
+export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack }: SeedDetailProps) {
   const [activeTab, setActiveTab] = useState<'SPECS' | 'PERFORMANCE' | 'JOURNAL'>('SPECS');
   
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
@@ -46,21 +45,17 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [parents, setParents] = useState<{mother?: string, father?: string}>({});
 
-  // History & Farm Data
   const [ledgerHistory, setLedgerHistory] = useState<SeasonSeedling[]>([]);
   const [localSeedJournal, setLocalSeedJournal] = useState<SeedlingJournalEntry[]>(seed.journal || []);
   
-  // New Seed Note State
   const [newSeedNote, setNewSeedNote] = useState('');
   const [seedNoteType, setSeedNoteType] = useState<'NOTE'|'TASTING'|'HARVEST'|'OBSERVATION'>('OBSERVATION');
 
-  // Planner Modal State
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({ seasonId: '', targetDate: '', qty: 1, weeks: 6 });
 
-  // Find all trays containing this seed
   const filteredTrays = useMemo(() => {
     return trays?.filter(t => t.contents?.some(c => c.seed_id === seed.id)) || [];
   }, [trays, seed.id]);
@@ -91,7 +86,6 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
     return () => { isMounted = false; };
   }, [seed.id]);
 
-  // Aggregate all images (Seed + Trays + Ledgers) for signing
   const allImagePaths = useMemo(() => {
     const paths = [...(seed.images || [])];
     filteredTrays.forEach(t => paths.push(...(t.images || [])));
@@ -110,13 +104,11 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
     loadSignedUrls();
   }, [allImagePaths]);
 
-  // Performance Math
   const totalSown = filteredTrays.reduce((sum, t) => sum + (t.contents.find(c => c.seed_id === seed.id)?.sown_count || 0), 0);
   const totalGerm = filteredTrays.reduce((sum, t) => sum + (t.contents.find(c => c.seed_id === seed.id)?.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerm / totalSown) * 100) : 0;
   const currentlyGrowing = ledgerHistory.reduce((sum, l) => sum + l.qty_growing, 0);
 
-  // Unified Journal Assembly
   const unifiedJournal = useMemo(() => {
     const entries: any[] = [];
     
@@ -281,22 +273,18 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
         </div>
         <h1 className="text-lg font-bold truncate px-2">Master Hub</h1>
         <div className="flex gap-2 min-w-[80px] justify-end">
-          {userRole === 'admin' && (
-            <>
-               <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Schedule in Planner">
-                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-               </button>
-               <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Duplicate Seed">
-                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-               </button>
-               <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
-                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-               </button>
-               <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Edit Seed">
-                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-               </button>
-            </>
-          )}
+           <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Schedule in Planner">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+           </button>
+           <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Duplicate Seed">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+           </button>
+           <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+           </button>
+           <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Edit Seed">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+           </button>
         </div>
       </header>
 
@@ -320,7 +308,6 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
           </div>
         </div>
 
-        {/* Master Navigation Tabs */}
         <div className="p-3 bg-stone-50 border-b border-stone-200 sticky top-[72px] z-10">
            <div className="flex bg-white rounded-xl shadow-sm border border-stone-200 p-1">
               {['SPECS', 'PERFORMANCE', 'JOURNAL'].map(tab => (
@@ -336,8 +323,6 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
         </div>
 
         <div className="p-4 space-y-4">
-          
-          {/* TAB 1: SPECS (Botanical Data) */}
           {activeTab === 'SPECS' && (
             <div className="space-y-4 animate-in fade-in duration-300">
                {seed.images && seed.images.length > 1 && (
@@ -367,7 +352,6 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
                   </section>
                )}
 
-               {/* Key Indicators (Tomato/Pepper Data) */}
                {(isTomato || isPepper) && (
                  <div className="grid grid-cols-1 gap-2">
                    {isTomato && seed.tomato_type && (
@@ -418,10 +402,8 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
             </div>
           )}
 
-          {/* TAB 2: PERFORMANCE (Farm History) */}
           {activeTab === 'PERFORMANCE' && (
             <div className="space-y-4 animate-in fade-in duration-300">
-              
               <div className="grid grid-cols-2 gap-3">
                  <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 text-center">
                     <span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Farm Germ Rate</span>
@@ -435,7 +417,6 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
                  </div>
               </div>
 
-              {/* Visual Progression Gallery */}
               <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
                  <h3 className="text-[10px] font-black text-stone-800 uppercase tracking-[0.2em] mb-3">Farm Progression Gallery</h3>
                  <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
@@ -482,10 +463,8 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
             </div>
           )}
 
-          {/* TAB 3: UNIFIED JOURNAL */}
           {activeTab === 'JOURNAL' && (
             <div className="space-y-4 animate-in fade-in duration-300">
-               
                <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200">
                   <div className="flex gap-2 mb-3">
                      {['OBSERVATION', 'TASTING', 'HARVEST', 'NOTE'].map(t => (
