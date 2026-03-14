@@ -164,6 +164,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const handleBulkSow = () => {
     const selected = plans.filter(p => selectedPlanIds.includes(p.id));
     if (selected.length === 0) return;
+
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     
@@ -171,7 +172,23 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
       const totalAlreadySown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
       return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown), sown_date: localToday };
     });
-    navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents });
+
+    // Generate Smart Tray Name
+    let smartName = `Tray ${Math.floor(Math.random() * 10000)}`;
+    if (selected.length === 1) {
+      smartName = `${selected[0].seed?.variety_name || 'Seed'} Tray`;
+    } else if (selected.length > 1) {
+      const catSet = new Set(selected.map(s => s.seed?.category || 'Mixed'));
+      smartName = `Mixed ${Array.from(catSet).join('/')} Tray`;
+      if (smartName.length > 40) smartName = "Mixed Propagation Tray"; // Fallback if too long
+    }
+
+    navigateTo('tray_edit', { 
+      season_id: activeSeasonId, 
+      contents: trayContents, 
+      name: smartName,
+      returnTo: 'grow_planner' 
+    });
   };
 
   const handleSyncDates = async () => {

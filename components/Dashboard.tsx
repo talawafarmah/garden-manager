@@ -1,14 +1,56 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppView } from '../types';
 
 interface Props {
   navigateTo: (view: AppView) => void;
-  userRole?: string; 
+  userRole?: string; // Kept as optional prop so parent routing doesn't throw a TS error
 }
 
 export default function Dashboard({ navigateTo }: Props) {
+  // --- WAKE LOCK LOGIC ---
+  const wakeLockRef = useRef<any>(null);
+
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+          console.log('🌱 Screen Wake Lock is active');
+          
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('Screen Wake Lock was released');
+          });
+        }
+      } catch (err: any) {
+        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+      }
+    };
+
+    // Request on initial load
+    requestWakeLock();
+
+    // Re-request when the app comes back from the background
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup when component unmounts
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLockRef.current !== null) {
+        wakeLockRef.current.release();
+        wakeLockRef.current = null;
+      }
+    };
+  }, []);
+  // --- END WAKE LOCK LOGIC ---
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">

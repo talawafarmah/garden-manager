@@ -48,25 +48,28 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
 
   useEffect(() => {
-    if (tray) {
+    const todayObj = new Date();
+    const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+    // Check if this is a fully formed existing tray vs a partial payload from the Planner
+    if (tray && tray.id) {
       setTrayFormData(tray);
     } else {
-      const todayObj = new Date();
-      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
       setTrayFormData({
         id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-        name: `Tray ${Math.floor(Math.random() * 10000)}`,
+        name: tray?.name || `Tray ${Math.floor(Math.random() * 10000)}`,
         sown_date: localToday,
         cell_count: 72,
-        contents: [],
+        contents: tray?.contents || [],
         images: [],
         notes: '',
         humidity_dome: true,
         grow_light: true,
         potting_mix: '',
         location: '',
-        season_id: ''
-      });
+        season_id: tray?.season_id || '',
+        returnTo: tray?.returnTo // Preserve returnTo instruction
+      } as any);
     }
 
     const fetchSeasons = async () => {
@@ -137,12 +140,10 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
   const handleSaveEdit = async () => {
     setIsSaving(true);
-    console.log("[TRAY SAVE] 1. Starting save process...");
     
     try {
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
       const folderName = trayFormData.id; 
-      console.log(`[TRAY SAVE] 2. Is New Record? ${isNewRecord}. ID: ${trayFormData.id}`);
       
       const uploadPromises = (trayFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
@@ -158,10 +159,8 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         return img; 
       });
 
-      console.log("[TRAY SAVE] 3. Uploading images (if any)...");
       const uploadedImagePaths = await Promise.all(uploadPromises);
       
-      console.log("[TRAY SAVE] 4. Cleaning blank rows...");
       const cleanedContents = (trayFormData.contents || [])
         .filter((c: any) => c.seed_id && c.seed_id.trim() !== '')
         .map((c: any) => ({
@@ -181,43 +180,39 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         first_planted_date: trayFormData.first_planted_date ? trayFormData.first_planted_date : null,
       };
 
-      console.log("[TRAY SAVE] 5. Payload ready for DB:", payloadToSave);
-      
+      // Ensure 'returnTo' is NOT passed to Supabase (causes DB rejection)
+      delete payloadToSave.returnTo;
+
       let finalSavedRecord = payloadToSave;
 
       if (isNewRecord) {
-        console.log("[TRAY SAVE] 6. Sending INSERT to Supabase...");
-        // Ask Supabase to return the exactly formatted row using .select().single()
         const { data, error } = await supabase.from('seedling_trays').insert([payloadToSave]).select().single();
         if (error) throw new Error("Insert Error: " + error.message);
         if (data) finalSavedRecord = data;
-        console.log("[TRAY SAVE] 7. Insert successful!", finalSavedRecord);
       } else {
-        console.log("[TRAY SAVE] 6. Sending UPDATE to Supabase...");
         const { data, error } = await supabase.from('seedling_trays').update(payloadToSave).eq('id', trayFormData.id).select().single();
         if (error) throw new Error("Update Error: " + error.message);
         if (data) finalSavedRecord = data;
-        console.log("[TRAY SAVE] 7. Update successful!", finalSavedRecord);
       }
-      
-      console.log("[TRAY SAVE] 8. Starting UI state update timeout...");
       
       setTimeout(() => {
         try {
-          console.log("[TRAY SAVE] 9. Inside Timeout. Updating React state...");
           if (typeof setTrays === 'function') {
             const updatedTrays = isNewRecord ? [finalSavedRecord, ...trays] : trays.map((t: SeedlingTray) => t.id === finalSavedRecord.id ? finalSavedRecord : t);
             setTrays(updatedTrays);
           }
-          console.log("[TRAY SAVE] 10. Navigating back to trays view...");
-          navigateTo('trays', null, true);
+          
+          if ((trayFormData as any).returnTo) {
+             navigateTo((trayFormData as any).returnTo);
+          } else {
+             navigateTo('trays', null, true);
+          }
         } catch (innerErr: any) {
           console.error("[TRAY SAVE] CRASH IN TIMEOUT:", innerErr);
         }
-      }, 100);
+      }, 50);
       
     } catch (e: any) { 
-      console.error("[TRAY SAVE] CRASH:", e);
       alert(e.message); 
       setIsSaving(false); 
     } 
@@ -287,7 +282,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
         <div className="flex items-center gap-2">
-          <button onClick={() => handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
+          <button onClick={() => (trayFormData as any)?.returnTo ? navigateTo((trayFormData as any).returnTo) : handleGoBack('trays')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Cancel">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
