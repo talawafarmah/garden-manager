@@ -14,7 +14,8 @@ export type AppView =
   | 'admin_seasons' 
   | 'admin_demand'
   | 'grow_planner'
-  | 'farm_map';
+  | 'farm_map'
+  | 'apothecary';
 
   export interface GardenArea {
   id: string;
@@ -227,4 +228,44 @@ export interface FarmTask {
   notes?: string;
   created_at?: string;
   completed_at?: string;
+}
+
+export interface FarmAmendment {
+  id: string;
+  name: string;
+  category?: string; 
+  qty_in_stock: number;
+  unit?: string;
+  npk?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface TeaIngredient {
+  amendment_id: string;
+  name: string;
+  qty: number;
+  unit: string;
+}
+
+export interface TeaRecipe {
+  id: string;
+  name: string;
+  purpose?: string;
+  steep_time_hours: number;
+  instructions?: string;
+  ingredients: TeaIngredient[]; 
+  created_at?: string;
+}
+
+export interface ActiveBrew {
+  id: string;
+  recipe_id: string;
+  brew_start: string;
+  brew_end: string;
+  status: string; 
+  gallons_brewed: number;
+  notes?: string;
+  created_at?: string;
+  recipe?: TeaRecipe; // For UI display
 }

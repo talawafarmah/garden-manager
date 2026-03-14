@@ -21,6 +21,7 @@ import AdminSeasons from '../components/AdminSeasons';
 import AdminDemand from '../components/AdminDemand';
 import GrowPlanner from '../components/GrowPlanner';
 import FarmMap from '../components/FarmMap';
+import Apothecary from '../components/Apothecary';
 
 const VALID_VIEWS = [
   'dashboard', 'vault', 'seed_detail', 'seed_edit', 'scanner', 'importer',
@@ -154,6 +155,8 @@ export default function App() {
     case 'admin_demand': return <AdminDemand categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'grow_planner': return <GrowPlanner categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'farm_map':  return <FarmMap navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    case 'apothecary':  return <Apothecary navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    
     case 'dashboard':
     default: return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
   }

@@ -208,19 +208,32 @@ export default function Dashboard({ navigateTo }: Props) {
           </div>
         </section>
 
-        {/* FARM & FIELD SECTION */}
+  {/* FARM & FIELD SECTION */}
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Farm & Field</h2>
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
             <button onClick={() => navigateTo('farm_map')} className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95 group">
               <div className="bg-emerald-100 p-3 rounded-full text-emerald-600 group-hover:scale-110 transition-transform">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
               </div>
               <div className="text-left">
-                <span className="block text-lg font-bold text-stone-700 leading-tight">Farm Map & Beds</span>
-                <span className="text-xs text-stone-400 font-medium">Layout, Irrigation & Field Plantings</span>
+                <span className="block text-lg font-bold text-stone-700 leading-tight">Farm Map</span>
+                <span className="text-xs text-stone-400 font-medium">Beds & Plantings</span>
               </div>
             </button>
+
+            {/* NEW APOTHECARY BUTTON */}
+            <button onClick={() => navigateTo('apothecary')} className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95 group">
+              <div className="bg-purple-100 p-3 rounded-full text-purple-600 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+              </div>
+              <div className="text-left">
+                <span className="block text-lg font-bold text-stone-700 leading-tight">Apothecary</span>
+                <span className="text-xs text-stone-400 font-medium">Amendments & Teas</span>
+              </div>
+            </button>
+
           </div>
         </section>
 
