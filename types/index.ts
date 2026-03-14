@@ -47,6 +47,7 @@ export interface FieldPlanting {
   yield_count?: number;
   notes?: string;
   created_at?: string;
+  seed?: InventorySeed;
 }
 
 export interface SeedCategory {
