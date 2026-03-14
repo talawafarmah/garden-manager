@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Season, InventorySeed, AppView, SeedCategory } from '../types';
 
-interface Props { 
+interface Props {
   categories: SeedCategory[];
-  navigateTo: (view: AppView, payload?: any) => void; 
-  handleGoBack: (view: AppView) => void; 
+  navigateTo: (view: AppView, payload?: any) => void;
+  handleGoBack: (view: AppView) => void;
+  userRole?: string; // <-- Ensure this line is here!
 }
 
 interface DemandItem {

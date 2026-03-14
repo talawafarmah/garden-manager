@@ -6,7 +6,7 @@ interface Props {
   categories: SeedCategory[];
   navigateTo: (view: AppView, payload?: any) => void;
   handleGoBack: (view: AppView) => void;
-  userRole?: string;
+  userRole?: string; // <-- Ensure this line is here!
 }
 
 interface GrowPlanRecord {
