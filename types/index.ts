@@ -13,7 +13,41 @@ export type AppView =
   | 'admin_categories'  
   | 'admin_seasons' 
   | 'admin_demand'
-  | 'grow_planner';
+  | 'grow_planner'
+  | 'farm_map';
+
+  export interface GardenArea {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: string;
+}
+
+export interface GardenBed {
+  id: string;
+  area_id: string;
+  name: string;
+  type: string; 
+  irrigation_type?: string; 
+  dimensions?: string;
+  soil_mix?: string;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface FieldPlanting {
+  id: string;
+  bed_id: string;
+  seed_id: string;
+  season_id: string;
+  plant_date: string;
+  qty_planted: number;
+  status: string; 
+  yield_lbs?: number;
+  yield_count?: number;
+  notes?: string;
+  created_at?: string;
+}
 
 export interface SeedCategory {
   id?: string;
