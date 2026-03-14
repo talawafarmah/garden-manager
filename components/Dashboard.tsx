@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef } from 'react';
-import { AppView } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { AppView, FarmTask, GardenBed, Season } from '../types';
 
 interface Props {
   navigateTo: (view: AppView) => void;
@@ -9,6 +10,13 @@ interface Props {
 }
 
 export default function Dashboard({ navigateTo }: Props) {
+  // --- STATE ---
+  const [tasks, setTasks] = useState<FarmTask[]>([]);
+  const [beds, setBeds] = useState<GardenBed[]>([]);
+  const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+
   // --- WAKE LOCK LOGIC ---
   const wakeLockRef = useRef<any>(null);
 
@@ -48,6 +56,97 @@ export default function Dashboard({ navigateTo }: Props) {
   }, []);
   // --- END WAKE LOCK LOGIC ---
 
+  // --- TASK ENGINE LOGIC ---
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    setIsLoadingTasks(true);
+    
+    // 1. Get active season
+    const { data: seasonData } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
+    let currentSeasonId = null;
+    if (seasonData && seasonData.length > 0) {
+      currentSeasonId = (seasonData.find((s: Season) => s.status === 'Active') || seasonData[0]).id;
+      setActiveSeasonId(currentSeasonId);
+    }
+
+    if (currentSeasonId) {
+      // 2. Fetch Beds and Pending Tasks
+      const [bedRes, taskRes] = await Promise.all([
+        supabase.from('garden_beds').select('*'),
+        supabase.from('farm_tasks')
+          .select('*')
+          .eq('season_id', currentSeasonId)
+          .eq('status', 'Pending')
+          .order('due_date', { ascending: true })
+      ]);
+
+      if (bedRes.data) setBeds(bedRes.data);
+      if (taskRes.data) setTasks(taskRes.data);
+    }
+    
+    setIsLoadingTasks(false);
+  };
+
+  const handleGenerateHydrationTasks = async () => {
+    if (!activeSeasonId) return alert("No active season found.");
+    if (beds.length === 0) return alert("No beds found on your Farm Map to water!");
+    
+    setIsGenerating(true);
+    try {
+      // Find out which beds already have a pending watering task so we don't duplicate
+      const existingBedIds = new Set(tasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
+      
+      const todayObj = new Date();
+      const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      
+      const newTasks: Partial<FarmTask>[] = [];
+
+      for (const bed of beds) {
+        if (!existingBedIds.has(bed.id)) {
+          let actionText = 'Water';
+          if (bed.irrigation_type?.includes('SIP')) actionText = 'Top up SIP Reservoir for';
+          else if (bed.irrigation_type?.includes('Olla')) actionText = 'Fill Ollas in';
+          else if (bed.irrigation_type?.includes('Drip')) actionText = 'Run Drip Line for';
+
+          newTasks.push({
+            season_id: activeSeasonId,
+            title: `${actionText} ${bed.name}`,
+            category: 'Watering',
+            due_date: todayStr,
+            status: 'Pending',
+            related_bed_id: bed.id
+          });
+        }
+      }
+
+      if (newTasks.length > 0) {
+        const { data, error } = await supabase.from('farm_tasks').insert(newTasks).select();
+        if (error) throw error;
+        if (data) setTasks([...tasks, ...data].sort((a, b) => a.due_date.localeCompare(b.due_date)));
+      } else {
+        alert("All beds already have pending hydration tasks!");
+      }
+    } catch (err: any) {
+      alert("Failed to generate tasks: " + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    // Optimistic UI update for snappy feel
+    setTasks(tasks.filter(t => t.id !== taskId));
+    
+    const now = new Date().toISOString();
+    await supabase.from('farm_tasks').update({ 
+      status: 'Completed', 
+      completed_at: now 
+    }).eq('id', taskId);
+  };
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20">
       <header className="bg-emerald-700 text-white p-6 shadow-md rounded-b-2xl">
@@ -65,7 +164,62 @@ export default function Dashboard({ navigateTo }: Props) {
 
       <div className="max-w-md mx-auto p-4 mt-4 space-y-6">
         
-        {/* NEW: FARM & FIELD SECTION */}
+        {/* NEW: DAILY ACTION CENTER */}
+        <section>
+          <div className="flex justify-between items-end mb-3 px-1">
+            <h2 className="text-lg font-semibold text-stone-800">Daily Action Center</h2>
+            <button 
+              onClick={handleGenerateHydrationTasks} 
+              disabled={isGenerating || isLoadingTasks}
+              className="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              {isGenerating ? 'Generating...' : '💧 Hydration Check'}
+            </button>
+          </div>
+          
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
+            {isLoadingTasks ? (
+              <div className="flex justify-center py-6 text-stone-300">
+                <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="text-center py-6">
+                <div className="text-3xl mb-2">🎉</div>
+                <h3 className="font-bold text-stone-800">All caught up!</h3>
+                <p className="text-xs text-stone-500 mt-1">Generate hydration tasks or add chores from the Farm Map.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {tasks.map(task => {
+                  const isOverdue = new Date(task.due_date + 'T00:00:00') < new Date(new Date().setHours(0,0,0,0));
+                  return (
+                    <div key={task.id} className="flex items-center gap-3 p-3 bg-stone-50 rounded-lg border border-stone-100 group">
+                      <button 
+                        onClick={() => handleCompleteTask(task.id)}
+                        className="w-6 h-6 rounded-full border-2 border-stone-300 flex-shrink-0 flex items-center justify-center hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
+                      >
+                        <div className="w-3 h-3 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-stone-800 leading-tight">{task.title}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm ${task.category === 'Watering' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {task.category}
+                          </span>
+                          <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : 'text-stone-400'}`}>
+                            Due: {new Date(task.due_date + 'T12:00:00').toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* FARM & FIELD SECTION */}
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Farm & Field</h2>
           <div className="grid grid-cols-1 gap-4">
@@ -81,6 +235,7 @@ export default function Dashboard({ navigateTo }: Props) {
           </div>
         </section>
 
+        {/* INVENTORY MANAGEMENT */}
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Inventory Management</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -111,19 +266,7 @@ export default function Dashboard({ navigateTo }: Props) {
           </div>
         </section>
 
-        <section>
-          <div className="flex justify-between items-center mb-3 px-1"><h2 className="text-lg font-semibold text-stone-800">Season Insights</h2></div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
-            <div className="flex items-start space-x-3">
-              <div className="bg-blue-100 p-2 rounded-lg text-blue-600 mt-1"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
-              <div>
-                <h3 className="font-medium text-stone-900">Start Indoors Soon</h3>
-                <p className="text-sm text-stone-500 mt-1">You are about 8-10 weeks out from your May 1st frost date. It's almost time to start those Habaneros and long-season peppers on heat mats!</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
+        {/* SYSTEM ADMIN */}
         <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">System Administration</h2>
           <button 

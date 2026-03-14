@@ -213,3 +213,16 @@ export interface GrowPlanRecord {
   stratification_started?: boolean; // Added for fridge tracking
   seed?: InventorySeed;
 }
+
+export interface FarmTask {
+  id: string;
+  season_id: string;
+  title: string;
+  category: string;
+  due_date: string;
+  status: string;
+  related_bed_id?: string;
+  notes?: string;
+  created_at?: string;
+  completed_at?: string;
+}
