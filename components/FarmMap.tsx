@@ -22,7 +22,13 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   // Bed Modals
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
-  const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
+  const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ 
+    name: '', 
+    type: 'Raised Bed', 
+    irrigation_type: 'Hand-water', 
+    unit: 'ft',
+    watering_frequency_days: 3 
+  });
 
   // Planting Out Modal
   const [isPlantOutModalOpen, setIsPlantOutModalOpen] = useState(false);
@@ -107,9 +113,9 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const openBedModal = (areaId: string, bed?: GardenBed) => {
     setActiveAreaId(areaId);
     if (bed) {
-      setBedForm(bed);
+      setBedForm({ ...bed, watering_frequency_days: bed.watering_frequency_days || 3 });
     } else {
-      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
+      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft', watering_frequency_days: 3 });
     }
     setIsBedModalOpen(true);
   };
@@ -330,7 +336,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                                 <p className="text-[9px] font-black text-stone-400 uppercase tracking-widest mt-0.5">{bed.type}</p>
                                 <div className="flex flex-wrap gap-1.5 mt-2">
                                   <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                    {getIrrigationIcon(bed.irrigation_type)} {bed.irrigation_type}
+                                    {getIrrigationIcon(bed.irrigation_type)} {bed.irrigation_type} ({bed.watering_frequency_days || 3}d)
                                   </span>
                                   {hasDims && (
                                     <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
@@ -448,6 +454,14 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                   <select value={bedForm.irrigation_type} onChange={e => setBedForm({...bedForm, irrigation_type: e.target.value})} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-blue-500 shadow-sm appearance-none">
                     {IRRIGATION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Watering Frequency (Days)</label>
+                <div className="relative">
+                  <input type="number" min="1" value={bedForm.watering_frequency_days || ''} onChange={(e) => setBedForm({...bedForm, watering_frequency_days: Number(e.target.value)})} placeholder="e.g., 3" className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-blue-500 shadow-sm" />
+                  <span className="absolute right-4 top-3 text-stone-400 font-bold pointer-events-none">Days</span>
                 </div>
               </div>
 
