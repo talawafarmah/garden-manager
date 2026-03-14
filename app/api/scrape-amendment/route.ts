@@ -12,10 +12,13 @@ export async function POST(request: Request) {
     // 1. Extract all images from the multipart form data
     for (const [key, value] of Array.from(formData.entries())) {
       if (key.startsWith('image_') && value instanceof File) {
-        const arrayBuffer = await value.arrayBuffer();
+        // More robust conversion for Next.js environments
+        const bytes = await value.arrayBuffer();
+        const base64 = Buffer.from(bytes).toString("base64");
+        
         imageParts.push({
           inlineData: {
-            data: Buffer.from(arrayBuffer).toString("base64"),
+            data: base64,
             mimeType: value.type
           }
         });
@@ -23,10 +26,10 @@ export async function POST(request: Request) {
     }
 
     if (imageParts.length === 0) {
-      return NextResponse.json({ error: 'No images provided for analysis.' }, { status: 400 });
+      return NextResponse.json({ error: 'No images found in request.' }, { status: 400 });
     }
 
-    // 2. Initialize the Flash model (optimized for speed and OCR)
+    // 2. Initialize the model
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     // 3. The "Botanical Extraction" System Prompt
@@ -34,41 +37,40 @@ export async function POST(request: Request) {
       You are a specialized horticultural data extractor. Analyze the provided photos of a fertilizer or soil amendment product.
       
       Extract the following data points into a single, valid JSON object:
-      - brand: The manufacturer/brand name (e.g., FoxFarm, Espoma).
-      - name: The specific product name (e.g., Ocean Forest, Garden-Tone).
+      - brand: The manufacturer/brand name.
+      - name: The specific product name.
       - type: Categorize as exactly one of: 'organic', 'synthetic', 'compost', 'mineral', or 'microbial'.
       - n_value: The Total Nitrogen percentage (number only).
       - p_value: The Available Phosphate percentage (number only).
       - k_value: The Soluble Potash percentage (number only).
       - calcium: Calcium (Ca) percentage if listed (number only, else 0).
       - magnesium: Magnesium (Mg) percentage if listed (number only, else 0).
-      - derived_from: A concise string listing the ingredients or sources (e.g., "Feather meal, fish emulsion").
-      - barcode_upc: The 12 or 13 digit UPC barcode if legible in any photo.
+      - derived_from: A concise string listing the ingredients or sources.
+      - barcode_upc: The 12 or 13 digit UPC barcode if legible.
 
-      Return ONLY the raw JSON object. Do not include markdown formatting or commentary.
+      Return ONLY the raw JSON object. No markdown, no backticks.
     `;
 
-    // 4. Execute Multi-Modal Analysis
+    // 4. Execute Analysis
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
     
-    // 5. Clean and Parse JSON
+    // 5. Clean up AI response
+    // Sometimes AI includes ```json ... ``` tags which break JSON.parse
     const cleanJson = responseText.replace(/```json|```/g, "").trim();
-    const analyzedData = JSON.parse(cleanJson);
-
-    // Return the structured botanical data to your NewAmendmentForm
-    return NextResponse.json(analyzedData);
-
-  } catch (error: any) {
-    console.error('Vision Analysis Error:', error);
     
-    // Handle specific API key errors
-    if (error.message?.includes('API_KEY_INVALID')) {
-      return NextResponse.json({ error: 'Gemini API Key is invalid or expired.' }, { status: 401 });
+    try {
+      const analyzedData = JSON.parse(cleanJson);
+      return NextResponse.json(analyzedData);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", responseText);
+      return NextResponse.json({ error: "AI returned invalid data format." }, { status: 500 });
     }
 
+  } catch (error: any) {
+    console.error('API Route Error:', error);
     return NextResponse.json({ 
-      error: 'The AI could not read these photos. Please try taking clearer, closer shots of the labels.' 
+      error: error.message || 'Internal Server Error' 
     }, { status: 500 });
   }
 }
