@@ -29,7 +29,10 @@ export interface GardenBed {
   name: string;
   type: string; 
   irrigation_type?: string; 
-  dimensions?: string;
+  dimensions?: string; // Legacy
+  length?: number;     // NEW
+  width?: number;      // NEW
+  unit?: string;       // NEW
   soil_mix?: string;
   notes?: string;
   created_at?: string;

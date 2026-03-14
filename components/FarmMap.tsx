@@ -21,7 +21,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
-  const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water' });
+  const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
 
   // Planting Out Modal
   const [isPlantOutModalOpen, setIsPlantOutModalOpen] = useState(false);
@@ -31,6 +31,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   const BED_TYPES = ['Raised Bed', 'In-Ground Row', 'SIP', 'Container', 'Tree/Orchard'];
   const IRRIGATION_TYPES = ['Hand-water', 'Drip', 'Olla', 'SIP Reservoir', 'Sprinkler'];
+  const UNITS = ['ft', 'in', 'm', 'cm'];
 
   useEffect(() => {
     fetchFarmData();
@@ -39,7 +40,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const fetchFarmData = async () => {
     setIsLoading(true);
     
-    // Fetch active season first
     const { data: seasonData } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
     let currentSeason = null;
     if (seasonData && seasonData.length > 0) {
@@ -81,7 +81,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     const { data, error } = await supabase.from('garden_beds').insert([payload]).select().single();
     if (data) {
       setBeds([...beds, data]);
-      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water' });
+      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
       setIsBedModalOpen(false);
     } else { alert("Error adding bed: " + error?.message); }
   };
@@ -103,7 +103,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       const ledger = ledgers.find(l => l.id === plantOutForm.ledgerId);
       if (!ledger || !ledger.seed) throw new Error("Could not find source ledger.");
 
-      // 1. Insert into Field Plantings
       const { data: newPlanting, error: plantError } = await supabase.from('field_plantings').insert([{
         bed_id: selectedBed.id,
         seed_id: ledger.seed_id,
@@ -115,7 +114,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
       if (plantError) throw new Error("Planting Error: " + plantError.message);
 
-      // 2. Update the Nursery Ledger (Deduct growing, add to planted)
       const newGrowing = Math.max(0, ledger.qty_growing - plantOutForm.qty);
       const newPlanted = ledger.qty_planted + plantOutForm.qty;
       const journalEntry: SeedlingJournalEntry = {
@@ -132,7 +130,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
         journal: updatedJournal
       }).eq('id', ledger.id);
 
-      // Update Local State
       setPlantings([newPlanting, ...plantings]);
       setLedgers(ledgers.map(l => l.id === ledger.id ? { ...l, qty_growing: newGrowing, qty_planted: newPlanted, journal: updatedJournal } : l));
       
@@ -200,6 +197,8 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {areaBeds.map(bed => {
                         const bedPlantings = plantings.filter(p => p.bed_id === bed.id);
+                        const hasDims = bed.length && bed.width;
+                        const areaSq = hasDims ? (bed.length! * bed.width!) : null;
                         
                         return (
                           <div key={bed.id} className="bg-white border border-stone-200 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:border-emerald-300 transition-colors group">
@@ -216,7 +215,13 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                                   <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
                                     {getIrrigationIcon(bed.irrigation_type)} {bed.irrigation_type}
                                   </span>
-                                  {bed.dimensions && (
+                                  {hasDims && (
+                                    <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
+                                      📐 {bed.length}x{bed.width} {bed.unit} ({areaSq} sq {bed.unit})
+                                    </span>
+                                  )}
+                                  {/* Legacy dimensions fallback */}
+                                  {!hasDims && bed.dimensions && (
                                     <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
                                       📐 {bed.dimensions}
                                     </span>
@@ -298,7 +303,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
               <div>
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Bed/Container Name</label>
                 <input type="text" autoFocus value={bedForm.name || ''} onChange={(e) => setBedForm({...bedForm, name: e.target.value})} placeholder="e.g., Raised Bed 1, SIP Row A" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
@@ -319,9 +324,17 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Dimensions (Optional)</label>
-                <input type="text" value={bedForm.dimensions || ''} onChange={(e) => setBedForm({...bedForm, dimensions: e.target.value})} placeholder="e.g., 4x8 ft, 15 Gallon" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500" />
+              {/* NEW DIMENSIONAL INPUTS */}
+              <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
+                <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3 text-center">Dimensions (Optional)</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="0" value={bedForm.length || ''} onChange={(e) => setBedForm({...bedForm, length: Number(e.target.value)})} placeholder="Length" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                  <span className="text-stone-400 font-black text-xs">X</span>
+                  <input type="number" min="0" value={bedForm.width || ''} onChange={(e) => setBedForm({...bedForm, width: Number(e.target.value)})} placeholder="Width" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                  <select value={bedForm.unit || 'ft'} onChange={e => setBedForm({...bedForm, unit: e.target.value})} className="bg-stone-200 text-stone-700 font-bold border-none rounded-lg p-2 outline-none appearance-none cursor-pointer">
+                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
               </div>
 
               <button onClick={handleCreateBed} disabled={!bedForm.name?.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-4 disabled:opacity-50">
