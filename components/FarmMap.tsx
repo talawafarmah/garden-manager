@@ -15,10 +15,11 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Modals
+  // Area Modals
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
-  const [newAreaName, setNewAreaName] = useState("");
+  const [areaForm, setAreaForm] = useState<{ id?: string, name: string }>({ name: '' });
 
+  // Bed Modals
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
@@ -29,9 +30,14 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const [plantOutForm, setPlantOutForm] = useState({ ledgerId: '', qty: 1, date: '' });
   const [isSubmittingPlantOut, setIsSubmittingPlantOut] = useState(false);
 
+  // Manage Existing Planting Modal
+  const [editingPlanting, setEditingPlanting] = useState<FieldPlanting | null>(null);
+  const [plantingForm, setPlantingForm] = useState<{ status: string, yield_lbs: number, yield_count: number }>({ status: 'Growing', yield_lbs: 0, yield_count: 0 });
+
   const BED_TYPES = ['Raised Bed', 'In-Ground Row', 'SIP', 'Container', 'Tree/Orchard'];
   const IRRIGATION_TYPES = ['Hand-water', 'Drip', 'Olla', 'SIP Reservoir', 'Sprinkler'];
   const UNITS = ['ft', 'in', 'm', 'cm'];
+  const PLANTING_STATUSES = ['Growing', 'Harvesting', 'Done', 'Failed'];
 
   useEffect(() => {
     fetchFarmData();
@@ -50,7 +56,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     const [areaRes, bedRes, plantRes, ledgerRes] = await Promise.all([
       supabase.from('garden_areas').select('*').order('created_at', { ascending: true }),
       supabase.from('garden_beds').select('*').order('created_at', { ascending: true }),
-      supabase.from('field_plantings').select('*, seed:seed_inventory(*)').eq('status', 'Growing').order('plant_date', { ascending: false }),
+      supabase.from('field_plantings').select('*, seed:seed_inventory(*)').order('plant_date', { ascending: false }),
       supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', currentSeason?.id || '')
     ]);
 
@@ -64,26 +70,77 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
-  // --- AREA & BED CREATION ---
-  const handleCreateArea = async () => {
-    if (!newAreaName.trim()) return;
-    const { data, error } = await supabase.from('garden_areas').insert([{ name: newAreaName.trim() }]).select().single();
-    if (data) {
-      setAreas([...areas, data]);
-      setNewAreaName("");
-      setIsAreaModalOpen(false);
-    } else { alert("Error adding area: " + error?.message); }
+  // --- AREA CRUD ---
+  const openAreaModal = (area?: GardenArea) => {
+    setAreaForm(area ? { id: area.id, name: area.name } : { name: '' });
+    setIsAreaModalOpen(true);
   };
 
-  const handleCreateBed = async () => {
+  const handleSaveArea = async () => {
+    if (!areaForm.name.trim()) return;
+    
+    if (areaForm.id) {
+      const { data, error } = await supabase.from('garden_areas').update({ name: areaForm.name.trim() }).eq('id', areaForm.id).select().single();
+      if (data) {
+        setAreas(areas.map(a => a.id === areaForm.id ? data : a));
+        setIsAreaModalOpen(false);
+      } else { alert("Error updating area: " + error?.message); }
+    } else {
+      const { data, error } = await supabase.from('garden_areas').insert([{ name: areaForm.name.trim() }]).select().single();
+      if (data) {
+        setAreas([...areas, data]);
+        setIsAreaModalOpen(false);
+      } else { alert("Error adding area: " + error?.message); }
+    }
+  };
+
+  const handleDeleteArea = async (id: string) => {
+    if (confirm("Are you sure you want to delete this entire area? This will delete ALL beds and plantings inside it permanently!")) {
+      const { error } = await supabase.from('garden_areas').delete().eq('id', id);
+      if (!error) {
+        setAreas(areas.filter(a => a.id !== id));
+      } else { alert("Error deleting area: " + error.message); }
+    }
+  };
+
+  // --- BED CRUD ---
+  const openBedModal = (areaId: string, bed?: GardenBed) => {
+    setActiveAreaId(areaId);
+    if (bed) {
+      setBedForm(bed);
+    } else {
+      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
+    }
+    setIsBedModalOpen(true);
+  };
+
+  const handleSaveBed = async () => {
     if (!bedForm.name?.trim() || !activeAreaId) return;
     const payload = { ...bedForm, area_id: activeAreaId, name: bedForm.name.trim() };
-    const { data, error } = await supabase.from('garden_beds').insert([payload]).select().single();
-    if (data) {
-      setBeds([...beds, data]);
-      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft' });
-      setIsBedModalOpen(false);
-    } else { alert("Error adding bed: " + error?.message); }
+    
+    if (bedForm.id) {
+      const { data, error } = await supabase.from('garden_beds').update(payload).eq('id', bedForm.id).select().single();
+      if (data) {
+        setBeds(beds.map(b => b.id === bedForm.id ? data : b));
+        setIsBedModalOpen(false);
+      } else { alert("Error updating bed: " + error?.message); }
+    } else {
+      const { data, error } = await supabase.from('garden_beds').insert([payload]).select().single();
+      if (data) {
+        setBeds([...beds, data]);
+        setIsBedModalOpen(false);
+      } else { alert("Error adding bed: " + error?.message); }
+    }
+  };
+
+  const handleDeleteBed = async (id: string) => {
+    if (confirm("Delete this bed? This will delete all plantings currently assigned to it.")) {
+      const { error } = await supabase.from('garden_beds').delete().eq('id', id);
+      if (!error) {
+        setBeds(beds.filter(b => b.id !== id));
+        setIsBedModalOpen(false);
+      } else { alert("Error deleting bed: " + error.message); }
+    }
   };
 
   // --- PLANTING OUT WORKFLOW ---
@@ -141,6 +198,57 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     }
   };
 
+  // --- MANAGE PLANTING CRUD ---
+  const openEditPlantingModal = (planting: FieldPlanting) => {
+    setEditingPlanting(planting);
+    setPlantingForm({ status: planting.status, yield_lbs: planting.yield_lbs || 0, yield_count: planting.yield_count || 0 });
+  };
+
+  const handleUpdatePlanting = async () => {
+    if (!editingPlanting) return;
+    const { data, error } = await supabase.from('field_plantings').update({
+      status: plantingForm.status,
+      yield_lbs: plantingForm.yield_lbs,
+      yield_count: plantingForm.yield_count
+    }).eq('id', editingPlanting.id).select('*, seed:seed_inventory(*)').single();
+
+    if (data && !error) {
+      setPlantings(plantings.map(p => p.id === editingPlanting.id ? data : p));
+      setEditingPlanting(null);
+    } else {
+      alert("Failed to update: " + error?.message);
+    }
+  };
+
+  const handleDeletePlanting = async () => {
+    if (!editingPlanting) return;
+    const revertToLedger = confirm("Do you want to return these plants to the Nursery Ledger? (Click OK to return to nursery, or Cancel to just delete them forever).");
+
+    if (revertToLedger) {
+       // Revert logic
+       const ledger = ledgers.find(l => l.seed_id === editingPlanting.seed_id && l.season_id === editingPlanting.season_id);
+       if (ledger) {
+         const newGrowing = ledger.qty_growing + editingPlanting.qty_planted;
+         const newPlanted = Math.max(0, ledger.qty_planted - editingPlanting.qty_planted);
+         const journalEntry: SeedlingJournalEntry = {
+            id: window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+            date: new Date().toISOString().split('T')[0],
+            type: 'EVENT',
+            note: `Reverted ${editingPlanting.qty_planted} back from field map.`
+         };
+         const updatedJournal = [journalEntry, ...(ledger.journal || [])];
+         await supabase.from('season_seedlings').update({ qty_growing: newGrowing, qty_planted: newPlanted, journal: updatedJournal }).eq('id', ledger.id);
+         setLedgers(ledgers.map(l => l.id === ledger.id ? { ...l, qty_growing: newGrowing, qty_planted: newPlanted, journal: updatedJournal } : l));
+       }
+    }
+
+    const { error } = await supabase.from('field_plantings').delete().eq('id', editingPlanting.id);
+    if (!error) {
+      setPlantings(plantings.filter(p => p.id !== editingPlanting.id));
+      setEditingPlanting(null);
+    } else { alert("Failed to delete planting: " + error.message); }
+  };
+
   const getIrrigationIcon = (type?: string) => {
     if (type?.includes('SIP')) return '💧';
     if (type?.includes('Olla')) return '🏺';
@@ -157,7 +265,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
           </button>
           <h1 className="text-xl font-bold">Farm Map</h1>
         </div>
-        <button onClick={() => setIsAreaModalOpen(true)} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm hover:bg-emerald-500 transition-colors flex items-center gap-1">
+        <button onClick={() => openAreaModal()} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm hover:bg-emerald-500 transition-colors flex items-center gap-1">
           + Area
         </button>
       </header>
@@ -172,7 +280,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
             <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">🗺️</div>
             <h2 className="text-lg font-black text-stone-800">Your map is empty</h2>
             <p className="text-stone-500 text-sm mt-1 mb-6 max-w-sm mx-auto">Start by adding a high-level area (like "High Tunnel" or "Front Yard") and then build out your specific beds and containers inside it.</p>
-            <button onClick={() => setIsAreaModalOpen(true)} className="px-6 py-3 bg-stone-900 text-white font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-stone-800 transition-transform active:scale-95">
+            <button onClick={() => openAreaModal()} className="px-6 py-3 bg-stone-900 text-white font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-stone-800 transition-transform active:scale-95">
               Create First Area
             </button>
           </div>
@@ -181,13 +289,22 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
             const areaBeds = beds.filter(b => b.area_id === area.id);
             return (
               <section key={area.id} className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden">
-                <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center">
-                  <h2 className="font-black text-stone-800 text-lg flex items-center gap-2">
-                    <span className="text-stone-400">📍</span> {area.name}
+                <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center gap-2">
+                  <h2 className="font-black text-stone-800 text-lg flex items-center gap-2 min-w-0 truncate">
+                    <span className="text-stone-400 shrink-0">📍</span> <span className="truncate">{area.name}</span>
                   </h2>
-                  <button onClick={() => { setActiveAreaId(area.id); setIsBedModalOpen(true); }} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg hover:bg-stone-50 transition-colors shadow-sm">
-                    + Add Bed
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => openAreaModal(area)} className="p-1.5 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors" title="Edit Area">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </button>
+                    <button onClick={() => handleDeleteArea(area.id)} className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete Area">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                    <div className="w-px h-5 bg-stone-300 mx-1"></div>
+                    <button onClick={() => openBedModal(area.id)} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg hover:bg-stone-50 transition-colors shadow-sm">
+                      + Bed
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="p-4 bg-stone-50/50">
@@ -204,12 +321,12 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                           <div key={bed.id} className="bg-white border border-stone-200 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:border-emerald-300 transition-colors group">
                             
                             {/* Bed Header */}
-                            <div className="p-4 border-b border-stone-100 relative bg-stone-50">
+                            <div className="p-4 border-b border-stone-100 relative bg-stone-50 flex justify-between items-start">
                               <div className="absolute top-0 right-0 p-3 opacity-10 text-5xl pointer-events-none group-hover:scale-110 transition-transform -translate-y-2 translate-x-2">
                                 {bed.type.includes('SIP') ? '📦' : bed.type.includes('Tree') ? '🌳' : '🛏️'}
                               </div>
-                              <div className="relative z-10">
-                                <h3 className="font-black text-stone-800 text-lg leading-tight">{bed.name}</h3>
+                              <div className="relative z-10 flex-1 min-w-0 pr-2">
+                                <h3 className="font-black text-stone-800 text-lg leading-tight truncate">{bed.name}</h3>
                                 <p className="text-[9px] font-black text-stone-400 uppercase tracking-widest mt-0.5">{bed.type}</p>
                                 <div className="flex flex-wrap gap-1.5 mt-2">
                                   <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
@@ -220,7 +337,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                                       📐 {bed.length}x{bed.width} {bed.unit} ({areaSq} sq {bed.unit})
                                     </span>
                                   )}
-                                  {/* Legacy dimensions fallback */}
                                   {!hasDims && bed.dimensions && (
                                     <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
                                       📐 {bed.dimensions}
@@ -228,24 +344,35 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                                   )}
                                 </div>
                               </div>
+                              <button onClick={() => openBedModal(area.id, bed)} className="p-1.5 bg-white border border-stone-200 text-stone-400 hover:text-emerald-600 hover:border-emerald-300 rounded-lg shadow-sm transition-colors relative z-10">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                              </button>
                             </div>
 
                             {/* Bed Contents */}
                             <div className="p-4 flex-1">
-                               <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Actively Growing</h4>
+                               <div className="flex justify-between items-center mb-2">
+                                 <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400">Actively Growing</h4>
+                               </div>
                                {bedPlantings.length === 0 ? (
                                  <p className="text-xs text-stone-400 italic">Empty bed. Ready for planting.</p>
                                ) : (
                                  <div className="space-y-2">
                                    {bedPlantings.map(plant => (
-                                      <div key={plant.id} className="flex items-center gap-2 bg-stone-50 p-2 rounded-lg border border-stone-100">
-                                        <div className="bg-emerald-100 text-emerald-700 font-black text-xs px-2 py-1 rounded">
+                                      <div key={plant.id} onClick={() => openEditPlantingModal(plant)} className="flex items-center gap-3 bg-stone-50 p-2 rounded-lg border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors group/plant">
+                                        <div className={`font-black text-xs px-2 py-1.5 rounded-md flex-shrink-0 min-w-[32px] text-center border shadow-sm
+                                          ${plant.status === 'Growing' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                            plant.status === 'Harvesting' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
+                                            plant.status === 'Failed' ? 'bg-red-100 text-red-700 border-red-200' : 
+                                            'bg-stone-200 text-stone-600 border-stone-300'}`}
+                                        >
                                           {plant.qty_planted}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-bold text-stone-800 truncate">{plant.seed?.variety_name || 'Unknown'}</p>
-                                          <p className="text-[9px] text-stone-400 uppercase tracking-widest">Planted {new Date(plant.plant_date).toLocaleDateString()}</p>
+                                          <p className="text-sm font-bold text-stone-800 truncate group-hover/plant:text-emerald-700 transition-colors">{plant.seed?.variety_name || 'Unknown'}</p>
+                                          <p className="text-[9px] text-stone-400 uppercase tracking-widest mt-0.5">Planted {new Date(plant.plant_date).toLocaleDateString()} • {plant.status}</p>
                                         </div>
+                                        <svg className="w-4 h-4 text-stone-300 group-hover/plant:text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                       </div>
                                    ))}
                                  </div>
@@ -270,12 +397,12 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
         )}
       </div>
 
-      {/* CREATE AREA MODAL */}
+      {/* CREATE/EDIT AREA MODAL */}
       {isAreaModalOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center">
-              <h2 className="font-black text-stone-800 tracking-tight">Create Area</h2>
+              <h2 className="font-black text-stone-800 tracking-tight">{areaForm.id ? 'Edit Area' : 'Create Area'}</h2>
               <button onClick={() => setIsAreaModalOpen(false)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -283,9 +410,9 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Area Name</label>
-                <input type="text" autoFocus value={newAreaName} onChange={(e) => setNewAreaName(e.target.value)} placeholder="e.g., High Tunnel, Front Yard" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                <input type="text" autoFocus value={areaForm.name} onChange={(e) => setAreaForm({...areaForm, name: e.target.value})} placeholder="e.g., High Tunnel, Front Yard" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
               </div>
-              <button onClick={handleCreateArea} disabled={!newAreaName.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 disabled:opacity-50">
+              <button onClick={handleSaveArea} disabled={!areaForm.name.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 disabled:opacity-50">
                 Save Area
               </button>
             </div>
@@ -293,12 +420,12 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
         </div>
       )}
 
-      {/* CREATE BED MODAL */}
+      {/* CREATE/EDIT BED MODAL */}
       {isBedModalOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex justify-between items-center">
-              <h2 className="font-black text-emerald-900 tracking-tight">Add Growing Bed</h2>
+              <h2 className="font-black text-emerald-900 tracking-tight">{bedForm.id ? 'Edit Growing Bed' : 'Add Growing Bed'}</h2>
               <button onClick={() => setIsBedModalOpen(false)} className="p-1 rounded-full text-emerald-600 hover:bg-emerald-200">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -324,7 +451,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 </div>
               </div>
 
-              {/* NEW DIMENSIONAL INPUTS */}
               <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
                 <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3 text-center">Dimensions (Optional)</label>
                 <div className="flex items-center gap-2">
@@ -337,9 +463,15 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 </div>
               </div>
 
-              <button onClick={handleCreateBed} disabled={!bedForm.name?.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-4 disabled:opacity-50">
+              <button onClick={handleSaveBed} disabled={!bedForm.name?.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-4 disabled:opacity-50">
                 Save to Map
               </button>
+
+              {bedForm.id && (
+                <button onClick={() => handleDeleteBed(bedForm.id!)} className="w-full py-3 mt-2 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors">
+                  Delete Bed
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -404,6 +536,55 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
           </div>
         </div>
       )}
+
+      {/* MANAGE PLANTING MODAL (Edit Status / Yield / Delete) */}
+      {editingPlanting && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+            <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="font-black text-stone-800 tracking-tight flex items-center gap-2">Manage Crop</h2>
+                <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mt-0.5">{editingPlanting.seed?.variety_name}</p>
+              </div>
+              <button onClick={() => setEditingPlanting(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Crop Status</label>
+                <select value={plantingForm.status} onChange={e => setPlantingForm({...plantingForm, status: e.target.value})} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none">
+                  {PLANTING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-3 text-center">Log Harvest Yields</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-purple-400 mb-1 text-center">Weight (Lbs)</span>
+                    <input type="number" min="0" step="0.1" value={plantingForm.yield_lbs} onChange={e => setPlantingForm({...plantingForm, yield_lbs: Number(e.target.value)})} className="w-full text-center bg-white border border-purple-200 rounded-lg p-2 font-bold outline-none focus:border-purple-500 shadow-sm text-purple-900" />
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-black uppercase tracking-widest text-purple-400 mb-1 text-center">Quantity Count</span>
+                    <input type="number" min="0" value={plantingForm.yield_count} onChange={e => setPlantingForm({...plantingForm, yield_count: Number(e.target.value)})} className="w-full text-center bg-white border border-purple-200 rounded-lg p-2 font-bold outline-none focus:border-purple-500 shadow-sm text-purple-900" />
+                  </div>
+                </div>
+              </div>
+
+              <button onClick={handleUpdatePlanting} className="w-full py-4 bg-stone-800 text-white rounded-xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all mt-4 hover:bg-stone-700">
+                Save Updates
+              </button>
+
+              <button onClick={handleDeletePlanting} className="w-full py-3 mt-2 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors">
+                Remove from Bed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
