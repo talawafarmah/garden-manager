@@ -5,7 +5,7 @@ import { AppView } from '../types';
 
 interface Props {
   navigateTo: (view: AppView) => void;
-  userRole?: string; // Kept as optional prop so parent routing doesn't throw a TS error
+  userRole?: string; 
 }
 
 export default function Dashboard({ navigateTo }: Props) {
@@ -28,10 +28,8 @@ export default function Dashboard({ navigateTo }: Props) {
       }
     };
 
-    // Request on initial load
     requestWakeLock();
 
-    // Re-request when the app comes back from the background
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         requestWakeLock();
@@ -40,7 +38,6 @@ export default function Dashboard({ navigateTo }: Props) {
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Cleanup when component unmounts
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLockRef.current !== null) {
@@ -67,6 +64,23 @@ export default function Dashboard({ navigateTo }: Props) {
       </header>
 
       <div className="max-w-md mx-auto p-4 mt-4 space-y-6">
+        
+        {/* NEW: FARM & FIELD SECTION */}
+        <section>
+          <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Farm & Field</h2>
+          <div className="grid grid-cols-1 gap-4">
+            <button onClick={() => navigateTo('farm_map')} className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-emerald-500 hover:shadow-md transition-all active:scale-95 group">
+              <div className="bg-emerald-100 p-3 rounded-full text-emerald-600 group-hover:scale-110 transition-transform">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+              </div>
+              <div className="text-left">
+                <span className="block text-lg font-bold text-stone-700 leading-tight">Farm Map & Beds</span>
+                <span className="text-xs text-stone-400 font-medium">Layout, Irrigation & Field Plantings</span>
+              </div>
+            </button>
+          </div>
+        </section>
+
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Inventory Management</h2>
           <div className="grid grid-cols-2 gap-4">
