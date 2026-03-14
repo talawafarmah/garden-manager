@@ -34,7 +34,7 @@ export default function NewAmendmentForm() {
     calcium: '',
     magnesium: '',
     derived_from: '',
-    barcode_upc: '', // Added to capture the scanned barcode
+    barcode_upc: '', 
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -102,7 +102,7 @@ export default function NewAmendmentForm() {
       calcium: parseFloat(formData.calcium) || 0,
       magnesium: parseFloat(formData.magnesium) || 0,
       derived_from: formData.derived_from,
-      barcode_upc: formData.barcode_upc || null, // Allow null if not scanned
+      barcode_upc: formData.barcode_upc || null, 
     };
 
     // Insert into Supabase
@@ -115,7 +115,7 @@ export default function NewAmendmentForm() {
     setIsSubmitting(false);
 
     if (submitError) {
-      if (submitError.code === '23505') { // Unique violation error code in Postgres
+      if (submitError.code === '23505') { 
         setError('An amendment with this barcode already exists in your database.');
       } else {
         setError(submitError.message);
@@ -123,7 +123,6 @@ export default function NewAmendmentForm() {
       return;
     }
 
-    // Route to the new amendment's detail page to begin adding Feeding Schedules
     if (data) {
       router.push(`/amendments/${data.id}`);
     }
@@ -140,6 +139,7 @@ export default function NewAmendmentForm() {
         />
       )}
 
+      {/* THIS IS THE MISSING BUTTON SECTION */}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-gray-900">Add New Amendment</h2>
         <button
@@ -174,7 +174,6 @@ export default function NewAmendmentForm() {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* Hidden Barcode Input - Visually hidden but trackable */}
         {formData.barcode_upc && (
           <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 font-mono">
             Attached UPC: {formData.barcode_upc}
