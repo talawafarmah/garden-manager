@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Camera, X, Loader2, CheckCircle, Image as ImageIcon, Send } from 'lucide-react';
+import { Camera, X, Loader2, CheckCircle, Image as ImageIcon, Send, Plus } from 'lucide-react';
 
 interface ProductCaptureProps {
   onAnalysisSuccess: (data: any) => void;
