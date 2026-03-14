@@ -18,6 +18,7 @@ interface GrowPlanRecord {
   sown_qty: number;
   tray_sown_qty?: number;
   indoor_start_date: string;
+  stratification_started?: boolean; // NEW
   seed?: InventorySeed;
 }
 
@@ -125,7 +126,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const savePlan = async () => {
     if (!editingSeed || !activeSeasonId) return;
     const startDate = calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days);
-    const payload = { season_id: activeSeasonId, seed_id: editingSeed.id, target_plant_date: formTargetDate, planned_qty: formQty, sown_qty: 0, indoor_start_date: startDate };
+    const payload = { season_id: activeSeasonId, seed_id: editingSeed.id, target_plant_date: formTargetDate, planned_qty: formQty, sown_qty: 0, indoor_start_date: startDate, stratification_started: false };
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select('*, seed:seed_inventory(*)').single();
     if (!error && data) {
@@ -157,6 +158,12 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
     await supabase.from('grow_plan').update({ planned_qty: newQty }).eq('id', id);
   };
 
+  const toggleStratification = async (id: string, currentStatus: boolean) => {
+    const newStatus = !currentStatus;
+    setPlans(plans.map(p => p.id === id ? { ...p, stratification_started: newStatus } : p));
+    await supabase.from('grow_plan').update({ stratification_started: newStatus }).eq('id', id);
+  };
+
   const toggleSelection = (id: string) => {
     setSelectedPlanIds(prev => prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]);
   };
@@ -173,22 +180,16 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
       return { seed_id: p.seed_id, sown_count: Math.max(1, p.planned_qty - totalAlreadySown), sown_date: localToday };
     });
 
-    // Generate Smart Tray Name
     let smartName = `Tray ${Math.floor(Math.random() * 10000)}`;
     if (selected.length === 1) {
       smartName = `${selected[0].seed?.variety_name || 'Seed'} Tray`;
     } else if (selected.length > 1) {
       const catSet = new Set(selected.map(s => s.seed?.category || 'Mixed'));
       smartName = `Mixed ${Array.from(catSet).join('/')} Tray`;
-      if (smartName.length > 40) smartName = "Mixed Propagation Tray"; // Fallback if too long
+      if (smartName.length > 40) smartName = "Mixed Propagation Tray"; 
     }
 
-    navigateTo('tray_edit', { 
-      season_id: activeSeasonId, 
-      contents: trayContents, 
-      name: smartName,
-      returnTo: 'grow_planner' 
-    });
+    navigateTo('tray_edit', { season_id: activeSeasonId, contents: trayContents, name: smartName, returnTo: 'grow_planner' });
   };
 
   const handleSyncDates = async () => {
@@ -223,9 +224,21 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
     const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
     return showCompleted || totalSown < p.planned_qty;
   });
+
+  // Calculate the actionable date (Fridge Date OR Sow Date)
+  const getActionDate = (p: GrowPlanRecord) => {
+    const stratDays = p.seed?.cold_stratification ? (p.seed?.stratification_days || 0) : 0;
+    const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
+    if (stratDays > 0 && !p.stratification_started && totalSown < p.planned_qty) {
+      const d = new Date(p.indoor_start_date + 'T12:00:00');
+      d.setDate(d.getDate() - stratDays);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return p.indoor_start_date;
+  };
   
-  const sortedPlans = [...filteredPlans].sort((a, b) => a.indoor_start_date.localeCompare(b.indoor_start_date));
-  const displayPlans = selectedDateFilter ? sortedPlans.filter(p => p.indoor_start_date === selectedDateFilter) : sortedPlans;
+  const sortedPlans = [...filteredPlans].sort((a, b) => getActionDate(a).localeCompare(getActionDate(b)));
+  const displayPlans = selectedDateFilter ? sortedPlans.filter(p => getActionDate(p) === selectedDateFilter) : sortedPlans;
 
   const plannedSeedIds = new Set(plans.map(p => p.seed_id));
   const manualSearchResults = useMemo(() => {
@@ -236,7 +249,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
 
   const activeDates = useMemo(() => {
     const dates = new Set<string>();
-    filteredPlans.forEach(p => dates.add(p.indoor_start_date));
+    filteredPlans.forEach(p => dates.add(getActionDate(p)));
     return dates;
   }, [filteredPlans]);
 
@@ -376,14 +389,24 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
                   {displayPlans.map(plan => {
                     const isSelected = selectedPlanIds.includes(plan.id);
-                    const planDate = new Date(plan.indoor_start_date + 'T12:00:00');
-                    const diffDays = Math.round((planDate.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
                     
+                    const stratDays = plan.seed?.cold_stratification ? (plan.seed?.stratification_days || 0) : 0;
                     const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
                     const isComplete = totalSown >= plan.planned_qty;
+                    
+                    // Determine which date we are actively waiting on
+                    const actionDateStr = getActionDate(plan);
+                    const actionDateObj = new Date(actionDateStr + 'T12:00:00');
+                    const diffDays = Math.round((actionDateObj.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
+                    
                     let badgeColor = "bg-stone-100 text-stone-600 border-stone-200"; let statusTxt = "Future";
                     
                     if (isComplete) { badgeColor = "bg-emerald-100 text-emerald-700 border-emerald-200"; statusTxt = "Sown ✓"; }
+                    else if (stratDays > 0 && !plan.stratification_started) {
+                        if (diffDays < 0) { badgeColor = "bg-sky-100 text-sky-700 border-sky-200"; statusTxt = "Fridge Overdue"; }
+                        else if (diffDays <= 7) { badgeColor = "bg-sky-100 text-sky-700 border-sky-200"; statusTxt = "Fridge This Week"; }
+                        else { badgeColor = "bg-sky-50 text-sky-600 border-sky-100"; statusTxt = "Fridge Soon"; }
+                    }
                     else if (diffDays < 0) { badgeColor = "bg-red-100 text-red-700 border-red-200"; statusTxt = "Overdue"; }
                     else if (diffDays <= 7) { badgeColor = "bg-amber-100 text-amber-700 border-amber-300"; statusTxt = "This Week"; }
                     else if (diffDays <= 14) { badgeColor = "bg-blue-100 text-blue-700 border-blue-200"; statusTxt = "Next Week"; }
@@ -406,8 +429,10 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{planDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
-                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">{plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}</div>
+                            <div className={`text-xl font-black ${isComplete ? 'text-stone-400' : 'text-stone-800'}`}>{actionDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mt-0.5">
+                              {stratDays > 0 && !plan.stratification_started && !isComplete ? 'Put in Fridge' : plan.indoor_start_date === plan.target_plant_date ? 'Direct Sow' : 'Indoors'}
+                            </div>
                           </div>
                         </div>
 
@@ -430,6 +455,11 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                            </div>
 
                            <div className="flex items-center gap-2">
+                             {stratDays > 0 && !isComplete && (
+                               <button onClick={(e) => { e.stopPropagation(); toggleStratification(plan.id, !!plan.stratification_started); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-colors ${plan.stratification_started ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-inner' : 'bg-white text-sky-600 border border-sky-200 shadow-sm hover:bg-sky-50'}`}>
+                                 {plan.stratification_started ? '❄️ Stratifying ✓' : '❄️ Put in Fridge'}
+                               </button>
+                             )}
                              <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
                                <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
                                <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
@@ -462,36 +492,54 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
         </div>
       )}
 
-      {activeModal === 'PLAN_SEED' && editingSeed && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
-              <div><h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2><p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{editingSeed.variety_name}</p></div>
-              <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
-                    <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800"><input type="number" min="0" value={formWeeks} onChange={(e) => setFormWeeks(Number(e.target.value))} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks</div>
-                 </div>
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
-                    <input type="number" min="1" value={formQty} onChange={(e) => setFormQty(Number(e.target.value))} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
-                 </div>
+      {/* PLAN SEED MODAL */}
+      {activeModal === 'PLAN_SEED' && editingSeed && (() => {
+        const stratDays = editingSeed.cold_stratification ? (editingSeed.stratification_days || 0) : 0;
+        const sowDateStr = calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days);
+        const sowDateObj = new Date(sowDateStr + 'T12:00:00');
+        const stratDateObj = new Date(sowDateObj);
+        if (stratDays > 0) stratDateObj.setDate(stratDateObj.getDate() - stratDays);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
+                <div><h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2><p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{editingSeed.variety_name}</p></div>
+                <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
-                <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
+                      <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800"><input type="number" min="0" value={formWeeks} onChange={(e) => setFormWeeks(Number(e.target.value))} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks</div>
+                   </div>
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
+                      <input type="number" min="1" value={formQty} onChange={(e) => setFormQty(Number(e.target.value))} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
+                   </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                  <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2 mt-2 shadow-sm">
+                  {stratDays > 0 && (
+                    <div className="flex justify-between items-center border-b border-emerald-200/50 pb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">❄️ Start in Fridge:</span>
+                      <span className="text-sm font-black text-emerald-700">{stratDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-emerald-800">🌱 Sow Date:</span>
+                    <span className="text-xl font-black text-emerald-600">{sowDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </div>
+                <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-              </div>
-              <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </main>
   );
 }

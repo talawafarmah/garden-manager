@@ -6,7 +6,6 @@ interface Props {
   categories: SeedCategory[];
   navigateTo: (view: AppView, payload?: any) => void; 
   handleGoBack: (view: AppView) => void; 
-  userRole?: string; 
 }
 
 interface DemandItem {
@@ -188,7 +187,8 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack }: Pr
       target_plant_date: globalTargetDate,
       planned_qty: item.count,
       sown_qty: 0,
-      indoor_start_date: startDate
+      indoor_start_date: startDate,
+      stratification_started: false
     };
 
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
@@ -210,7 +210,7 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack }: Pr
   const savePlan = async () => {
     if (!editingItem || !activeSeasonId) return;
     const startDate = calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days);
-    const payload = { season_id: activeSeasonId, seed_id: editingItem.seed.id, target_plant_date: formTargetDate, planned_qty: formQty, sown_qty: 0, indoor_start_date: startDate };
+    const payload = { season_id: activeSeasonId, seed_id: editingItem.seed.id, target_plant_date: formTargetDate, planned_qty: formQty, sown_qty: 0, indoor_start_date: startDate, stratification_started: false };
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select().single();
     if (!error && data) {
@@ -373,36 +373,53 @@ export default function AdminDemand({ categories, navigateTo, handleGoBack }: Pr
       </div>
 
       {/* PLAN SEED MODAL */}
-      {activeModal === 'PLAN_SEED' && editingItem && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
-              <div><h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2><p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{editingItem.seed.variety_name}</p></div>
-              <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
-                    <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800"><input type="number" min="0" value={formWeeks} onChange={(e) => setFormWeeks(Number(e.target.value))} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks</div>
-                 </div>
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
-                    <input type="number" min="1" value={formQty} onChange={(e) => setFormQty(Number(e.target.value))} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
-                 </div>
+      {activeModal === 'PLAN_SEED' && editingItem && (() => {
+        const stratDays = editingItem.seed.cold_stratification ? (editingItem.seed.stratification_days || 0) : 0;
+        const sowDateStr = calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days);
+        const sowDateObj = new Date(sowDateStr + 'T12:00:00');
+        const stratDateObj = new Date(sowDateObj);
+        if (stratDays > 0) stratDateObj.setDate(stratDateObj.getDate() - stratDays);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
+                <div><h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2><p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{editingItem.seed.variety_name}</p></div>
+                <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seedling Target Date</label>
-                <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
+                      <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800"><input type="number" min="0" value={formWeeks} onChange={(e) => setFormWeeks(Number(e.target.value))} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks</div>
+                   </div>
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
+                      <input type="number" min="1" value={formQty} onChange={(e) => setFormQty(Number(e.target.value))} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
+                   </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                  <input type="date" value={formTargetDate} onChange={(e) => setFormTargetDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2 mt-2 shadow-sm">
+                  {stratDays > 0 && (
+                    <div className="flex justify-between items-center border-b border-emerald-200/50 pb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">❄️ Start in Fridge:</span>
+                      <span className="text-sm font-black text-emerald-700">{stratDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-emerald-800">🌱 Sow Date:</span>
+                    <span className="text-xl font-black text-emerald-600">{sowDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </div>
+                <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2">
-                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span><span className="text-xl font-black text-emerald-600">{new Date(calculateStartDate(formTargetDate, formWeeks, editingItem.seed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-              </div>
-              <button onClick={savePlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500">Confirm & Add to Calendar</button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </main>
   );
 }

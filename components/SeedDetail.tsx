@@ -8,7 +8,6 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any) => void;
   handleGoBack: (view: any) => void;
-  userRole?: string;
 }
 
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
@@ -170,7 +169,8 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
         target_plant_date: planForm.targetDate,
         planned_qty: planForm.qty,
         sown_qty: 0,
-        indoor_start_date: startDate
+        indoor_start_date: startDate,
+        stratification_started: false
       };
       
       const { error } = await supabase.from('grow_plan').insert([payload]);
@@ -205,62 +205,76 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
       )}
 
       {/* SCHEDULE SEED MODAL */}
-      {isPlanModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
-              <div>
-                <h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2>
-                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{seed.variety_name}</p>
+      {isPlanModalOpen && (() => {
+        const stratDays = seed.cold_stratification ? (seed.stratification_days || 0) : 0;
+        const sowDateStr = calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days);
+        const sowDateObj = new Date(sowDateStr + 'T12:00:00');
+        const stratDateObj = new Date(sowDateObj);
+        if (stratDays > 0) stratDateObj.setDate(stratDateObj.getDate() - stratDays);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center">
+                <div>
+                  <h2 className="font-black text-stone-800 tracking-tight">Schedule Seed</h2>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">{seed.variety_name}</p>
+                </div>
+                <button onClick={() => setIsPlanModalOpen(false)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
               </div>
-              <button onClick={() => setIsPlanModalOpen(false)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Season</label>
-                <select 
-                  value={planForm.seasonId} 
-                  onChange={e => {
-                    const newSeasonId = e.target.value;
-                    const selectedSeason = seasons.find(s => s.id === newSeasonId);
-                    setPlanForm({ ...planForm, seasonId: newSeasonId, targetDate: selectedSeason?.seedling_target_date || planForm.targetDate });
-                  }} 
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none cursor-pointer"
-                >
-                  {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
-                    <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800">
-                      <input type="number" min="0" value={planForm.weeks} onChange={(e) => setPlanForm({...planForm, weeks: Number(e.target.value)})} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Season</label>
+                  <select 
+                    value={planForm.seasonId} 
+                    onChange={e => {
+                      const newSeasonId = e.target.value;
+                      const selectedSeason = seasons.find(s => s.id === newSeasonId);
+                      setPlanForm({ ...planForm, seasonId: newSeasonId, targetDate: selectedSeason?.seedling_target_date || planForm.targetDate });
+                    }} 
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none cursor-pointer"
+                  >
+                    {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Nursery Time</span>
+                      <div className="flex items-center justify-center gap-1 text-sm font-black text-stone-800">
+                        <input type="number" min="0" value={planForm.weeks} onChange={(e) => setPlanForm({...planForm, weeks: Number(e.target.value)})} className="w-10 text-center border-b border-stone-300 outline-none bg-transparent focus:border-emerald-500" /> Weeks
+                      </div>
+                   </div>
+                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
+                      <input type="number" min="1" value={planForm.qty} onChange={(e) => setPlanForm({...planForm, qty: Number(e.target.value)})} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
+                   </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
+                  <input type="date" value={planForm.targetDate} onChange={(e) => setPlanForm({...planForm, targetDate: e.target.value})} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2 mt-2 shadow-sm">
+                  {stratDays > 0 && (
+                    <div className="flex justify-between items-center border-b border-emerald-200/50 pb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">❄️ Start in Fridge:</span>
+                      <span className="text-sm font-black text-emerald-700">{stratDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                     </div>
-                 </div>
-                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
-                    <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Planned Qty</span>
-                    <input type="number" min="1" value={planForm.qty} onChange={(e) => setPlanForm({...planForm, qty: Number(e.target.value)})} className="w-full text-center bg-transparent text-lg font-black text-blue-600 outline-none border-b border-stone-300 focus:border-blue-500" />
-                 </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-emerald-800">🌱 Sow Date:</span>
+                    <span className="text-xl font-black text-emerald-600">{sowDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </div>
+                <button onClick={handleSavePlan} disabled={isSavingPlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500 disabled:opacity-50">
+                  {isSavingPlan ? 'Saving...' : 'Confirm & Add to Calendar'}
+                </button>
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Plant-Out Date</label>
-                <input type="date" value={planForm.targetDate} onChange={(e) => setPlanForm({...planForm, targetDate: e.target.value})} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm text-stone-800" />
-              </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between items-center mt-2 shadow-sm">
-                <span className="text-xs font-black uppercase tracking-widest text-emerald-800">Start Date:</span>
-                <span className="text-xl font-black text-emerald-600">
-                  {planForm.targetDate ? new Date(calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '--'}
-                </span>
-              </div>
-              <button onClick={handleSavePlan} disabled={isSavingPlan} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 hover:bg-emerald-500 disabled:opacity-50">
-                {isSavingPlan ? 'Saving...' : 'Confirm & Add to Calendar'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
