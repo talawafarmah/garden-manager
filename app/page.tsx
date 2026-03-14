@@ -183,7 +183,14 @@ export default function App() {
     case 'admin_demand': return <AdminDemand categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'grow_planner': return <GrowPlanner categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'farm_map':  return <FarmMap navigateTo={navigateTo} handleGoBack={handleGoBack} />;
-    case 'apothecary':  return <Apothecary navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    case 'apothecary':  
+  return (
+    <Apothecary 
+      navigateTo={navigateTo} 
+      handleGoBack={handleGoBack} 
+      amendments={amendments} // Pass the fetched amendments state here
+    />
+  );
     
     default: return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
   }
