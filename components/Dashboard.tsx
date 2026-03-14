@@ -10,12 +10,9 @@ interface Props {
 }
 
 export default function Dashboard({ navigateTo }: Props) {
-  // --- STATE ---
   const [tasks, setTasks] = useState<FarmTask[]>([]);
-  const [beds, setBeds] = useState<GardenBed[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
 
   // --- WAKE LOCK LOGIC ---
   const wakeLockRef = useRef<any>(null);
@@ -25,126 +22,125 @@ export default function Dashboard({ navigateTo }: Props) {
       try {
         if ('wakeLock' in navigator) {
           wakeLockRef.current = await navigator.wakeLock.request('screen');
-          console.log('🌱 Screen Wake Lock is active');
-          
-          wakeLockRef.current.addEventListener('release', () => {
-            console.log('Screen Wake Lock was released');
-          });
         }
       } catch (err: any) {
         console.error(`Wake Lock error: ${err.name}, ${err.message}`);
       }
     };
-
     requestWakeLock();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-    
+    const handleVisibilityChange = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (wakeLockRef.current !== null) {
-        wakeLockRef.current.release();
-        wakeLockRef.current = null;
-      }
+      if (wakeLockRef.current !== null) { wakeLockRef.current.release(); wakeLockRef.current = null; }
     };
   }, []);
-  // --- END WAKE LOCK LOGIC ---
 
-  // --- TASK ENGINE LOGIC ---
+  // --- SILENT AUTO-GENERATOR ---
   useEffect(() => {
-    fetchDashboardData();
+    const initializeDashboard = async () => {
+      setIsLoadingTasks(true);
+      
+      const { data: seasonData } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
+      let currentSeasonId = null;
+      if (seasonData && seasonData.length > 0) {
+        currentSeasonId = (seasonData.find((s: Season) => s.status === 'Active') || seasonData[0]).id;
+        setActiveSeasonId(currentSeasonId);
+      }
+
+      if (currentSeasonId) {
+        // Fetch Beds and currently Pending Tasks
+        const [bedRes, taskRes] = await Promise.all([
+          supabase.from('garden_beds').select('*'),
+          supabase.from('farm_tasks')
+            .select('*')
+            .eq('season_id', currentSeasonId)
+            .eq('status', 'Pending')
+            .order('due_date', { ascending: true })
+        ]);
+
+        const beds: GardenBed[] = bedRes.data || [];
+        let currentTasks: FarmTask[] = taskRes.data || [];
+
+        // AUTOMATION ENGINE: Check if any beds need watering today
+        const existingBedIds = new Set(currentTasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
+        const todayObj = new Date();
+        todayObj.setHours(0,0,0,0);
+        const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+        
+        const newTasks: Partial<FarmTask>[] = [];
+
+        for (const bed of beds) {
+          if (!existingBedIds.has(bed.id)) {
+            let isDue = false;
+            
+            if (!bed.last_watered_date) {
+              isDue = true; // Never watered, due immediately
+            } else {
+              const lastWateredObj = new Date(bed.last_watered_date + 'T00:00:00');
+              const diffTime = Math.abs(todayObj.getTime() - lastWateredObj.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              const freq = bed.watering_frequency_days || 3; // Default to 3 if not set
+              
+              if (diffDays >= freq) {
+                isDue = true; // Enough days have passed
+              }
+            }
+
+            if (isDue) {
+              let actionText = 'Water';
+              if (bed.irrigation_type?.includes('SIP')) actionText = 'Top up SIP Reservoir for';
+              else if (bed.irrigation_type?.includes('Olla')) actionText = 'Fill Ollas in';
+              else if (bed.irrigation_type?.includes('Drip')) actionText = 'Run Drip Line for';
+
+              newTasks.push({
+                season_id: currentSeasonId,
+                title: `${actionText} ${bed.name}`,
+                category: 'Watering',
+                due_date: todayStr,
+                status: 'Pending',
+                related_bed_id: bed.id
+              });
+            }
+          }
+        }
+
+        // If we generated new tasks, insert them and append to our state
+        if (newTasks.length > 0) {
+          const { data } = await supabase.from('farm_tasks').insert(newTasks).select();
+          if (data) {
+            currentTasks = [...currentTasks, ...data].sort((a, b) => a.due_date.localeCompare(b.due_date));
+          }
+        }
+
+        setTasks(currentTasks);
+      }
+      setIsLoadingTasks(false);
+    };
+
+    initializeDashboard();
   }, []);
 
-  const fetchDashboardData = async () => {
-    setIsLoadingTasks(true);
+  const handleCompleteTask = async (task: FarmTask) => {
+    // 1. Optimistic UI update (snappy feel)
+    setTasks(tasks.filter(t => t.id !== task.id));
     
-    // 1. Get active season
-    const { data: seasonData } = await supabase.from('seasons').select('*').order('created_at', { ascending: false });
-    let currentSeasonId = null;
-    if (seasonData && seasonData.length > 0) {
-      currentSeasonId = (seasonData.find((s: Season) => s.status === 'Active') || seasonData[0]).id;
-      setActiveSeasonId(currentSeasonId);
-    }
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+    const nowIso = todayObj.toISOString();
 
-    if (currentSeasonId) {
-      // 2. Fetch Beds and Pending Tasks
-      const [bedRes, taskRes] = await Promise.all([
-        supabase.from('garden_beds').select('*'),
-        supabase.from('farm_tasks')
-          .select('*')
-          .eq('season_id', currentSeasonId)
-          .eq('status', 'Pending')
-          .order('due_date', { ascending: true })
-      ]);
-
-      if (bedRes.data) setBeds(bedRes.data);
-      if (taskRes.data) setTasks(taskRes.data);
-    }
-    
-    setIsLoadingTasks(false);
-  };
-
-  const handleGenerateHydrationTasks = async () => {
-    if (!activeSeasonId) return alert("No active season found.");
-    if (beds.length === 0) return alert("No beds found on your Farm Map to water!");
-    
-    setIsGenerating(true);
-    try {
-      // Find out which beds already have a pending watering task so we don't duplicate
-      const existingBedIds = new Set(tasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
-      
-      const todayObj = new Date();
-      const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-      
-      const newTasks: Partial<FarmTask>[] = [];
-
-      for (const bed of beds) {
-        if (!existingBedIds.has(bed.id)) {
-          let actionText = 'Water';
-          if (bed.irrigation_type?.includes('SIP')) actionText = 'Top up SIP Reservoir for';
-          else if (bed.irrigation_type?.includes('Olla')) actionText = 'Fill Ollas in';
-          else if (bed.irrigation_type?.includes('Drip')) actionText = 'Run Drip Line for';
-
-          newTasks.push({
-            season_id: activeSeasonId,
-            title: `${actionText} ${bed.name}`,
-            category: 'Watering',
-            due_date: todayStr,
-            status: 'Pending',
-            related_bed_id: bed.id
-          });
-        }
-      }
-
-      if (newTasks.length > 0) {
-        const { data, error } = await supabase.from('farm_tasks').insert(newTasks).select();
-        if (error) throw error;
-        if (data) setTasks([...tasks, ...data].sort((a, b) => a.due_date.localeCompare(b.due_date)));
-      } else {
-        alert("All beds already have pending hydration tasks!");
-      }
-    } catch (err: any) {
-      alert("Failed to generate tasks: " + err.message);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleCompleteTask = async (taskId: string) => {
-    // Optimistic UI update for snappy feel
-    setTasks(tasks.filter(t => t.id !== taskId));
-    
-    const now = new Date().toISOString();
+    // 2. Mark task complete
     await supabase.from('farm_tasks').update({ 
       status: 'Completed', 
-      completed_at: now 
-    }).eq('id', taskId);
+      completed_at: nowIso 
+    }).eq('id', task.id);
+
+    // 3. Update the Bed's last watered date so the auto-generator resets the clock!
+    if (task.related_bed_id && task.category === 'Watering') {
+      await supabase.from('garden_beds').update({
+        last_watered_date: todayStr
+      }).eq('id', task.related_bed_id);
+    }
   };
 
   return (
@@ -164,17 +160,10 @@ export default function Dashboard({ navigateTo }: Props) {
 
       <div className="max-w-md mx-auto p-4 mt-4 space-y-6">
         
-        {/* NEW: DAILY ACTION CENTER */}
+        {/* AUTOMATED ACTION CENTER */}
         <section>
           <div className="flex justify-between items-end mb-3 px-1">
             <h2 className="text-lg font-semibold text-stone-800">Daily Action Center</h2>
-            <button 
-              onClick={handleGenerateHydrationTasks} 
-              disabled={isGenerating || isLoadingTasks}
-              className="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors shadow-sm active:scale-95 disabled:opacity-50"
-            >
-              {isGenerating ? 'Generating...' : '💧 Hydration Check'}
-            </button>
           </div>
           
           <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-100">
@@ -186,7 +175,7 @@ export default function Dashboard({ navigateTo }: Props) {
               <div className="text-center py-6">
                 <div className="text-3xl mb-2">🎉</div>
                 <h3 className="font-bold text-stone-800">All caught up!</h3>
-                <p className="text-xs text-stone-500 mt-1">Generate hydration tasks or add chores from the Farm Map.</p>
+                <p className="text-xs text-stone-500 mt-1">Watering schedules are looking good. Check back tomorrow!</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -195,7 +184,7 @@ export default function Dashboard({ navigateTo }: Props) {
                   return (
                     <div key={task.id} className="flex items-center gap-3 p-3 bg-stone-50 rounded-lg border border-stone-100 group">
                       <button 
-                        onClick={() => handleCompleteTask(task.id)}
+                        onClick={() => handleCompleteTask(task)}
                         className="w-6 h-6 rounded-full border-2 border-stone-300 flex-shrink-0 flex items-center justify-center hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
                       >
                         <div className="w-3 h-3 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />

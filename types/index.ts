@@ -28,7 +28,9 @@ export interface GardenBed {
   area_id: string;
   name: string;
   type: string; 
-  irrigation_type?: string; 
+  irrigation_type?: string;
+  watering_frequency_days?: number; 
+  last_watered_date?: string;
   dimensions?: string; // Legacy
   length?: number;     // NEW
   width?: number;      // NEW
