@@ -93,9 +93,9 @@ export interface TraySeedRecord {
   sown_count?: number;
   germinated_count?: number;
   planted_count?: number;
-  sown_date?: string;       
-  germination_date?: string;
-  planted_date?: string;    
+  sown_date?: string;        // Added for individual seed dating
+  germination_date?: string; // Added for individual seed dating
+  planted_date?: string;     // Added for individual seed dating
 }
 
 export interface SeedlingTray {
@@ -161,4 +161,17 @@ export interface SeasonSeedling {
   updated_at?: string;
   seed?: InventorySeed;
   season?: Season;
+}
+
+export interface GrowPlanRecord {
+  id: string;
+  season_id: string;
+  seed_id: string;
+  target_plant_date: string;
+  planned_qty: number;
+  sown_qty: number;
+  tray_sown_qty?: number;
+  indoor_start_date: string;
+  stratification_started?: boolean; // Added for fridge tracking
+  seed?: InventorySeed;
 }
