@@ -1,20 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../../lib/supabase'; // Aligned with your file structure
 import { AmendmentType } from '@/types/amendments';
-import { Camera, AlertCircle } from 'lucide-react';
+import { Camera, AlertCircle, ArrowLeft } from 'lucide-react';
 import BarcodeScanner from './BarcodeScanner';
 
-// Initialize Supabase client for client-side operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+interface NewAmendmentFormProps {
+  navigateTo: (view: any, payload?: any) => void;
+  handleGoBack: (fallbackView: any) => void;
+}
 
-export default function NewAmendmentForm() {
-  const router = useRouter();
+export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendmentFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -23,7 +20,7 @@ export default function NewAmendmentForm() {
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeMessage, setScrapeMessage] = useState<string | null>(null);
 
-  // Form state aligned with our new relational schema
+  // Form state aligned with our relational schema
   const [formData, setFormData] = useState({
     brand: '',
     name: '',
@@ -64,7 +61,6 @@ export default function NewAmendmentForm() {
         brand: data.brand || prev.brand,
         name: data.name || prev.name,
         type: data.type || prev.type,
-        // Convert numbers back to strings for the input fields
         n_value: data.n_value ? data.n_value.toString() : prev.n_value,
         p_value: data.p_value ? data.p_value.toString() : prev.p_value,
         k_value: data.k_value ? data.k_value.toString() : prev.k_value,
@@ -79,7 +75,6 @@ export default function NewAmendmentForm() {
     } catch (err: any) {
       console.error(err);
       setError(`Scanner note: ${err.message} You can still enter the details manually.`);
-      // Still save the barcode so they don't have to type that part!
       setFormData((prev) => ({ ...prev, barcode_upc: barcode }));
     } finally {
       setIsScraping(false);
@@ -91,7 +86,6 @@ export default function NewAmendmentForm() {
     setIsSubmitting(true);
     setError(null);
 
-    // Parse numeric fields, falling back to 0.00 if left blank
     const payload = {
       brand: formData.brand,
       name: formData.name,
@@ -105,7 +99,6 @@ export default function NewAmendmentForm() {
       barcode_upc: formData.barcode_upc || null, 
     };
 
-    // Insert into Supabase
     const { data, error: submitError } = await supabase
       .from('amendments')
       .insert([payload])
@@ -124,14 +117,14 @@ export default function NewAmendmentForm() {
     }
 
     if (data) {
-      router.push(`/amendments/${data.id}`);
+      // Navigates to the detail view in your SPA architecture
+      navigateTo('amendment_detail', data);
     }
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-20">
       
-      {/* Scanner Modal Overlay */}
       {showScanner && (
         <BarcodeScanner 
           onScanSuccess={handleScanSuccess} 
@@ -139,9 +132,14 @@ export default function NewAmendmentForm() {
         />
       )}
 
-      {/* THIS IS THE MISSING BUTTON SECTION */}
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Add New Amendment</h2>
+        <button 
+          onClick={() => handleGoBack('amendments')} 
+          className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <ArrowLeft size={24} className="text-gray-700" />
+        </button>
+        <h2 className="text-xl font-bold text-gray-900">Add Amendment</h2>
         <button
           type="button"
           onClick={() => setShowScanner(true)}
@@ -149,7 +147,7 @@ export default function NewAmendmentForm() {
           className="flex items-center gap-2 bg-green-100 hover:bg-green-200 text-green-800 px-3 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
         >
           <Camera size={16} />
-          <span>Scan Barcode</span>
+          <span>Scan</span>
         </button>
       </div>
       
@@ -180,7 +178,6 @@ export default function NewAmendmentForm() {
           </div>
         )}
 
-        {/* Basic Info */}
         <div className="space-y-4">
           <div>
             <label htmlFor="brand" className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
@@ -191,7 +188,7 @@ export default function NewAmendmentForm() {
               required
               value={formData.brand}
               onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
               placeholder="e.g., Down To Earth"
             />
           </div>
@@ -205,7 +202,7 @@ export default function NewAmendmentForm() {
               required
               value={formData.name}
               onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
               placeholder="e.g., Blood Meal"
             />
           </div>
@@ -217,7 +214,7 @@ export default function NewAmendmentForm() {
               name="type"
               value={formData.type}
               onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 bg-white"
             >
               <option value="synthetic">Synthetic</option>
               <option value="organic">Organic</option>
@@ -230,7 +227,6 @@ export default function NewAmendmentForm() {
 
         <hr className="border-gray-200" />
 
-        {/* N-P-K Guaranteed Analysis */}
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">Guaranteed Analysis (%)</h3>
           <div className="grid grid-cols-3 gap-4">
@@ -246,11 +242,10 @@ export default function NewAmendmentForm() {
                 value={formData.n_value}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-green-200 rounded-md focus:ring-2 focus:ring-green-500 bg-green-50"
-                placeholder="0.00"
               />
             </div>
             <div>
-              <label htmlFor="p_value" className="block text-xs font-medium text-blue-700 mb-1">Phosphorus (P)</label>
+              <label htmlFor="p_value" className="block text-xs font-medium text-blue-700 mb-1">Phos (P)</label>
               <input
                 type="number"
                 id="p_value"
@@ -261,11 +256,10 @@ export default function NewAmendmentForm() {
                 value={formData.p_value}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 bg-blue-50"
-                placeholder="0.00"
               />
             </div>
             <div>
-              <label htmlFor="k_value" className="block text-xs font-medium text-orange-700 mb-1">Potassium (K)</label>
+              <label htmlFor="k_value" className="block text-xs font-medium text-orange-700 mb-1">Potash (K)</label>
               <input
                 type="number"
                 id="k_value"
@@ -276,13 +270,11 @@ export default function NewAmendmentForm() {
                 value={formData.k_value}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-orange-200 rounded-md focus:ring-2 focus:ring-orange-500 bg-orange-50"
-                placeholder="0.00"
               />
             </div>
           </div>
         </div>
 
-        {/* Secondary Nutrients */}
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">Secondary Nutrients (%)</h3>
           <div className="grid grid-cols-2 gap-4">
@@ -294,11 +286,9 @@ export default function NewAmendmentForm() {
                 name="calcium"
                 inputMode="decimal"
                 step="0.01"
-                min="0"
                 value={formData.calcium}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-gray-500"
-                placeholder="0.00"
               />
             </div>
             <div>
@@ -309,27 +299,24 @@ export default function NewAmendmentForm() {
                 name="magnesium"
                 inputMode="decimal"
                 step="0.01"
-                min="0"
                 value={formData.magnesium}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-gray-500"
-                placeholder="0.00"
               />
             </div>
           </div>
         </div>
 
-        {/* Ingredients / Derived From */}
         <div>
-          <label htmlFor="derived_from" className="block text-sm font-medium text-gray-700 mb-1">Derived From (Ingredients)</label>
+          <label htmlFor="derived_from" className="block text-sm font-medium text-gray-700 mb-1">Derived From</label>
           <textarea
             id="derived_from"
             name="derived_from"
             rows={2}
             value={formData.derived_from}
             onChange={handleChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-            placeholder="e.g., Feather meal, bone meal, sulfate of potash..."
+            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 text-sm"
+            placeholder="Ingredients..."
           ></textarea>
         </div>
 

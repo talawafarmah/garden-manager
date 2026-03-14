@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory, SeedlingTray, AppView } from '../types';
 
+// CORE COMPONENTS
 import Dashboard from '../components/Dashboard';
 import ScannerImporter from '../components/ScannerImporter';
 import VaultList from '../components/VaultList';
@@ -14,7 +15,12 @@ import TrayDetail from '../components/TrayDetail';
 import TrayEdit from '../components/TrayEdit';
 import SeedlingsList from '../components/SeedlingsList';
 
-// NEW ADMIN COMPONENTS
+// AMENDMENT MODULE COMPONENTS
+import AmendmentList from '../components/amendments/AmendmentList';
+import NewAmendmentForm from '../components/amendments/NewAmendmentForm';
+import AmendmentDetailPage from './amendments/[id]/page'; // Adjust path if you moved the detail UI to a component
+
+// ADMIN & PLANNING COMPONENTS
 import AdminHub from '../components/AdminHub';
 import AdminCategories from '../components/AdminCategories';
 import AdminSeasons from '../components/AdminSeasons';
@@ -23,20 +29,24 @@ import GrowPlanner from '../components/GrowPlanner';
 import FarmMap from '../components/FarmMap';
 import Apothecary from '../components/Apothecary';
 
+// UPDATED VALID VIEWS
 const VALID_VIEWS = [
   'dashboard', 'vault', 'seed_detail', 'seed_edit', 'scanner', 'importer',
   'trays', 'tray_detail', 'tray_edit', 'seedlings',
-  'admin_hub', 'admin_categories', 'admin_seasons', 'admin_demand', 'grow_planner'
+  'admin_hub', 'admin_categories', 'admin_seasons', 'admin_demand', 'grow_planner',
+  'farm_map', 'apothecary', 'amendments', 'amendment_detail', 'amendment_new'
 ];
 
 export default function App() {
-  const [activeView, setActiveView] = useState<AppView>('dashboard');
+  const [activeView, setActiveView] = useState<AppView | any>('dashboard');
   const [selectedSeed, setSelectedSeed] = useState<any>(null); 
   const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
+  const [selectedAmendment, setSelectedAmendment] = useState<any>(null);
 
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
   const [categories, setCategories] = useState<SeedCategory[]>([]);
   const [trays, setTrays] = useState<SeedlingTray[]>([]);
+  const [amendments, setAmendments] = useState<any[]>([]);
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
@@ -76,27 +86,40 @@ export default function App() {
     }
   };
 
-  useEffect(() => { fetchCategories(); fetchInventory(); fetchTrays(); }, []);
+  const fetchAmendments = async () => {
+    const { data } = await supabase.from('amendments').select('*').order('brand');
+    if (data) setAmendments(data);
+  };
 
-  const applyRoute = (view: AppView, payload: any = null) => {
+  useEffect(() => { 
+    fetchCategories(); 
+    fetchInventory(); 
+    fetchTrays(); 
+    fetchAmendments();
+  }, []);
+
+  const applyRoute = (view: AppView | any, payload: any = null) => {
     setActiveView(view);
     if (typeof window !== 'undefined') window.scrollTo(0, 0);
 
     // Clear payloads if returning to list views
-    if (!['seed_detail', 'seed_edit', 'tray_detail', 'tray_edit'].includes(view)) {
+    if (!['seed_detail', 'seed_edit', 'tray_detail', 'tray_edit', 'amendment_detail'].includes(view)) {
         setSelectedSeed(null); 
         setSelectedTray(null);
+        setSelectedAmendment(null);
     }
     
     if (view === 'seed_detail' || view === 'seed_edit') setSelectedSeed(payload);
     if (view === 'tray_detail' || view === 'tray_edit') setSelectedTray(payload);
+    if (view === 'amendment_detail') setSelectedAmendment(payload);
     
-    // Refresh list views to grab newly generated seeds/trays
+    // Refresh lists when navigating to them
     if (view === 'vault') fetchInventory();
     if (view === 'trays') { fetchTrays(); fetchInventory(); }
+    if (view === 'amendments') fetchAmendments();
   };
 
-  const navigateTo = (view: AppView, payload: any = null, replace: boolean = false) => {
+  const navigateTo = (view: AppView | any, payload: any = null, replace: boolean = false) => {
     if (typeof window !== 'undefined') {
         if (replace) window.history.replaceState({ view, payload }, '', `#${view}`);
         else window.history.pushState({ view, payload }, '', `#${view}`);
@@ -104,14 +127,13 @@ export default function App() {
     applyRoute(view, payload);
   };
 
-  const handleGoBack = (fallbackView: AppView) => {
+  const handleGoBack = (fallbackView: AppView | any) => {
      if (typeof window !== 'undefined') {
          if (window.history.length > 2) window.history.back();
          else navigateTo(fallbackView);
      } else applyRoute(fallbackView);
   };
 
-  // Back/Forward Browser Button handling
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
         if (e.state && e.state.view) {
@@ -125,7 +147,6 @@ export default function App() {
     
     window.addEventListener('popstate', handlePopState);
     
-    // Handle first load with # hash
     const initialHash = window.location.hash.replace('#', '') as AppView;
     if (initialHash && VALID_VIEWS.includes(initialHash)) {
          window.history.replaceState({ view: initialHash }, '', `#${initialHash}`);
@@ -138,6 +159,7 @@ export default function App() {
   }, []);
 
   switch (activeView) {
+    case 'dashboard': return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'scanner':
     case 'importer': return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault': return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;
@@ -148,7 +170,13 @@ export default function App() {
     case 'tray_edit': return <TrayEdit key={selectedTray?.id || 'new_tray'} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'seedlings': return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     
-    // NEW ROUTES: ADMIN HUB & PLANNERS
+    // AMENDMENT VIEWS
+    case 'amendments': return <AmendmentList initialAmendments={amendments} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    case 'amendment_new': return <NewAmendmentForm navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    // If you are using the dynamic page for details, ensure it's wrapped or converted to a component
+    case 'amendment_detail': return <AmendmentDetailPage params={{ id: selectedAmendment?.id }} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    
+    // ADMIN HUB & PLANNERS
     case 'admin_hub': return <AdminHub navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_categories': return <AdminCategories categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'admin_seasons': return <AdminSeasons navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
@@ -157,7 +185,6 @@ export default function App() {
     case 'farm_map':  return <FarmMap navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'apothecary':  return <Apothecary navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     
-    case 'dashboard':
     default: return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
   }
 }
