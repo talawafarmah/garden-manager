@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2 } from 'lucide-react';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2, X } from 'lucide-react';
 import AmendmentList from './amendments/AmendmentList';
 import RecipeForm from './amendments/RecipeForm';
 import { Recipe } from '@/types/amendments'; 
@@ -19,9 +19,11 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
   
-  // Controls the display and mode of the Recipe Form
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  
+  // NEW: State to track which recipe is currently being viewed in the popup
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const fetchRecipes = async () => {
     setIsLoadingRecipes(true);
@@ -42,11 +44,11 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
   const getTypeStyles = (type: string) => {
     switch (type) {
-      case 'liquid_tea': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', label: 'Liquid Tea' };
-      case 'dry_mix': return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-100', label: 'Dry Mix' };
-      case 'extract': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', label: 'Extract' };
-      case 'ferment': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100', label: 'Ferment' };
-      default: return { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-100', label: 'Unknown' };
+      case 'liquid_tea': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', label: 'Liquid Tea', icon: <Beaker size={14}/> };
+      case 'dry_mix': return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-100', label: 'Dry Mix', icon: <Sprout size={14}/> };
+      case 'extract': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', label: 'Extract', icon: <LeafyGreen size={14}/> };
+      case 'ferment': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100', label: 'Ferment', icon: <Flame size={14}/> };
+      default: return { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-100', label: 'Unknown', icon: <Beaker size={14}/> };
     }
   };
 
@@ -54,6 +56,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const handleEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
     setShowRecipeForm(true);
+    setSelectedRecipe(null); // Close the view modal if it's open
   };
 
   const handleDeleteRecipe = async (id: string, name: string) => {
@@ -63,6 +66,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         alert("Failed to delete recipe: " + error.message);
       } else {
         setRecipes(recipes.filter(r => r.id !== id));
+        if (selectedRecipe?.id === id) setSelectedRecipe(null);
       }
     }
   };
@@ -85,7 +89,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-20 font-sans">
+    <div className="min-h-screen bg-stone-50 pb-20 font-sans relative">
       
       {/* UNIVERSAL HEADER */}
       <header className="bg-purple-800 text-white p-4 shadow-md sticky top-0 z-30 flex items-center justify-between">
@@ -212,32 +216,47 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                 {recipes.map(recipe => {
                   const styles = getTypeStyles(recipe.type);
                   return (
-                    <div key={recipe.id} className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative group">
-                      
+                    <div 
+                      key={recipe.id} 
+                      onClick={() => setSelectedRecipe(recipe)}
+                      className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative group cursor-pointer hover:border-purple-300 transition-all hover:shadow-md"
+                    >
                       {/* CRUD ACTIONS: Hidden until hover (or always visible on mobile) */}
                       <div className="absolute top-4 right-4 flex gap-1.5 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleEditRecipe(recipe)} className="p-2 bg-stone-100 text-stone-500 hover:bg-blue-100 hover:text-blue-600 rounded-lg transition-colors">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleEditRecipe(recipe); }} 
+                          className="p-2 bg-stone-100 text-stone-500 hover:bg-blue-100 hover:text-blue-600 rounded-lg transition-colors"
+                        >
                           <Edit2 size={14} />
                         </button>
-                        <button onClick={() => handleDeleteRecipe(recipe.id, recipe.name)} className="p-2 bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteRecipe(recipe.id, recipe.name); }} 
+                          className="p-2 bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors"
+                        >
                           <Trash2 size={14} />
                         </button>
                       </div>
 
                       <div className="flex justify-between items-start mb-3 pr-20">
-                        <h3 className="text-lg font-black text-stone-900 leading-tight">
+                        <h3 className="text-lg font-black text-stone-900 leading-tight group-hover:text-purple-700 transition-colors">
                           {recipe.name}
                         </h3>
                       </div>
 
-                      <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border inline-block mb-3`}>
-                        {styles.label}
-                      </span>
+                      <div className="flex gap-2 mb-3">
+                        <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border flex items-center gap-1`}>
+                          {styles.icon} {styles.label}
+                        </span>
+                        {recipe.brew_time_hours ? (
+                          <span className="bg-stone-100 text-stone-600 border-stone-200 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border flex items-center gap-1">
+                            <Clock size={12} /> {recipe.brew_time_hours} Hours
+                          </span>
+                        ) : null}
+                      </div>
                       
-                      {/* RENDER WYSIWYG HTML CONTENT SAFELY */}
                       {recipe.description && recipe.description !== '<p><br></p>' && (
                         <div 
-                          className="prose prose-sm prose-stone mb-4 max-w-none text-stone-600 line-clamp-3"
+                          className="prose prose-sm prose-stone mb-4 max-w-none text-stone-600 line-clamp-2"
                           dangerouslySetInnerHTML={{ __html: recipe.description }} 
                         />
                       )}
@@ -246,7 +265,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
                           <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
                           <ul className="text-xs font-bold text-stone-700 space-y-1">
-                            {recipe.ingredients.slice(0, 4).map((ing, i) => (
+                            {recipe.ingredients.slice(0, 3).map((ing, i) => (
                               <li key={i} className="flex items-center justify-between gap-2">
                                 <span className="flex items-center gap-2">
                                   <div className="w-1.5 h-1.5 rounded-full bg-purple-400"></div>
@@ -257,9 +276,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                                 </span>
                               </li>
                             ))}
-                            {recipe.ingredients.length > 4 && (
+                            {recipe.ingredients.length > 3 && (
                               <li className="text-[10px] text-stone-400 font-black uppercase tracking-widest text-center mt-2 pt-1 border-t border-stone-200/50">
-                                + {recipe.ingredients.length - 4} more
+                                + {recipe.ingredients.length - 3} more
                               </li>
                             )}
                           </ul>
@@ -296,10 +315,102 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         )}
       </div>
 
+      {/* --- FULL RECIPE VIEW MODAL --- */}
+      {selectedRecipe && (() => {
+         const styles = getTypeStyles(selectedRecipe.type);
+         return (
+          <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="bg-purple-800 text-white p-4 sm:p-5 flex justify-between items-center shrink-0">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="bg-purple-900/50 text-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-purple-700 shadow-sm flex items-center gap-1 w-fit">
+                      {styles.icon} {styles.label}
+                    </span>
+                    {selectedRecipe.brew_time_hours ? (
+                      <span className="bg-purple-900/50 text-purple-100 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-purple-700 shadow-sm flex items-center gap-1 w-fit">
+                        <Clock size={12} /> {selectedRecipe.brew_time_hours}h
+                      </span>
+                    ) : null}
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black leading-tight truncate">
+                    {selectedRecipe.name}
+                  </h2>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button 
+                    onClick={() => handleEditRecipe(selectedRecipe)}
+                    className="p-2 bg-purple-700 hover:bg-purple-600 rounded-full transition-colors"
+                    title="Edit Recipe"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => setSelectedRecipe(null)}
+                    className="p-2 bg-purple-700 hover:bg-purple-600 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-5 sm:p-6 overflow-y-auto space-y-8 bg-stone-50">
+                
+                {selectedRecipe.description && selectedRecipe.description !== '<p><br></p>' && (
+                  <section>
+                    <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Description / Purpose</h3>
+                    <div 
+                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 rounded-2xl border border-stone-200 shadow-sm"
+                      dangerouslySetInnerHTML={{ __html: selectedRecipe.description }} 
+                    />
+                  </section>
+                )}
+
+                {selectedRecipe.ingredients && selectedRecipe.ingredients.length > 0 && (
+                  <section>
+                    <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Ingredients Needed</h3>
+                    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <tbody className="divide-y divide-stone-100">
+                          {selectedRecipe.ingredients.map((ing, i) => (
+                            <tr key={i} className="hover:bg-stone-50 transition-colors">
+                              <td className="py-3 px-4 font-bold text-stone-800">{ing.name}</td>
+                              <td className="py-3 px-4 text-right font-black text-purple-700">
+                                {ing.amount} <span className="text-[10px] text-stone-500 uppercase tracking-widest">{ing.unit}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {selectedRecipe.instructions && selectedRecipe.instructions !== '<p><br></p>' && (
+                  <section>
+                    <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Instructions</h3>
+                    <div 
+                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 sm:p-6 rounded-2xl border border-stone-200 shadow-sm"
+                      dangerouslySetInnerHTML={{ __html: selectedRecipe.instructions }} 
+                    />
+                  </section>
+                )}
+                
+              </div>
+            </div>
+          </div>
+         );
+      })()}
+
+      {/* Global Prose Styles for HTML Content */}
       <style dangerouslySetInnerHTML={{__html: `
         .prose p { margin-top: 0.25em; margin-bottom: 0.25em; }
         .prose ul { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: disc; }
         .prose ol { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: decimal; }
+        .prose strong { color: #1c1917; font-weight: 800; }
       `}} />
     </div>
   );
