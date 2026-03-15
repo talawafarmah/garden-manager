@@ -22,7 +22,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   
-  // NEW: State to track which recipe is currently being viewed in the popup
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const fetchRecipes = async () => {
@@ -56,7 +55,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const handleEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
     setShowRecipeForm(true);
-    setSelectedRecipe(null); // Close the view modal if it's open
+    setSelectedRecipe(null); 
   };
 
   const handleDeleteRecipe = async (id: string, name: string) => {
@@ -221,7 +220,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                       onClick={() => setSelectedRecipe(recipe)}
                       className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative group cursor-pointer hover:border-purple-300 transition-all hover:shadow-md"
                     >
-                      {/* CRUD ACTIONS: Hidden until hover (or always visible on mobile) */}
                       <div className="absolute top-4 right-4 flex gap-1.5 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleEditRecipe(recipe); }} 
@@ -256,7 +254,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                       
                       {recipe.description && recipe.description !== '<p><br></p>' && (
                         <div 
-                          className="prose prose-sm prose-stone mb-4 max-w-none text-stone-600 line-clamp-2"
+                          className="prose prose-sm prose-stone mb-4 max-w-none text-stone-600 line-clamp-2 break-words whitespace-pre-wrap"
                           dangerouslySetInnerHTML={{ __html: recipe.description }} 
                         />
                       )}
@@ -363,7 +361,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                   <section>
                     <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Description / Purpose</h3>
                     <div 
-                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 rounded-2xl border border-stone-200 shadow-sm"
+                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 rounded-2xl border border-stone-200 shadow-sm break-words whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{ __html: selectedRecipe.description }} 
                     />
                   </section>
@@ -393,7 +391,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                   <section>
                     <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Instructions</h3>
                     <div 
-                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 sm:p-6 rounded-2xl border border-stone-200 shadow-sm"
+                      className="prose prose-sm prose-stone max-w-none text-stone-700 bg-white p-5 sm:p-6 rounded-2xl border border-stone-200 shadow-sm break-words whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{ __html: selectedRecipe.instructions }} 
                     />
                   </section>
@@ -405,12 +403,14 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
          );
       })()}
 
-      {/* Global Prose Styles for HTML Content */}
+      {/* Global Prose Styles for HTML Content - ADDED STRICT WRAPPING RULES */}
       <style dangerouslySetInnerHTML={{__html: `
-        .prose p { margin-top: 0.25em; margin-bottom: 0.25em; }
+        .prose { word-break: break-word; overflow-wrap: break-word; }
+        .prose p { margin-top: 0.25em; margin-bottom: 0.25em; white-space: pre-wrap; }
         .prose ul { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: disc; }
         .prose ol { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: decimal; }
         .prose strong { color: #1c1917; font-weight: 800; }
+        .prose a { color: #7e22ce; word-break: break-all; }
       `}} />
     </div>
   );
