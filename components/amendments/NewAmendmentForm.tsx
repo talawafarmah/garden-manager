@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Amendment, AmendmentType } from '@/types/amendments';
 import { Camera, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
@@ -9,19 +9,56 @@ import ProductCapture from './ProductCapture';
 interface NewAmendmentFormProps {
   navigateTo: (view: any, payload?: any) => void;
   handleGoBack: (fallbackView: any) => void;
-  initialData?: Amendment | null; // NEW: If passed, the form acts as an Editor
+  initialData?: Amendment | null; 
 }
+
+// Client-side image compressor for instant list-rendering
+const generateThumbnail = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const MAX_SIZE = 150; // Downscale to 150px square-ish
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6)); // 60% quality jpeg
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData }: NewAmendmentFormProps) {
   const isEditing = !!initialData;
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
   const [showScanner, setShowScanner] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.thumbnail || initialData?.image_url || null);
 
-  // Initialize with initialData if editing, else defaults
   const [formData, setFormData] = useState({
     brand: initialData?.brand || '',
     name: initialData?.name || '',
@@ -40,42 +77,42 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAnalysisSuccess = (data: any) => {
-    console.log("DEBUG: AI Data Received ->", data);
-
+  const handleAnalysisSuccess = (data: any, capturedImages: File[]) => {
     if (!data || Object.keys(data).length === 0) {
-      setError("Analysis returned no data. Please try clearer photos.");
+      setError("Analysis returned no data.");
       return;
     }
 
     setShowScanner(false);
-    setAnalysisMessage('Analysis complete! Please verify the data below.');
+    setAnalysisMessage('Data populated! Review your changes.');
     setError(null);
+
+    if (capturedImages && capturedImages.length > 0) {
+      setPendingImage(capturedImages[0]);
+      setPreviewUrl(URL.createObjectURL(capturedImages[0]));
+    }
 
     const validTypes = ['organic', 'synthetic', 'compost', 'mineral', 'microbial'];
     const rawValue = Array.isArray(data.type) ? data.type[0] : (data.type || "organic");
     const normalizedValue = String(rawValue).toLowerCase();
     
     let finalizedType = 'organic'; 
-    if (validTypes.includes(normalizedValue)) {
-      finalizedType = normalizedValue;
-    } else {
-      if (normalizedValue.includes('microbial')) finalizedType = 'microbial';
-      else if (normalizedValue.includes('compost')) finalizedType = 'compost';
-      else if (normalizedValue.includes('synthetic')) finalizedType = 'synthetic';
-      else if (normalizedValue.includes('mineral')) finalizedType = 'mineral';
-    }
+    if (validTypes.includes(normalizedValue)) finalizedType = normalizedValue;
+    else if (normalizedValue.includes('microbial')) finalizedType = 'microbial';
+    else if (normalizedValue.includes('compost')) finalizedType = 'compost';
+    else if (normalizedValue.includes('synthetic')) finalizedType = 'synthetic';
+    else if (normalizedValue.includes('mineral')) finalizedType = 'mineral';
 
     setFormData((prev) => ({
       ...prev,
       brand: data.brand || prev.brand,
       name: data.name || prev.name,
       type: finalizedType as AmendmentType,
-      n_value: (data.n_value ?? "0").toString(),
-      p_value: (data.p_value ?? "0").toString(),
-      k_value: (data.k_value ?? "0").toString(),
-      calcium: (data.calcium ?? "0").toString(),
-      magnesium: (data.magnesium ?? "0").toString(),
+      n_value: (data.n_value && data.n_value !== 0) ? data.n_value.toString() : prev.n_value,
+      p_value: (data.p_value && data.p_value !== 0) ? data.p_value.toString() : prev.p_value,
+      k_value: (data.k_value && data.k_value !== 0) ? data.k_value.toString() : prev.k_value,
+      calcium: (data.calcium && data.calcium !== 0) ? data.calcium.toString() : prev.calcium,
+      magnesium: (data.magnesium && data.magnesium !== 0) ? data.magnesium.toString() : prev.magnesium,
       derived_from: data.derived_from || prev.derived_from,
       barcode_upc: data.barcode_upc || prev.barcode_upc,
     }));
@@ -88,6 +125,36 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setIsSubmitting(true);
     setError(null);
 
+    let finalImageUrl = initialData?.image_url || null;
+    let finalThumbnail = initialData?.thumbnail || null;
+
+    if (pendingImage) {
+      try {
+        // 1. Generate the tiny Base64 string for the list view
+        finalThumbnail = await generateThumbnail(pendingImage);
+
+        // 2. Upload the full image to storage
+        const fileExt = pendingImage.name.split('.').pop() || 'jpg';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('amendment_images')
+          .upload(fileName, pendingImage);
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from('amendment_images')
+          .getPublicUrl(fileName);
+          
+        finalImageUrl = publicUrlData.publicUrl;
+      } catch (err: any) {
+        setError("Image processing failed: " + err.message);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const payload = {
       brand: formData.brand,
       name: formData.name,
@@ -98,29 +165,20 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       calcium: parseFloat(formData.calcium) || 0,
       magnesium: parseFloat(formData.magnesium) || 0,
       derived_from: formData.derived_from,
-      barcode_upc: formData.barcode_upc || null, 
+      barcode_upc: formData.barcode_upc || null,
+      image_url: finalImageUrl,
+      thumbnail: finalThumbnail, // Save the base64 string directly to the row
     };
 
     let submitError;
     let returnedData;
 
     if (isEditing && initialData?.id) {
-      // UPDATE Mode
-      const { data, error } = await supabase
-        .from('amendments')
-        .update(payload)
-        .eq('id', initialData.id)
-        .select()
-        .single();
+      const { data, error } = await supabase.from('amendments').update(payload).eq('id', initialData.id).select().single();
       submitError = error;
       returnedData = data;
     } else {
-      // INSERT Mode
-      const { data, error } = await supabase
-        .from('amendments')
-        .insert([payload])
-        .select()
-        .single();
+      const { data, error } = await supabase.from('amendments').insert([payload]).select().single();
       submitError = error;
       returnedData = data;
     }
@@ -128,16 +186,11 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setIsSubmitting(false);
 
     if (submitError) {
-      if (submitError.code === '23505') { 
-        setError('This product already exists in your Digital Shed.');
-      } else {
-        setError(submitError.message);
-      }
+      setError(submitError.message);
       return;
     }
 
     if (returnedData) {
-      // Return to detail view
       navigateTo('amendment_detail', returnedData);
     }
   };
@@ -185,6 +238,13 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           </div>
         )}
 
+        {/* Image Preview */}
+        {previewUrl && (
+          <div className="mb-6 relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-green-500 shadow-md">
+            <img src={previewUrl} alt="Thumbnail Preview" className="w-full h-full object-cover" />
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-8">
           
           <div className="space-y-4">
@@ -199,7 +259,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
                   value={formData.brand}
                   onChange={handleChange}
                   className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                  placeholder="e.g., Down To Earth"
                 />
               </div>
 
@@ -212,7 +271,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
                   value={formData.name}
                   onChange={handleChange}
                   className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                  placeholder="e.g., All Purpose Fertilizer"
                 />
               </div>
 
@@ -316,7 +374,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
                 value={formData.derived_from}
                 onChange={handleChange}
                 className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-900 font-medium leading-relaxed"
-                placeholder="List ingredients (e.g., bone meal, feather meal...)"
               ></textarea>
             </div>
           </div>

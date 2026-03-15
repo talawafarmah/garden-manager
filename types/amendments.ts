@@ -18,6 +18,8 @@ export interface Amendment {
   magnesium?: number;
   derived_from?: string;
   barcode_upc?: string;
+  image_url?: string;  // Full resolution image in Supabase Storage
+  thumbnail?: string;  // Base64 downscaled image for fast list rendering
   createdAt: string;
   updatedAt: string;
 }

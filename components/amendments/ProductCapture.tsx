@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Camera, X, Loader2, Image as ImageIcon, Send, Plus } from 'lucide-react';
+import { Camera, X, Loader2, Send, Plus, Image as ImageIcon } from 'lucide-react';
 
 interface ProductCaptureProps {
-  onAnalysisSuccess: (data: any) => void;
+  // We now pass the raw image File back so the form can upload it to Supabase
+  onAnalysisSuccess: (data: any, capturedImages: File[]) => void;
   onCancel: () => void;
 }
 
@@ -37,10 +38,11 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to analyze product. Check server logs.');
+        throw new Error(data.error || 'Failed to analyze product.');
       }
 
-      onAnalysisSuccess(data);
+      // Pass the data AND the images back
+      onAnalysisSuccess(data, images);
     } catch (err: any) {
       console.error("Capture Processing Error:", err);
       setError(err.message || 'Analysis failed. Please try clearer photos.');
@@ -64,7 +66,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
             <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto shadow-lg">
               <Camera size={32} className="text-white" />
             </div>
-            <p className="text-gray-300 text-sm">Take photos of the front label and the N-P-K table on the back.</p>
+            <p className="text-gray-300 text-sm">Take photos or choose from your gallery.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2 w-full mb-6">
@@ -99,8 +101,8 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
             disabled={isProcessing}
             className="w-full bg-white text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 transition-transform"
           >
-            <Camera size={20} />
-            {images.length === 0 ? 'Capture Product' : 'Take Another Photo'}
+            <ImageIcon size={20} />
+            {images.length === 0 ? 'Choose or Capture' : 'Add Another Photo'}
           </button>
 
           {images.length > 0 && (
@@ -110,17 +112,17 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
               className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-lg shadow-green-900/40 transition-transform"
             >
               {isProcessing ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-              {isProcessing ? 'Analyzing Garden Tech...' : 'Analyze Product'}
+              {isProcessing ? 'Analyzing Data...' : 'Analyze Product'}
             </button>
           )}
         </div>
 
+        {/* Removed capture="environment" to allow Gallery access */}
         <input 
           type="file" 
           ref={fileInputRef} 
           onChange={handleCapture} 
           accept="image/*" 
-          capture="environment" 
           className="hidden" 
           multiple 
         />
