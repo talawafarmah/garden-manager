@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase'; // Aligned with your file structure
 import { AmendmentWithSchedules, Amendment, FeedingSchedule } from '@/types/amendments';
-import { ArrowLeft, Plus, Beaker, Leaf, Droplets, Sun } from 'lucide-react';
+import { ArrowLeft, Plus, Beaker, Leaf, Droplets, Sun,Loader2, Sparkles  } from 'lucide-react';
+
 
 // Sub-components
 import AmendmentHeader from '@/components/amendments/AmendmentHeader';
@@ -37,6 +38,50 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
     }
     setLoading(false);
   };
+
+// Add this state inside your component:
+const [isSearching, setIsSearching] = useState(false);
+
+// Add this function:
+const handleAILookup = async () => {
+  if (!amendment) return;
+  setIsSearching(true);
+  
+  try {
+    const response = await fetch('/api/generate-feeding-schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand: amendment.brand, name: amendment.name }),
+    });
+
+    const schedules = await response.json();
+    if (!response.ok) throw new Error(schedules.error);
+
+    // Prepare the array for Supabase (attach the amendment_id to each row)
+    const payload = schedules.map((sched: any) => ({
+      amendment_id: amendment.id,
+      stage: sched.stage || 'all',
+      amount: sched.amount || '',
+      frequency: sched.frequency || '',
+      notes: sched.notes || ''
+    }));
+
+    // Bulk insert all schedules at once!
+    const { error: submitError } = await supabase
+      .from('feeding_schedules')
+      .insert(payload);
+
+    if (submitError) throw submitError;
+
+    // Refresh the page to show the new list
+    fetchAmendmentData();
+    
+  } catch (err: any) {
+    alert("AI Search Failed: " + err.message);
+  } finally {
+    setIsSearching(false);
+  }
+};
 
   useEffect(() => {
     fetchAmendmentData();

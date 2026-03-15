@@ -16,26 +16,33 @@ export async function POST(request: Request) {
     const prompt = `
       Act as a master horticulturist. Use Google Search to find the official manufacturer application rate and feeding schedule for the garden product: "${brand} ${name}".
       
-      Extract a general or standard dosage recommendation and format it into this EXACT JSON structure:
+      Extract the different dosage recommendations based on growth stage and format them into a JSON ARRAY.
+      
+      CRITICAL SCHEMA RULES:
+      You MUST return an array of objects matching this EXACT interface. Do not use any values outside of the allowed enums.
+      
       {
-        "stage": "all" | "seedling" | "vegetative" | "flowering",
-        "amount": "string (e.g., '1 tbsp per gallon' or '1 cup per 10 sq ft')",
-        "frequency": "string (e.g., 'Every 2 weeks' or 'Once a month')",
-        "notes": "string (Any crucial warnings, like 'Water in well' or 'Do not apply directly to stem')"
+        "growth_stage": "seedling" | "vegetative" | "flowering" | "fruiting" | "dormant" | "pre_plant",
+        "method": "soil_drench" | "foliar_spray" | "top_dress" | "soil_mix" | "hydroponic",
+        "dosage_amount": number (e.g., 2),
+        "dosage_unit": "ml" | "tsp" | "tbsp" | "cup" | "oz" | "g" | "lbs" | "kg",
+        "dilution_amount": number (e.g., 1. Use 0 if not applicable),
+        "dilution_unit": "gallon" | "liter" | "sq_ft" | "cubic_yard" | "acre",
+        "frequency_days": number (e.g., if every 2 weeks, output 14. If once a week, output 7),
+        "notes": "string (Any warnings or mixing instructions. Keep concise.)"
       }
 
-      Return ONLY the raw JSON. No markdown or backticks.
+      Return ONLY the raw JSON array. Do not wrap in markdown or backticks.
     `;
 
     const result = await model.generateContent(prompt);
     let cleanJson = result.response.text().replace(/```json|```/g, "").trim();
 
-    // Safety JSON extraction
-    if (!cleanJson.startsWith('{')) {
-      const firstBrace = cleanJson.indexOf('{');
-      const lastBrace = cleanJson.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
-        cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+    if (!cleanJson.startsWith('[')) {
+      const firstBracket = cleanJson.indexOf('[');
+      const lastBracket = cleanJson.lastIndexOf(']');
+      if (firstBracket !== -1 && lastBracket !== -1) {
+        cleanJson = cleanJson.substring(firstBracket, lastBracket + 1);
       }
     }
 
