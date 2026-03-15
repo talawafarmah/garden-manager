@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Camera, X, Loader2, CheckCircle, Image as ImageIcon, Send, Plus } from 'lucide-react';
+import { Camera, X, Loader2, Image as ImageIcon, Send, Plus } from 'lucide-react';
 
 interface ProductCaptureProps {
   onAnalysisSuccess: (data: any) => void;
@@ -29,17 +29,20 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
     images.forEach((img, i) => formData.append(`image_${i}`, img));
 
     try {
-      // We'll update the scrape-amendment route to handle multiple images
       const response = await fetch('/api/scrape-amendment', {
         method: 'POST',
         body: formData,
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to analyze product');
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to analyze product. Check server logs.');
+      }
 
       onAnalysisSuccess(data);
     } catch (err: any) {
+      console.error("Capture Processing Error:", err);
       setError(err.message || 'Analysis failed. Please try clearer photos.');
     } finally {
       setIsProcessing(false);
@@ -50,7 +53,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
     <div className="fixed inset-0 z-[70] bg-black/95 flex flex-col p-6 overflow-y-auto">
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-xl font-bold text-white">Product Analysis</h2>
-        <button onClick={onCancel} className="p-2 text-white/50 hover:text-white">
+        <button onClick={onCancel} className="p-2 text-white/50 hover:text-white transition-colors">
           <X size={24} />
         </button>
       </div>
@@ -67,7 +70,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
           <div className="grid grid-cols-2 gap-2 w-full mb-6">
             {images.map((img, idx) => (
               <div key={idx} className="relative aspect-square bg-gray-800 rounded-lg overflow-hidden border border-white/10">
-                <img src={URL.createObjectURL(img)} className="object-cover w-full h-full" alt="capture" />
+                <img src={URL.createObjectURL(img)} className="object-cover w-full h-full" alt={`Capture ${idx + 1}`} />
                 <button 
                   onClick={() => setImages(images.filter((_, i) => i !== idx))}
                   className="absolute top-1 right-1 bg-black/50 p-1 rounded-full text-white"
@@ -79,7 +82,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
             {images.length < 4 && (
                <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="aspect-square border-2 border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center text-white/40 hover:text-white/60 hover:border-white/40"
+                className="aspect-square border-2 border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center text-white/40 hover:text-white/60 hover:border-white/40 transition-colors"
                >
                  <Plus size={24} />
                  <span className="text-[10px] mt-1 font-bold">ADD PHOTO</span>
@@ -88,13 +91,13 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
           </div>
         )}
 
-        {error && <p className="text-red-400 text-xs mb-4 text-center">{error}</p>}
+        {error && <p className="text-red-400 text-sm font-semibold mb-4 text-center bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</p>}
 
         <div className="w-full space-y-3 mt-4">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
-            className="w-full bg-white text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+            className="w-full bg-white text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 transition-transform"
           >
             <Camera size={20} />
             {images.length === 0 ? 'Capture Product' : 'Take Another Photo'}
@@ -104,7 +107,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
             <button
               onClick={processImages}
               disabled={isProcessing}
-              className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-lg shadow-green-900/40"
+              className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-lg shadow-green-900/40 transition-transform"
             >
               {isProcessing ? <Loader2 className="animate-spin" /> : <Send size={20} />}
               {isProcessing ? 'Analyzing Garden Tech...' : 'Analyze Product'}
