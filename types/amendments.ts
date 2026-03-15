@@ -44,3 +44,41 @@ export interface FeedingSchedule {
 export interface AmendmentWithSchedules extends Amendment {
   feeding_schedules: FeedingSchedule[];
 }
+
+// --- APOTHECARY & BREWERY TYPES ---
+
+export type RecipeType = 'liquid_tea' | 'dry_mix' | 'extract' | 'ferment';
+export type BrewStatus = 'brewing' | 'completed' | 'applied' | 'dumped';
+
+export interface RecipeIngredient {
+  name: string;
+  amount: number;
+  unit: string;
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  type: RecipeType;
+  description?: string;
+  ingredients: RecipeIngredient[];
+  instructions?: string;
+  brew_time_hours?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActiveBrew {
+  id: string;
+  recipe_id?: string;
+  custom_name: string;
+  status: BrewStatus;
+  start_time: string;
+  target_completion_time?: string;
+  yield_amount?: number;
+  yield_unit?: string;
+  notes?: string;
+  created_at: string;
+  // Joined relation:
+  recipe?: Recipe;
+}

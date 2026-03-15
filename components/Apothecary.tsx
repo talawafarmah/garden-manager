@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout } from 'lucide-react';
 import AmendmentList from './amendments/AmendmentList';
+import RecipeForm from './amendments/RecipeForm';
+import { Recipe } from '@/types/amendments'; // Or wherever your types are located
 
 interface ApothecaryProps {
   navigateTo: (view: any, payload?: any) => void;
@@ -12,11 +15,56 @@ interface ApothecaryProps {
 
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
   const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
+  
+  // Recipe State
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
+  const [showRecipeForm, setShowRecipeForm] = useState(false);
+
+  const fetchRecipes = async () => {
+    setIsLoadingRecipes(true);
+    const { data, error } = await supabase
+      .from('recipes')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (data && !error) {
+      setRecipes(data as Recipe[]);
+    }
+    setIsLoadingRecipes(false);
+  };
+
+  useEffect(() => {
+    fetchRecipes();
+  }, []);
+
+  const getTypeStyles = (type: string) => {
+    switch (type) {
+      case 'liquid_tea': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', label: 'Liquid Tea' };
+      case 'dry_mix': return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-100', label: 'Dry Mix' };
+      case 'extract': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', label: 'Extract' };
+      case 'ferment': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100', label: 'Ferment' };
+      default: return { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-100', label: 'Unknown' };
+    }
+  };
+
+  // If the user clicked "New Recipe", hijack the view and show the form
+  if (showRecipeForm) {
+    return (
+      <RecipeForm 
+        onClose={() => setShowRecipeForm(false)} 
+        onSuccess={() => {
+          setShowRecipeForm(false);
+          fetchRecipes(); // Refresh the list!
+        }} 
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-stone-50 pb-20 font-sans">
       
-      {/* UNIVERSAL HEADER (Protects against navigation loops) */}
+      {/* UNIVERSAL HEADER */}
       <header className="bg-purple-800 text-white p-4 shadow-md sticky top-0 z-30 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Go Back">
@@ -72,7 +120,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               </button>
             </div>
 
-            {/* Mockup Active Brew Card */}
+            {/* Mockup Active Brew Card (We will wire this up next!) */}
             <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl pointer-events-none group-hover:scale-110 transition-transform">🫧</div>
               
@@ -115,65 +163,81 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                 </button>
               </div>
             </div>
-
-            {/* Mockup Finished Brew Card */}
-            <div className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-inner opacity-75">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1 block">Completed Yesterday</span>
-                  <h3 className="text-sm font-black text-stone-700 line-through">JADAM Liquid Fertilizer (JLF)</h3>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-emerald-200 text-emerald-700 flex items-center justify-center font-bold">✓</div>
-              </div>
-            </div>
           </div>
         )}
 
-        {/* --- RECIPES SCAFFOLD --- */}
+        {/* --- RECIPES TAB --- */}
         {activeTab === 'recipes' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-lg font-bold text-stone-800">Master Recipes</h2>
-              <button className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-emerald-700 hover:text-emerald-500 transition-colors">
+              <button 
+                onClick={() => setShowRecipeForm(true)}
+                className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-purple-700 bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-200 transition-colors shadow-sm"
+              >
                 <Plus size={16} /> New Recipe
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              {/* Dummy Recipe Card 1 */}
-              <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer">
-                <div className="flex justify-between items-start mb-3">
-                  <h3 className="text-lg font-black text-stone-900 leading-tight">Actively Aerated Compost Tea (Fungal)</h3>
-                  <span className="bg-blue-50 text-blue-700 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-blue-100">Liquid</span>
-                </div>
-                <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">A rich fungal brew perfect for perennial beds and fruit trees. Requires air stones for 24 hours minimum.</p>
-                <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
-                  <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
-                  <ul className="text-xs font-bold text-stone-700 space-y-1">
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>Worm Castings</li>
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>Unsulfured Molasses</li>
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>Liquid Kelp</li>
-                  </ul>
-                </div>
+            {isLoadingRecipes ? (
+              <div className="flex justify-center py-10 text-purple-400">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-700"></div>
               </div>
-
-              {/* Dummy Recipe Card 2 */}
-              <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer">
-                <div className="flex justify-between items-start mb-3">
-                  <h3 className="text-lg font-black text-stone-900 leading-tight">Super Soil Pre-Mix</h3>
-                  <span className="bg-amber-50 text-amber-800 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-amber-100">Dry Mix</span>
-                </div>
-                <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">Base mix for starting heavy feeders. Let cook for 30 days before planting.</p>
-                <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
-                  <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
-                  <ul className="text-xs font-bold text-stone-700 space-y-1">
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Peat Moss / Coco Coir</li>
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Perlite</li>
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Bone Meal</li>
-                  </ul>
-                </div>
+            ) : recipes.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-3xl border border-stone-200 shadow-sm">
+                <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">📝</div>
+                <h3 className="font-black text-stone-800">No Recipes Yet</h3>
+                <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Create your first custom soil mix or compost tea recipe to use in the Brewery.</p>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {recipes.map(recipe => {
+                  const styles = getTypeStyles(recipe.type);
+                  return (
+                    <div key={recipe.id} className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer group">
+                      <div className="flex justify-between items-start mb-3">
+                        <h3 className="text-lg font-black text-stone-900 leading-tight group-hover:text-purple-700 transition-colors pr-2">
+                          {recipe.name}
+                        </h3>
+                        <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border flex-shrink-0`}>
+                          {styles.label}
+                        </span>
+                      </div>
+                      
+                      {recipe.description && (
+                        <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">
+                          {recipe.description}
+                        </p>
+                      )}
+                      
+                      {recipe.ingredients && recipe.ingredients.length > 0 && (
+                        <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
+                          <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
+                          <ul className="text-xs font-bold text-stone-700 space-y-1">
+                            {recipe.ingredients.slice(0, 4).map((ing, i) => (
+                              <li key={i} className="flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-purple-400"></div>
+                                  {ing.name}
+                                </span>
+                                <span className="text-[10px] text-stone-500 font-black tracking-widest uppercase">
+                                  {ing.amount} {ing.unit}
+                                </span>
+                              </li>
+                            ))}
+                            {recipe.ingredients.length > 4 && (
+                              <li className="text-[10px] text-stone-400 font-black uppercase tracking-widest text-center mt-2 pt-1 border-t border-stone-200/50">
+                                + {recipe.ingredients.length - 4} more
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -190,9 +254,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               </button>
             </div>
 
-            {/* We pass isEmbedded={true} so AmendmentList knows to hide its standalone 
-              back buttons and headers, blending perfectly into the tab view!
-            */}
             <AmendmentList 
               initialAmendments={amendments} 
               navigateTo={navigateTo} 
