@@ -44,25 +44,39 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
    * This populates the form using data extracted from the photos.
    */
  const handleAnalysisSuccess = (data: any) => {
+  // DEBUG 1: See exactly what the AI sent back in your browser console
+  console.log("DEBUG: AI Analysis Result ->", data);
+
+  if (!data || Object.keys(data).length === 0) {
+    setError("AI returned an empty object. Try a clearer photo of the labels.");
+    return;
+  }
+
   setShowScanner(false);
-  setAnalysisMessage('Analysis complete! Data populated.');
+  
+  // DEBUG 2: Show a temporary UI message with the detected brand
+  setAnalysisMessage(`Success! Identified ${data.brand ?? 'Product'} - Populating fields...`);
   setError(null);
 
-  setFormData((prev) => ({
-    ...prev,
-    brand: data.brand || prev.brand,
-    name: data.name || prev.name,
-    type: data.type || prev.type,
-    // Safely convert N-P-K (providing "0" as fallback)
-    n_value: (data.n_value ?? "0").toString(),
-    p_value: (data.p_value ?? "0").toString(),
-    k_value: (data.k_value ?? "0").toString(),
-    // Safely convert Secondary Nutrients (fixing the null crash)
-    calcium: (data.calcium ?? "0").toString(),
-    magnesium: (data.magnesium ?? "0").toString(),
-    derived_from: data.derived_from || prev.derived_from,
-    barcode_upc: data.barcode_upc || prev.barcode_upc,
-  }));
+  setFormData((prev) => {
+    // DEBUG 3: Check for data-type mismatches
+    const updatedForm = {
+      ...prev,
+      brand: data.brand || prev.brand,
+      name: data.name || prev.name,
+      type: data.type || prev.type,
+      n_value: (data.n_value ?? "0").toString(),
+      p_value: (data.p_value ?? "0").toString(),
+      k_value: (data.k_value ?? "0").toString(),
+      calcium: (data.calcium ?? "0").toString(),
+      magnesium: (data.magnesium ?? "0").toString(),
+      derived_from: data.derived_from || prev.derived_from,
+      barcode_upc: data.barcode_upc || prev.barcode_upc,
+    };
+    
+    console.log("DEBUG: Updated Form State ->", updatedForm);
+    return updatedForm;
+  });
 
   setTimeout(() => setAnalysisMessage(null), 5000);
 };
