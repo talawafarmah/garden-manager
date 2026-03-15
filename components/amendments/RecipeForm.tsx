@@ -6,9 +6,9 @@ import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
 import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout } from 'lucide-react';
 
-// FIX: Cast as React.ComponentType<any> so TypeScript stops complaining about missing prop definitions
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false }) as React.ComponentType<any>;
-import 'react-quill/dist/quill.snow.css';
+// Use react-quill-new to prevent the findDOMNode crash in modern React
+const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
+import 'react-quill-new/dist/quill.snow.css';
 
 interface RecipeFormProps {
   onClose: () => void;
