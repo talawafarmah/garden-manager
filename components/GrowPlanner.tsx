@@ -69,7 +69,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const [formTargetDate, setFormTargetDate] = useState("");
   const [formQty, setFormQty] = useState(0);
 
-  // SWAP SEED STATE
   const [swapPlan, setSwapPlan] = useState<GrowPlanRecord | null>(null);
   const [swapSearch, setSwapSearch] = useState("");
 
@@ -279,7 +278,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-20 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('admin_hub')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-          {/* FIX: Home Button added to resolve navigation loops */}
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
@@ -453,8 +451,11 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                           </div>
                         </div>
 
-                        <div className="mt-1 pt-3 border-t border-stone-100 flex items-center justify-between gap-3" onClick={e => e.stopPropagation()}>
-                           <div className="flex-1 min-w-0">
+                        {/* FIX: Converted to flex-col layout to avoid button squishing on mobile */}
+                        <div className="mt-1 pt-3 border-t border-stone-100 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+                           
+                           {/* TOP ROW: Progress Bar & Goal/Sown Stats */}
+                           <div className="w-full">
                              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest mb-1.5">
                                <div className="flex items-center gap-1.5 text-stone-500">
                                  Goal: <span className="text-stone-800">{plan.planned_qty}</span>
@@ -471,24 +472,28 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                              </div>
                            </div>
 
-                           <div className="flex items-center gap-2">
-                             {stratDays > 0 && !isComplete && (
-                               <button onClick={(e) => { e.stopPropagation(); toggleStratification(plan.id, !!plan.stratification_started); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-colors ${plan.stratification_started ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-inner' : 'bg-white text-sky-600 border border-sky-200 shadow-sm hover:bg-sky-50'}`}>
-                                 {plan.stratification_started ? '❄️ Stratifying ✓' : '❄️ Put in Fridge'}
-                               </button>
-                             )}
-                             <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
-                               <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
-                               <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
+                           {/* BOTTOM ROW: Action Buttons allowed to wrap */}
+                           <div className="flex flex-wrap items-center justify-between gap-2">
+                             <div className="flex flex-wrap items-center gap-2">
+                               {stratDays > 0 && !isComplete && (
+                                 <button onClick={(e) => { e.stopPropagation(); toggleStratification(plan.id, !!plan.stratification_started); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-colors ${plan.stratification_started ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-inner' : 'bg-white text-sky-600 border border-sky-200 shadow-sm hover:bg-sky-50'}`}>
+                                   {plan.stratification_started ? '❄️ Stratifying ✓' : '❄️ Put in Fridge'}
+                                 </button>
+                               )}
+                               <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
+                                 <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
+                                 <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
+                               </div>
                              </div>
                              
-                             {/* FIX: SWAP SEED BUTTON ADDED HERE */}
-                             <button onClick={(e) => { e.stopPropagation(); setSwapPlan(plan); }} className="p-1.5 text-stone-300 hover:text-blue-500 transition-colors" title="Swap Seed">
-                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                             </button>
-                             
-                             <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                             <div className="flex items-center">
+                               <button onClick={(e) => { e.stopPropagation(); setSwapPlan(plan); }} className="p-1.5 text-stone-400 hover:text-blue-500 transition-colors" title="Swap Seed">
+                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                               </button>
+                               <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-400 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                             </div>
                            </div>
+
                         </div>
                       </div>
                     );
@@ -500,6 +505,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
         )}
       </div>
 
+      {/* FIXED BOTTOM BAR FOR BULK SOWING */}
       {selectedPlanIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-stone-200 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-40 animate-in slide-in-from-bottom-5">
           <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-2">
@@ -515,7 +521,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
         </div>
       )}
 
-      {/* FIX: SWAP SEED MODAL IMPLEMENTATION */}
+      {/* SWAP SEED MODAL */}
       {swapPlan && (
          <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">

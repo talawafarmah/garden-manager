@@ -1,87 +1,175 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Beaker, BookOpen, Warehouse, Camera, Plus } from 'lucide-react';
-// Import your new Amendment components
-import AmendmentList from './amendments/AmendmentList';
+import React, { useState, useMemo } from 'react';
+import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import { Amendment, AmendmentType } from '@/types/amendments';
 
-interface ApothecaryProps {
-  navigateTo: (view: any, payload?: any) => void;
-  handleGoBack: (fallback: any) => void;
-  amendments: any[]; // Pass this in from your main page.tsx state
+interface AmendmentListProps {
+  initialAmendments: Amendment[];
+  navigateTo: (view: any, payload?: any) => void; 
+  handleGoBack: (fallbackView: any) => void;      
+  isEmbedded?: boolean; // NEW: Tells the list to hide its own header
 }
 
-export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
-  const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
+export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: AmendmentListProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
+
+  const filteredAmendments = useMemo(() => {
+    return initialAmendments.filter((amendment) => {
+      const safeName = amendment.name || '';
+      const safeBrand = amendment.brand || '';
+      
+      const matchesSearch = 
+        safeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        safeBrand.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesType = typeFilter === 'all' || amendment.type === typeFilter;
+
+      return matchesSearch && matchesType;
+    });
+  }, [initialAmendments, searchTerm, typeFilter]);
+
+  const getTypeIcon = (type: AmendmentType) => {
+    switch(type) {
+      case 'organic': return <Leaf size={14} />;
+      case 'synthetic': return <Beaker size={14} />;
+      case 'compost': return <Sprout size={14} />;
+      case 'mineral': return <Mountain size={14} />;
+      case 'microbial': return <Microscope size={14} />;
+      default: return <Leaf size={14} />;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Tab Navigation */}
-      <div className="flex bg-white border-b border-gray-200 sticky top-0 z-20">
-        <button
-          onClick={() => setActiveTab('brewery')}
-          className={`flex-1 py-4 text-sm font-bold flex flex-col items-center gap-1 ${
-            activeTab === 'brewery' ? 'text-green-700 border-b-2 border-green-700' : 'text-gray-500'
-          }`}
-        >
-          <Beaker size={20} />
-          <span>Brewery</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('recipes')}
-          className={`flex-1 py-4 text-sm font-bold flex flex-col items-center gap-1 ${
-            activeTab === 'recipes' ? 'text-green-700 border-b-2 border-green-700' : 'text-gray-500'
-          }`}
-        >
-          <BookOpen size={20} />
-          <span>Recipes</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className={`flex-1 py-4 text-sm font-bold flex flex-col items-center gap-1 ${
-            activeTab === 'inventory' ? 'text-green-700 border-b-2 border-green-700' : 'text-gray-500'
-          }`}
-        >
-          <Warehouse size={20} />
-          <span>Inventory</span>
-        </button>
+    <div className={`space-y-6 ${!isEmbedded ? 'pb-20' : ''}`}>
+      
+      {/* Hide this header if rendered inside Apothecary tabs */}
+      {!isEmbedded && (
+        <div className="flex justify-between items-center px-1">
+          <div className="flex items-center gap-2">
+            <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors" title="Go Back">
+              <ArrowLeft size={24} className="text-gray-700" />
+            </button>
+            <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            </button>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
+          <button 
+            onClick={() => navigateTo('amendment_new')}
+            className="bg-green-700 text-white p-2 rounded-full shadow-lg active:scale-90 transition-transform"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      )}
+
+      <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4 ${!isEmbedded ? 'sticky top-0 z-10' : ''}`}>
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 bg-gray-50 text-gray-900 font-medium outline-none"
+            placeholder="Search by brand or product name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="flex overflow-x-auto pb-2 -mx-1 px-1 gap-2 scrollbar-hide">
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
+              typeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            All Inventory
+          </button>
+          {['organic', 'synthetic', 'compost', 'mineral', 'microbial'].map((type) => (
+            <button
+              key={type}
+              onClick={() => setTypeFilter(type as AmendmentType)}
+              className={`whitespace-nowrap flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold capitalize transition-colors ${
+                typeFilter === type ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800'
+              }`}
+            >
+              {getTypeIcon(type as AmendmentType)}
+              {type.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="p-4">
-        {activeTab === 'brewery' && (
-          <div className="text-center py-12 text-gray-500 italic">
-            Brewery module coming soon...
-          </div>
-        )}
+      {filteredAmendments.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed">
+          <p className="text-gray-500 font-medium mb-4">No amendments found.</p>
+          <button 
+            onClick={() => navigateTo('amendment_new')}
+            className="inline-flex items-center text-green-700 font-bold hover:text-green-800 transition-colors"
+          >
+            <Plus size={18} className="mr-1" /> Add New Amendment
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {filteredAmendments.map((amendment) => (
+            <button 
+              key={amendment.id} 
+              onClick={() => navigateTo('amendment_detail', amendment)}
+              className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-green-400 hover:shadow-md transition-all h-full flex flex-col group"
+            >
+                <div className="flex gap-4 mb-3 w-full items-start">
+                  {amendment.thumbnail ? (
+                    <img 
+                      src={amendment.thumbnail} 
+                      alt={amendment.name} 
+                      className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
+                      <ImageIcon size={20} className="mb-1 opacity-50" />
+                      <span className="text-[8px] font-bold uppercase">No Image</span>
+                    </div>
+                  )}
 
-        {activeTab === 'recipes' && (
-          <div className="text-center py-12 text-gray-500 italic">
-            Soil & Tea recipes coming soon...
-          </div>
-        )}
+                  <div className="flex-1 pt-1">
+                    <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
+                      {amendment.brand}
+                    </span>
+                    <h3 className="text-base font-bold text-gray-900 group-hover:text-green-700 transition-colors line-clamp-2 leading-tight">
+                      {amendment.name}
+                    </h3>
+                  </div>
+                </div>
 
-        {activeTab === 'inventory' && (
-          <div className="space-y-4">
-            {/* Quick Action for Scanning */}
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => navigateTo('amendment_new')}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-700 text-white py-4 rounded-xl font-bold shadow-md active:scale-95 transition-transform"
-              >
-                <Camera size={20} />
-                <span>Scan New Input</span>
-              </button>
-            </div>
+                <div className="mt-auto flex justify-between items-center">
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg">
+                    {getTypeIcon(amendment.type)}
+                    {amendment.type}
+                  </span>
 
-            {/* The New Digital Shed List */}
-            <AmendmentList 
-              initialAmendments={amendments} 
-              navigateTo={navigateTo} 
-              handleGoBack={handleGoBack} 
-            />
-          </div>
-        )}
-      </div>
+                  <div className="flex gap-1.5">
+                    <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
+                      <span className="text-[9px] text-green-700 font-bold">N</span>
+                      <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
+                    </div>
+                    <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
+                      <span className="text-[9px] text-blue-700 font-bold">P</span>
+                      <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
+                    </div>
+                    <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
+                      <span className="text-[9px] text-orange-600 font-bold">K</span>
+                      <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
+                    </div>
+                  </div>
+                </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
