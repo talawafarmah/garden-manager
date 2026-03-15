@@ -3,8 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase'; // Aligned with your file structure
 import { AmendmentWithSchedules, Amendment, FeedingSchedule } from '@/types/amendments';
-import { ArrowLeft, Plus, Beaker, Leaf, Droplets, Sun,Loader2, Sparkles  } from 'lucide-react';
-
+import { ArrowLeft, Plus, Beaker, Leaf, Droplets, Sun, Loader2, Sparkles } from 'lucide-react';
 
 // Sub-components
 import AmendmentHeader from '@/components/amendments/AmendmentHeader';
@@ -21,6 +20,7 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
   const [amendment, setAmendment] = useState<AmendmentWithSchedules | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddSchedule, setShowAddSchedule] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const fetchAmendmentData = async () => {
     setLoading(true);
@@ -39,49 +39,49 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
     setLoading(false);
   };
 
-// Add this state inside your component:
-const [isSearching, setIsSearching] = useState(false);
-
-// Add this function:
-const handleAILookup = async () => {
-  if (!amendment) return;
-  setIsSearching(true);
-  
-  try {
-    const response = await fetch('/api/generate-feeding-schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brand: amendment.brand, name: amendment.name }),
-    });
-
-    const schedules = await response.json();
-    if (!response.ok) throw new Error(schedules.error);
-
-    // Prepare the array for Supabase (attach the amendment_id to each row)
-    const payload = schedules.map((sched: any) => ({
-      amendment_id: amendment.id,
-      stage: sched.stage || 'all',
-      amount: sched.amount || '',
-      frequency: sched.frequency || '',
-      notes: sched.notes || ''
-    }));
-
-    // Bulk insert all schedules at once!
-    const { error: submitError } = await supabase
-      .from('feeding_schedules')
-      .insert(payload);
-
-    if (submitError) throw submitError;
-
-    // Refresh the page to show the new list
-    fetchAmendmentData();
+  const handleAILookup = async () => {
+    if (!amendment) return;
+    setIsSearching(true);
     
-  } catch (err: any) {
-    alert("AI Search Failed: " + err.message);
-  } finally {
-    setIsSearching(false);
-  }
-};
+    try {
+      const response = await fetch('/api/generate-feeding-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand: amendment.brand, name: amendment.name }),
+      });
+
+      const schedules = await response.json();
+      if (!response.ok) throw new Error(schedules.error);
+
+      // Strictly map the AI JSON array to your specific Enum/Number schema
+      const payload = schedules.map((sched: any) => ({
+        amendment_id: amendment.id,
+        growth_stage: sched.growth_stage || 'vegetative',
+        method: sched.method || 'soil_drench',
+        dosage_amount: Number(sched.dosage_amount) || 0,
+        dosage_unit: sched.dosage_unit || 'tbsp',
+        dilution_amount: Number(sched.dilution_amount) || 0,
+        dilution_unit: sched.dilution_unit || 'gallon',
+        frequency_days: Number(sched.frequency_days) || 7,
+        notes: sched.notes || ''
+      }));
+
+      // Bulk insert all schedules at once
+      const { error: submitError } = await supabase
+        .from('feeding_schedules')
+        .insert(payload);
+
+      if (submitError) throw submitError;
+
+      // Refresh the page to show the new list of AI-generated cards
+      fetchAmendmentData();
+      
+    } catch (err: any) {
+      alert("AI Search Failed: " + err.message);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   useEffect(() => {
     fetchAmendmentData();
@@ -136,30 +136,40 @@ const handleAILookup = async () => {
             <AmendmentHeader amendment={amendment} />
             
             <div className="px-1">
-              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">
-                Nutrient Schedules
-              </h3>
+              {/* Header with AI Button Integrated */}
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                  Nutrient Schedules
+                </h3>
+                <button
+                  onClick={handleAILookup}
+                  disabled={isSearching}
+                  className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-colors disabled:opacity-50 shadow-sm active:scale-95"
+                >
+                  {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-emerald-500" />}
+                  {isSearching ? 'Searching Web...' : 'AI Web Search'}
+                </button>
+              </div>
+
               <FeedingScheduleList schedules={amendment.feeding_schedules} />
               
+              {/* Manual Add Button (Fallback) */}
               {amendment.feeding_schedules.length === 0 && (
-                <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl text-center">
-                  <p className="text-orange-800 text-sm mb-3">
-                    No feeding instructions added yet.
-                  </p>
+                <div className="mt-4 text-center">
                   <button 
                     onClick={() => setShowAddSchedule(true)}
-                    className="text-xs font-bold uppercase tracking-wide bg-orange-100 text-orange-800 px-4 py-2 rounded-lg"
+                    className="text-xs font-bold uppercase tracking-wide text-gray-500 hover:text-green-700 underline underline-offset-4 transition-colors"
                   >
-                    Add Manufacturer Guidelines
+                    Or add instructions manually
                   </button>
                 </div>
               )}
             </div>
             
             {amendment.derived_from && (
-              <div className="px-4 py-3 bg-white border border-gray-100 rounded-xl">
+              <div className="px-4 py-3 bg-white border border-gray-100 rounded-xl shadow-sm">
                 <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Source / Ingredients</h4>
-                <p className="text-sm text-gray-600 leading-relaxed italic">
+                <p className="text-sm text-gray-700 font-medium leading-relaxed italic">
                   {amendment.derived_from}
                 </p>
               </div>
@@ -172,17 +182,17 @@ const handleAILookup = async () => {
                 <h2 className="text-xl font-bold">New Instruction</h2>
              </div>
              <AddFeedingScheduleForm 
-  amendmentId={amendment.id}
-  amendmentBrand={amendment.brand} // NEW
-  amendmentName={amendment.name}   // NEW
-  onSuccess={() => {
-    setShowAddSchedule(false);
-    fetchAmendmentData();
-  }} 
-/>
+                amendmentId={amendment.id}
+                amendmentBrand={amendment.brand} 
+                amendmentName={amendment.name}   
+                onSuccess={() => {
+                  setShowAddSchedule(false);
+                  fetchAmendmentData();
+                }} 
+              />
              <button 
                onClick={() => setShowAddSchedule(false)}
-               className="w-full mt-4 py-3 text-gray-500 text-sm font-medium"
+               className="w-full mt-4 py-3 text-gray-500 text-sm font-medium hover:text-gray-800 transition-colors"
              >
                Cancel and go back
              </button>
