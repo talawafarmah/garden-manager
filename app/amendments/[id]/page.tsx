@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { AmendmentWithSchedules, FeedingSchedule } from '@/types/amendments';
-import { ArrowLeft, Plus, Beaker, Loader2, Sparkles, Trash2, Edit } from 'lucide-react';
+import { ArrowLeft, Plus, Beaker, Loader2, Sparkles, Trash2, Edit2 } from 'lucide-react';
 
 import AmendmentHeader from '@/components/amendments/AmendmentHeader';
 import FeedingScheduleList from '@/components/amendments/FeedingScheduleList';
@@ -132,7 +132,16 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
           <ArrowLeft size={24} className="text-gray-700" />
         </button>
         <div className="flex gap-2">
-          {/* Amendment Edit & Delete Buttons */}
+          
+          {/* EDIT AMENDMENT BUTTON */}
+          <button 
+            onClick={() => navigateTo('amendment_new', amendment)}
+            className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
+          >
+            <Edit2 size={20} />
+          </button>
+
+          {/* DELETE AMENDMENT BUTTON */}
           <button 
             disabled={isDeleting}
             onClick={handleDeleteAmendment}
@@ -141,6 +150,7 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
             {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
           </button>
           
+          {/* ADD SCHEDULE BUTTON */}
           <button 
             onClick={() => {
               setEditingSchedule(null);

@@ -172,8 +172,9 @@ export default function App() {
     
     // AMENDMENT VIEWS
     case 'amendments': return <AmendmentList initialAmendments={amendments} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
-    case 'amendment_new': return <NewAmendmentForm navigateTo={navigateTo} handleGoBack={handleGoBack} />;
-    // If you are using the dynamic page for details, ensure it's wrapped or converted to a component
+    case 'amendment_new': return <NewAmendmentForm navigateTo={navigateTo} handleGoBack={handleGoBack} initialData={selectedAmendment} />;
+  
+  // If you are using the dynamic page for details, ensure it's wrapped or converted to a component
     case 'amendment_detail': return <AmendmentDetailPage params={{ id: selectedAmendment?.id }} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     
     // ADMIN HUB & PLANNERS
