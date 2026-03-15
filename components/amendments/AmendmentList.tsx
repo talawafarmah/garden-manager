@@ -1,22 +1,22 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, Leaf, Droplets, Sun, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { Amendment, AmendmentType } from '@/types/amendments';
 
 interface AmendmentListProps {
   initialAmendments: Amendment[];
   navigateTo: (view: any, payload?: any) => void; 
   handleGoBack: (fallbackView: any) => void;      
+  isEmbedded?: boolean; // NEW: Tells the list to hide its own header
 }
 
-export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack }: AmendmentListProps) {
+export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: AmendmentListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
 
   const filteredAmendments = useMemo(() => {
     return initialAmendments.filter((amendment) => {
-      // FIX: Null-safe search matching so missing brand/name records don't crash the filter
       const safeName = amendment.name || '';
       const safeBrand = amendment.brand || '';
       
@@ -42,27 +42,30 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
   };
 
   return (
-    <div className="space-y-6 pb-20">
-      <div className="flex justify-between items-center px-1">
-        <div className="flex items-center gap-2">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors" title="Go Back">
-            <ArrowLeft size={24} className="text-gray-700" />
-          </button>
-          {/* FIX: Explicit Home Button to prevent navigation loops */}
-          <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+    <div className={`space-y-6 ${!isEmbedded ? 'pb-20' : ''}`}>
+      
+      {/* Hide this header if rendered inside Apothecary tabs */}
+      {!isEmbedded && (
+        <div className="flex justify-between items-center px-1">
+          <div className="flex items-center gap-2">
+            <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors" title="Go Back">
+              <ArrowLeft size={24} className="text-gray-700" />
+            </button>
+            <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            </button>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
+          <button 
+            onClick={() => navigateTo('amendment_new')}
+            className="bg-green-700 text-white p-2 rounded-full shadow-lg active:scale-90 transition-transform"
+          >
+            <Plus size={20} />
           </button>
         </div>
-        <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
-        <button 
-          onClick={() => navigateTo('amendment_new')}
-          className="bg-green-700 text-white p-2 rounded-full shadow-lg active:scale-90 transition-transform"
-        >
-          <Plus size={20} />
-        </button>
-      </div>
+      )}
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4 sticky top-0 z-10">
+      <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4 ${!isEmbedded ? 'sticky top-0 z-10' : ''}`}>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-gray-400" />
@@ -119,7 +122,6 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
               className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-green-400 hover:shadow-md transition-all h-full flex flex-col group"
             >
                 <div className="flex gap-4 mb-3 w-full items-start">
-                  {/* Thumbnail Image Logic */}
                   {amendment.thumbnail ? (
                     <img 
                       src={amendment.thumbnail} 

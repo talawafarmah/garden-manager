@@ -1,175 +1,207 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon } from 'lucide-react';
-import { Amendment, AmendmentType } from '@/types/amendments';
+import React, { useState } from 'react';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle } from 'lucide-react';
+import AmendmentList from './amendments/AmendmentList';
 
-interface AmendmentListProps {
-  initialAmendments: Amendment[];
-  navigateTo: (view: any, payload?: any) => void; 
-  handleGoBack: (fallbackView: any) => void;      
-  isEmbedded?: boolean; // NEW: Tells the list to hide its own header
+interface ApothecaryProps {
+  navigateTo: (view: any, payload?: any) => void;
+  handleGoBack: (fallback: any) => void;
+  amendments: any[]; 
 }
 
-export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: AmendmentListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
-
-  const filteredAmendments = useMemo(() => {
-    return initialAmendments.filter((amendment) => {
-      const safeName = amendment.name || '';
-      const safeBrand = amendment.brand || '';
-      
-      const matchesSearch = 
-        safeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        safeBrand.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesType = typeFilter === 'all' || amendment.type === typeFilter;
-
-      return matchesSearch && matchesType;
-    });
-  }, [initialAmendments, searchTerm, typeFilter]);
-
-  const getTypeIcon = (type: AmendmentType) => {
-    switch(type) {
-      case 'organic': return <Leaf size={14} />;
-      case 'synthetic': return <Beaker size={14} />;
-      case 'compost': return <Sprout size={14} />;
-      case 'mineral': return <Mountain size={14} />;
-      case 'microbial': return <Microscope size={14} />;
-      default: return <Leaf size={14} />;
-    }
-  };
+export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
+  const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
 
   return (
-    <div className={`space-y-6 ${!isEmbedded ? 'pb-20' : ''}`}>
+    <div className="min-h-screen bg-stone-50 pb-20 font-sans">
       
-      {/* Hide this header if rendered inside Apothecary tabs */}
-      {!isEmbedded && (
-        <div className="flex justify-between items-center px-1">
-          <div className="flex items-center gap-2">
-            <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors" title="Go Back">
-              <ArrowLeft size={24} className="text-gray-700" />
-            </button>
-            <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-            </button>
-          </div>
-          <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
-          <button 
-            onClick={() => navigateTo('amendment_new')}
-            className="bg-green-700 text-white p-2 rounded-full shadow-lg active:scale-90 transition-transform"
-          >
-            <Plus size={20} />
+      {/* UNIVERSAL HEADER (Protects against navigation loops) */}
+      <header className="bg-purple-800 text-white p-4 shadow-md sticky top-0 z-30 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Go Back">
+             <ArrowLeft size={20} />
           </button>
-        </div>
-      )}
-
-      <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4 ${!isEmbedded ? 'sticky top-0 z-10' : ''}`}>
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 bg-gray-50 text-gray-900 font-medium outline-none"
-            placeholder="Search by brand or product name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className="flex overflow-x-auto pb-2 -mx-1 px-1 gap-2 scrollbar-hide">
-          <button
-            onClick={() => setTypeFilter('all')}
-            className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-              typeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
-          >
-            All Inventory
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Dashboard">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
-          {['organic', 'synthetic', 'compost', 'mineral', 'microbial'].map((type) => (
-            <button
-              key={type}
-              onClick={() => setTypeFilter(type as AmendmentType)}
-              className={`whitespace-nowrap flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold capitalize transition-colors ${
-                typeFilter === type ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800'
-              }`}
-            >
-              {getTypeIcon(type as AmendmentType)}
-              {type.replace('_', ' ')}
-            </button>
-          ))}
+          <h1 className="text-xl font-bold">Apothecary</h1>
         </div>
+      </header>
+
+      {/* Tab Navigation */}
+      <div className="flex bg-white border-b border-stone-200 sticky top-[68px] z-20 shadow-sm">
+        <button
+          onClick={() => setActiveTab('brewery')}
+          className={`flex-1 py-3 text-xs font-black uppercase tracking-widest flex flex-col items-center gap-1 transition-colors ${
+            activeTab === 'brewery' ? 'text-purple-700 border-b-4 border-purple-700 bg-purple-50/50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
+          }`}
+        >
+          <Beaker size={20} />
+          <span>Brewery</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('recipes')}
+          className={`flex-1 py-3 text-xs font-black uppercase tracking-widest flex flex-col items-center gap-1 transition-colors ${
+            activeTab === 'recipes' ? 'text-purple-700 border-b-4 border-purple-700 bg-purple-50/50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
+          }`}
+        >
+          <BookOpen size={20} />
+          <span>Recipes</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('inventory')}
+          className={`flex-1 py-3 text-xs font-black uppercase tracking-widest flex flex-col items-center gap-1 transition-colors ${
+            activeTab === 'inventory' ? 'text-purple-700 border-b-4 border-purple-700 bg-purple-50/50' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
+          }`}
+        >
+          <Warehouse size={20} />
+          <span>Digital Shed</span>
+        </button>
       </div>
 
-      {filteredAmendments.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed">
-          <p className="text-gray-500 font-medium mb-4">No amendments found.</p>
-          <button 
-            onClick={() => navigateTo('amendment_new')}
-            className="inline-flex items-center text-green-700 font-bold hover:text-green-800 transition-colors"
-          >
-            <Plus size={18} className="mr-1" /> Add New Amendment
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filteredAmendments.map((amendment) => (
-            <button 
-              key={amendment.id} 
-              onClick={() => navigateTo('amendment_detail', amendment)}
-              className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-green-400 hover:shadow-md transition-all h-full flex flex-col group"
-            >
-                <div className="flex gap-4 mb-3 w-full items-start">
-                  {amendment.thumbnail ? (
-                    <img 
-                      src={amendment.thumbnail} 
-                      alt={amendment.name} 
-                      className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
-                      <ImageIcon size={20} className="mb-1 opacity-50" />
-                      <span className="text-[8px] font-bold uppercase">No Image</span>
-                    </div>
-                  )}
+      <div className="p-4 max-w-2xl mx-auto">
+        
+        {/* --- BREWERY SCAFFOLD --- */}
+        {activeTab === 'brewery' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="flex justify-between items-center px-1">
+              <h2 className="text-lg font-bold text-stone-800">Active Brews</h2>
+              <button className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-200 transition-colors shadow-sm">
+                <PlayCircle size={16} /> Start Brew
+              </button>
+            </div>
 
-                  <div className="flex-1 pt-1">
-                    <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
-                      {amendment.brand}
-                    </span>
-                    <h3 className="text-base font-bold text-gray-900 group-hover:text-green-700 transition-colors line-clamp-2 leading-tight">
-                      {amendment.name}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="mt-auto flex justify-between items-center">
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg">
-                    {getTypeIcon(amendment.type)}
-                    {amendment.type}
+            {/* Mockup Active Brew Card */}
+            <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl pointer-events-none group-hover:scale-110 transition-transform">🫧</div>
+              
+              <div className="flex justify-between items-start mb-3 relative z-10">
+                <div>
+                  <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md border border-amber-200 mb-2 shadow-sm">
+                    <Flame size={12} /> Aerating
                   </span>
-
-                  <div className="flex gap-1.5">
-                    <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-green-700 font-bold">N</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
-                    </div>
-                    <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-blue-700 font-bold">P</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
-                    </div>
-                    <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-orange-600 font-bold">K</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
-                    </div>
-                  </div>
+                  <h3 className="text-xl font-black text-stone-900 leading-tight">Fungal Compost Tea (AACT)</h3>
                 </div>
-            </button>
-          ))}
-        </div>
-      )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
+                <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                  <div className="flex items-center text-stone-400 mb-1">
+                    <Clock size={14} className="mr-1.5" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Time Elapsed</span>
+                  </div>
+                  <p className="text-sm font-black text-stone-700">18h 45m</p>
+                </div>
+                <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                  <div className="flex items-center text-stone-400 mb-1">
+                    <Droplets size={14} className="mr-1.5" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Target Brew</span>
+                  </div>
+                  <p className="text-sm font-black text-stone-700">24 - 36 Hours</p>
+                </div>
+              </div>
+
+              <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
+                <div className="bg-amber-400 h-full w-[65%] rounded-full animate-pulse"></div>
+              </div>
+
+              <div className="flex gap-2">
+                <button className="flex-1 bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md hover:bg-emerald-500 transition-colors">
+                  Mark as Done & Apply
+                </button>
+                <button className="px-4 bg-stone-100 text-stone-500 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-sm border border-stone-200 hover:bg-red-50 hover:text-red-500 transition-colors">
+                  Dump
+                </button>
+              </div>
+            </div>
+
+            {/* Mockup Finished Brew Card */}
+            <div className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-inner opacity-75">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1 block">Completed Yesterday</span>
+                  <h3 className="text-sm font-black text-stone-700 line-through">JADAM Liquid Fertilizer (JLF)</h3>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-emerald-200 text-emerald-700 flex items-center justify-center font-bold">✓</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- RECIPES SCAFFOLD --- */}
+        {activeTab === 'recipes' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="flex justify-between items-center px-1">
+              <h2 className="text-lg font-bold text-stone-800">Master Recipes</h2>
+              <button className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-emerald-700 hover:text-emerald-500 transition-colors">
+                <Plus size={16} /> New Recipe
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {/* Dummy Recipe Card 1 */}
+              <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer">
+                <div className="flex justify-between items-start mb-3">
+                  <h3 className="text-lg font-black text-stone-900 leading-tight">Actively Aerated Compost Tea (Fungal)</h3>
+                  <span className="bg-blue-50 text-blue-700 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-blue-100">Liquid</span>
+                </div>
+                <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">A rich fungal brew perfect for perennial beds and fruit trees. Requires air stones for 24 hours minimum.</p>
+                <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
+                  <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
+                  <ul className="text-xs font-bold text-stone-700 space-y-1">
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>Worm Castings</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>Unsulfured Molasses</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>Liquid Kelp</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Dummy Recipe Card 2 */}
+              <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer">
+                <div className="flex justify-between items-start mb-3">
+                  <h3 className="text-lg font-black text-stone-900 leading-tight">Super Soil Pre-Mix</h3>
+                  <span className="bg-amber-50 text-amber-800 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border border-amber-100">Dry Mix</span>
+                </div>
+                <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">Base mix for starting heavy feeders. Let cook for 30 days before planting.</p>
+                <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
+                  <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
+                  <ul className="text-xs font-bold text-stone-700 space-y-1">
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Peat Moss / Coco Coir</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Perlite</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-stone-500"></div>Bone Meal</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- DIGITAL SHED (INVENTORY) --- */}
+        {activeTab === 'inventory' && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <div className="flex gap-3 mb-2">
+              <button
+                onClick={() => navigateTo('amendment_new')}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-4 rounded-xl text-sm font-black uppercase tracking-widest shadow-md active:scale-95 transition-transform hover:bg-emerald-500"
+              >
+                <Camera size={18} />
+                <span>Scan New Input</span>
+              </button>
+            </div>
+
+            {/* We pass isEmbedded={true} so AmendmentList knows to hide its standalone 
+              back buttons and headers, blending perfectly into the tab view!
+            */}
+            <AmendmentList 
+              initialAmendments={amendments} 
+              navigateTo={navigateTo} 
+              handleGoBack={handleGoBack} 
+              isEmbedded={true}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
