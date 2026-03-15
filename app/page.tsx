@@ -102,8 +102,8 @@ export default function App() {
     setActiveView(view);
     if (typeof window !== 'undefined') window.scrollTo(0, 0);
 
-    // Clear payloads if returning to list views
-    if (!['seed_detail', 'seed_edit', 'tray_detail', 'tray_edit', 'amendment_detail'].includes(view)) {
+    // FIXED: Added 'amendment_new' to the safe list so it doesn't clear the payload when editing!
+    if (!['seed_detail', 'seed_edit', 'tray_detail', 'tray_edit', 'amendment_detail', 'amendment_new'].includes(view)) {
         setSelectedSeed(null); 
         setSelectedTray(null);
         setSelectedAmendment(null);
@@ -111,7 +111,9 @@ export default function App() {
     
     if (view === 'seed_detail' || view === 'seed_edit') setSelectedSeed(payload);
     if (view === 'tray_detail' || view === 'tray_edit') setSelectedTray(payload);
-    if (view === 'amendment_detail') setSelectedAmendment(payload);
+    
+    // FIXED: Assign the payload if we are viewing OR editing an amendment
+    if (view === 'amendment_detail' || view === 'amendment_new') setSelectedAmendment(payload);
     
     // Refresh lists when navigating to them
     if (view === 'vault') fetchInventory();
@@ -172,9 +174,10 @@ export default function App() {
     
     // AMENDMENT VIEWS
     case 'amendments': return <AmendmentList initialAmendments={amendments} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
+    
+    // FIXED: Passed initialData here!
     case 'amendment_new': return <NewAmendmentForm navigateTo={navigateTo} handleGoBack={handleGoBack} initialData={selectedAmendment} />;
-  
-  // If you are using the dynamic page for details, ensure it's wrapped or converted to a component
+    
     case 'amendment_detail': return <AmendmentDetailPage params={{ id: selectedAmendment?.id }} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     
     // ADMIN HUB & PLANNERS
@@ -185,13 +188,13 @@ export default function App() {
     case 'grow_planner': return <GrowPlanner categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
     case 'farm_map':  return <FarmMap navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'apothecary':  
-  return (
-    <Apothecary 
-      navigateTo={navigateTo} 
-      handleGoBack={handleGoBack} 
-      amendments={amendments} // Pass the fetched amendments state here
-    />
-  );
+      return (
+        <Apothecary 
+          navigateTo={navigateTo} 
+          handleGoBack={handleGoBack} 
+          amendments={amendments} 
+        />
+      );
     
     default: return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
   }
