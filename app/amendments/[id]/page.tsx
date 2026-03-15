@@ -26,6 +26,9 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
   const [isSearching, setIsSearching] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Secure Image State
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+
   const fetchAmendmentData = async () => {
     setLoading(true);
     const { data } = await supabase
@@ -41,6 +44,48 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
   useEffect(() => {
     fetchAmendmentData();
   }, [params.id]);
+
+  // --- SIGNED URL ENGINE FOR PRIVATE BUCKETS ---
+  useEffect(() => {
+    const images = amendment?.images || [];
+    
+    if (images.length === 0) return;
+
+    const fetchSignedUrls = async () => {
+      const pathsToSign: string[] = [];
+      const urlMap: Record<string, string> = {};
+
+      // 1. Extract the actual file paths from the stored public URLs
+     images.forEach(img => {
+        if (img.includes('/public/talawa_media/')) {
+          pathsToSign.push(img.split('/public/talawa_media/')[1]);
+        } else if (!img.startsWith('http') && !img.startsWith('data:')) {
+          pathsToSign.push(img);
+        } else {
+          urlMap[img] = img; // Keep external or base64 URLs as-is
+        }
+      });
+
+      // 2. Request secure, temporary access tokens from Supabase
+   if (pathsToSign.length > 0) {
+        const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
+        if (data) {
+          data.forEach(item => {
+            // FIX: Added 'item.path' to the condition so TypeScript knows it is not null
+            if (item.signedUrl && item.path) {
+              urlMap[item.path] = item.signedUrl;
+              // Map the original full URL to the signed URL so our gallery can find it easily
+              const originalFullUrl = images.find(orig => orig.includes(item.path!));
+              if (originalFullUrl) urlMap[originalFullUrl] = item.signedUrl;
+            }
+          });
+        }
+      }
+      setSignedUrls(urlMap);
+    };
+
+    fetchSignedUrls();
+  }, [amendment?.images]);
 
   // --- AMENDMENT CRUD ---
   const handleDeleteAmendment = async () => {
@@ -124,6 +169,19 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
     </div>
   );
 
+  // FIX: Explicitly check the type of image_url to avoid TypeScript strict mode indexing errors
+  const patchedImageUrl = typeof amendment.image_url === 'string' && signedUrls[amendment.image_url] 
+    ? signedUrls[amendment.image_url] 
+    : amendment.image_url;
+
+  // Patch the amendment object with the signed URL so the AmendmentHeader component can display the primary image properly
+  const patchedAmendment = {
+    ...amendment,
+    image_url: patchedImageUrl
+  };
+
+  const safeImages = amendment.images || [];
+
   return (
     <div className="max-w-xl mx-auto pb-24">
       {/* Navigation Header */}
@@ -170,30 +228,33 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
         {!showScheduleForm ? (
           <>
             {/* IMAGE GALLERY */}
-            {amendment.images && amendment.images.length > 0 && (
+            {safeImages.length > 0 && Object.keys(signedUrls).length > 0 && (
               <div className="flex gap-3 overflow-x-auto pb-2 px-1 scrollbar-hide">
-                {amendment.images.map((url, idx) => (
-                  <div key={idx} className="relative w-40 h-40 flex-shrink-0 rounded-2xl overflow-hidden border border-gray-200 shadow-sm cursor-zoom-in hover:shadow-md transition-shadow">
-                    <img 
-                      src={url} 
-                      alt={`${amendment.name} - Image ${idx + 1}`} 
-                      className="w-full h-full object-cover" 
-                      onClick={() => window.open(url, '_blank')} // Opens full res image in new tab
-                    />
-                  </div>
-                ))}
+                {safeImages.map((origUrl, idx) => {
+                  const displayUrl = signedUrls[origUrl] || origUrl;
+                  return (
+                    <div key={idx} className="relative w-40 h-40 flex-shrink-0 rounded-2xl overflow-hidden border border-gray-200 shadow-sm cursor-zoom-in hover:shadow-md transition-shadow">
+                      <img 
+                        src={displayUrl} 
+                        alt={`${amendment.name} - Image ${idx + 1}`} 
+                        className="w-full h-full object-cover" 
+                        onClick={() => window.open(displayUrl, '_blank')} 
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {/* If no images exist, show a placeholder */}
-            {(!amendment.images || amendment.images.length === 0) && (
+            {safeImages.length === 0 && (
               <div className="w-full h-32 bg-gray-100 rounded-2xl border border-gray-200 border-dashed flex flex-col items-center justify-center text-gray-400 mb-6">
                  <ImageIcon size={32} className="mb-2 opacity-50" />
                  <span className="text-xs font-bold uppercase tracking-widest">No Images Recorded</span>
               </div>
             )}
 
-            <AmendmentHeader amendment={amendment} />
+            <AmendmentHeader amendment={patchedAmendment} />
             
             <div className="px-1">
               <div className="flex justify-between items-center mb-4">
