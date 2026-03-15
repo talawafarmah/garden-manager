@@ -194,7 +194,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   required
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none"
                   placeholder="e.g., All Purpose Fertilizer"
                 />
               </div>
@@ -205,7 +205,8 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   name="type"
                   value={formData.type}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none appearance-none"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none"
+                  
                 >
                   <option value="organic">Organic</option>
                   <option value="synthetic">Synthetic</option>
@@ -243,7 +244,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.p_value}
                   onChange={handleChange}
-                  className="w-full text-center font-bold text-lg bg-white border border-blue-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
                   placeholder="0"
                 />
               </div>
@@ -256,7 +257,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.k_value}
                   onChange={handleChange}
-                  className="w-full text-center font-bold text-lg bg-white border border-orange-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
                   placeholder="0"
                 />
               </div>
@@ -276,7 +277,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.calcium}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
                   placeholder="0.0"
                 />
               </div>
@@ -289,7 +290,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.magnesium}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl outline-none"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
                   placeholder="0.0"
                 />
               </div>
@@ -304,7 +305,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
               rows={3}
               value={formData.derived_from}
               onChange={handleChange}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-green-500 outline-none text-sm leading-relaxed"
+              className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
               placeholder="List ingredients (e.g. Feather meal, Bone meal, Sulfate of Potash...)"
             ></textarea>
           </div>
