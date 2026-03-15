@@ -6,14 +6,14 @@ import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
 import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout } from 'lucide-react';
 
-// Dynamically import ReactQuill to prevent Next.js SSR "document is not defined" errors
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+// FIX: Cast as React.ComponentType<any> so TypeScript stops complaining about missing prop definitions
+const ReactQuill = dynamic(() => import('react-quill'), { ssr: false }) as React.ComponentType<any>;
 import 'react-quill/dist/quill.snow.css';
 
 interface RecipeFormProps {
   onClose: () => void;
   onSuccess: () => void;
-  initialData?: Recipe | null; // NEW: Passed in for Edit mode
+  initialData?: Recipe | null; 
 }
 
 export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFormProps) {
@@ -183,7 +183,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                   <ReactQuill 
                     theme="snow"
                     value={formData.description}
-                    onChange={(val) => setFormData({ ...formData, description: val })}
+                    onChange={(val: any) => setFormData({ ...formData, description: val })}
                     modules={quillModules}
                     placeholder="What is this recipe best used for?"
                     className="h-32"
@@ -260,7 +260,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                <ReactQuill 
                   theme="snow"
                   value={formData.instructions}
-                  onChange={(val) => setFormData({ ...formData, instructions: val })}
+                  onChange={(val: any) => setFormData({ ...formData, instructions: val })}
                   modules={quillModules}
                   placeholder="Step-by-step instructions..."
                   className="h-40"
