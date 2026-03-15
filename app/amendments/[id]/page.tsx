@@ -127,12 +127,14 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
                 <h2 className="text-xl font-bold">New Instruction</h2>
              </div>
              <AddFeedingScheduleForm 
-               amendmentId={amendment.id} 
-               onSuccess={() => {
-                 setShowAddSchedule(false);
-                 fetchAmendmentData();
-               }} 
-             />
+  amendmentId={amendment.id}
+  amendmentBrand={amendment.brand} // NEW
+  amendmentName={amendment.name}   // NEW
+  onSuccess={() => {
+    setShowAddSchedule(false);
+    fetchAmendmentData();
+  }} 
+/>
              <button 
                onClick={() => setShowAddSchedule(false)}
                className="w-full mt-4 py-3 text-gray-500 text-sm font-medium"
