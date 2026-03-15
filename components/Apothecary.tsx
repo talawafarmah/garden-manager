@@ -18,7 +18,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   
   // --- STATE ---
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [brews, setBrews] = useState<ActiveBrew[]>([]);
+  const [brews, setBrews] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -27,25 +27,24 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const [isStartingBrew, setIsStartingBrew] = useState(false);
-  const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', start_time: '' });
+  const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', brew_start: '' });
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
     setIsLoading(true);
-    // FIX: Using recipes(*) instead of the alias to bypass aggressive caching bugs
+    // Pointing back to the correct "recipes" table!
     const [recipeRes, brewRes] = await Promise.all([
       supabase.from('recipes').select('*').order('created_at', { ascending: false }),
-      supabase.from('active_brews').select('*, recipes(*)').order('start_time', { ascending: false })
+      supabase.from('active_brews').select('*, recipes(*)').order('brew_start', { ascending: false })
     ]);
       
     if (recipeRes.data) setRecipes(recipeRes.data as Recipe[]);
     if (brewRes.data) {
-      // Map the nested 'recipes' object back to 'recipe' for our frontend
       const mappedBrews = brewRes.data.map(b => ({
         ...b,
         recipe: b.recipes || b.recipe
       }));
-      setBrews(mappedBrews as any[]);
+      setBrews(mappedBrews);
     }
     setIsLoading(false);
   };
@@ -66,7 +65,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     }
   };
 
-  const getBrewProgress = (startStr: string, targetStr?: string) => {
+  const getBrewProgress = (startStr: string, endStr: string) => {
+    if (!startStr || !endStr) return { percent: 0, elapsedText: '0h 0m', isComplete: false };
+    
     const start = new Date(startStr).getTime();
     const current = now.getTime();
     const elapsedMs = Math.max(0, current - start);
@@ -75,14 +76,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     const minutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60));
     const elapsedText = `${hours}h ${minutes}m`;
 
-    if (!targetStr) return { percent: 100, elapsedText, isComplete: false, isIndefinite: true };
-
-    const target = new Date(targetStr).getTime();
+    const target = new Date(endStr).getTime();
     const totalMs = Math.max(1, target - start);
     const rawPercent = (elapsedMs / totalMs) * 100;
     const percent = Math.min(100, Math.max(0, rawPercent));
     
-    return { percent, elapsedText, isComplete: percent >= 100, isIndefinite: false };
+    return { percent, elapsedText, isComplete: percent >= 100 };
   };
 
   const handleOpenStartBrew = () => {
@@ -93,7 +92,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
     const timeStr = localNow.toISOString().slice(0,16);
 
-    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, start_time: timeStr });
+    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, brew_start: timeStr });
     setIsStartingBrew(true);
   };
 
@@ -103,24 +102,22 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     const recipe = recipes.find(r => r.id === brewForm.recipe_id);
     if (!recipe) return;
 
-    const startObj = new Date(brewForm.start_time);
-    let targetObj = null;
-
-    if (recipe.brew_time_hours) {
-      targetObj = new Date(startObj.getTime() + (recipe.brew_time_hours * 60 * 60 * 1000));
-    }
+    const startObj = new Date(brewForm.brew_start);
+    const hoursToAdd = recipe.brew_time_hours || 24; 
+    const endObj = new Date(startObj.getTime() + (hoursToAdd * 60 * 60 * 1000));
 
     const payload = {
       recipe_id: recipe.id,
       custom_name: brewForm.custom_name,
-      status: 'brewing',
-      start_time: startObj.toISOString(),
-      target_completion_time: targetObj ? targetObj.toISOString() : null,
+      status: 'Brewing', 
+      brew_start: startObj.toISOString(),
+      brew_end: endObj.toISOString(),
+      gallons_brewed: 5, 
     };
 
     const { error } = await supabase.from('active_brews').insert([payload]);
     if (!error) {
-      fetchData(); // Refresh to ensure we pull joined records correctly
+      fetchData(); 
       setIsStartingBrew(false);
     } else {
       alert("Failed to start brew: " + error.message);
@@ -130,7 +127,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const handleUpdateBrewStatus = async (id: string, newStatus: string) => {
     const { error } = await supabase.from('active_brews').update({ status: newStatus }).eq('id', id);
     if (!error) {
-      setBrews(brews.map(b => b.id === id ? { ...b, status: newStatus as any } : b));
+      setBrews(brews.map(b => b.id === id ? { ...b, status: newStatus } : b));
     }
   };
 
@@ -162,8 +159,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     );
   }
 
-  const activeBrews = brews.filter(b => b.status === 'brewing');
-  const historyBrews = brews.filter(b => b.status !== 'brewing');
+  const activeBrews = brews.filter(b => b.status === 'Brewing');
+  const historyBrews = brews.filter(b => b.status !== 'Brewing');
 
   return (
     <div className="min-h-screen bg-stone-50 pb-20 font-sans relative">
@@ -174,7 +171,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
              <ArrowLeft size={20} />
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Dashboard">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold">Apothecary</h1>
         </div>
@@ -233,7 +230,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
             ) : (
               <div className="space-y-4">
                 {activeBrews.map(brew => {
-                  const progress = getBrewProgress(brew.start_time, brew.target_completion_time);
+                  const progress = getBrewProgress(brew.brew_start, brew.brew_end);
                   const isExtractOrFerment = brew.recipe?.type === 'extract' || brew.recipe?.type === 'ferment';
                   
                   return (
@@ -267,22 +264,20 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             <span className="text-[9px] font-black uppercase tracking-widest">Target Time</span>
                           </div>
                           <p className="text-sm font-black text-stone-700">
-                            {progress.isIndefinite ? 'Indefinite' : `${brew.recipe?.brew_time_hours} Hours`}
+                            {brew.recipe?.brew_time_hours ? `${brew.recipe.brew_time_hours} Hours` : '24 Hours'}
                           </p>
                         </div>
                       </div>
 
-                      {!progress.isIndefinite && (
-                        <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
-                          <div className={`h-full rounded-full transition-all duration-1000 ${progress.isComplete ? 'bg-emerald-500 w-full' : 'bg-amber-400 animate-pulse'}`} style={{ width: `${progress.percent}%` }}></div>
-                        </div>
-                      )}
+                      <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
+                        <div className={`h-full rounded-full transition-all duration-1000 ${progress.isComplete ? 'bg-emerald-500 w-full' : 'bg-amber-400 animate-pulse'}`} style={{ width: `${progress.percent}%` }}></div>
+                      </div>
 
                       <div className="flex gap-2">
-                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'applied')} className={`flex-1 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md transition-colors ${progress.isComplete ? 'bg-emerald-600 hover:bg-emerald-500 animate-pulse' : 'bg-stone-800 hover:bg-stone-700'}`}>
+                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'Applied')} className={`flex-1 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md transition-colors ${progress.isComplete ? 'bg-emerald-600 hover:bg-emerald-500 animate-pulse' : 'bg-stone-800 hover:bg-stone-700'}`}>
                           Mark as Done & Apply
                         </button>
-                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'dumped')} className="px-4 bg-stone-100 text-stone-500 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-sm border border-stone-200 hover:bg-red-50 hover:text-red-500 transition-colors">
+                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'Dumped')} className="px-4 bg-stone-100 text-stone-500 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-sm border border-stone-200 hover:bg-red-50 hover:text-red-500 transition-colors">
                           Dump
                         </button>
                       </div>
@@ -300,12 +295,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     <div key={brew.id} className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-sm flex justify-between items-center">
                       <div>
                         <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-0.5 block">
-                          {new Date(brew.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {new Date(brew.brew_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </span>
                         <h4 className="text-sm font-black text-stone-700">{brew.custom_name}</h4>
                       </div>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${brew.status === 'applied' ? 'bg-emerald-200 text-emerald-700' : 'bg-red-200 text-red-700'}`}>
-                        {brew.status === 'applied' ? '✓' : '🗑'}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${brew.status === 'Applied' ? 'bg-emerald-200 text-emerald-700' : 'bg-red-200 text-red-700'}`}>
+                        {brew.status === 'Applied' ? '✓' : '🗑'}
                       </div>
                     </div>
                   ))}
@@ -474,7 +469,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     </select>
                   </div>
                   <div>
-                    {/* FIX: FORCED TEXT-STONE-800 SO TEXT IS READABLE */}
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Batch Name / Identifier</label>
                     <input 
                       type="text" 
@@ -484,12 +478,11 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     />
                   </div>
                   <div>
-                    {/* FIX: FORCED TEXT-STONE-800 SO TEXT IS READABLE */}
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Start Time</label>
                     <input 
                       type="datetime-local" 
-                      value={brewForm.start_time} 
-                      onChange={e => setBrewForm({...brewForm, start_time: e.target.value})}
+                      value={brewForm.brew_start} 
+                      onChange={e => setBrewForm({...brewForm, brew_start: e.target.value})}
                       className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
                     />
                   </div>
