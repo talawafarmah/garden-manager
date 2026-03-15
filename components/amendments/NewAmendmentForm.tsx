@@ -181,7 +181,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   required
                   value={formData.brand}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none"
                   placeholder="e.g., Down To Earth"
                 />
               </div>
@@ -230,7 +230,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.n_value}
                   onChange={handleChange}
-                  className="w-full text-center font-bold text-lg bg-white border border-green-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none"
                   placeholder="0"
                 />
               </div>
