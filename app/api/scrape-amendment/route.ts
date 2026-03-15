@@ -27,12 +27,13 @@ export async function POST(request: Request) {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
     const prompt = `
-      Extract the following from these fertilizer photos into a JSON object:
-      - brand, name, type (organic/synthetic/compost/mineral/microbial), 
-      - n_value, p_value, k_value, calcium, magnesium, 
-      - derived_from, barcode_upc.
-      Return ONLY raw JSON.
-    `;
+ 1. Analyze the photos for brand and name.
+  2. If the N-P-K table is blurry or missing, USE GOOGLE SEARCH GROUNDING 
+     to find the official "Guaranteed Analysis" for this exact product.
+  3. Extract application rates (e.g., "per 100 sq ft") and methods.
+  4. Return a JSON object including: 
+     "application_rate", "application_method", and the standard NPK values.
+`;
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();

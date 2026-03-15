@@ -32,6 +32,9 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
     magnesium: '',
     derived_from: '',
     barcode_upc: '', 
+    application_rate: '',
+  application_method: '',
+  raw_ai_type: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -44,18 +47,31 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
    * This populates the form using data extracted from the photos.
    */
 const handleAnalysisSuccess = (data: any) => {
-  console.log("DEBUG: Raw AI Data ->", data);
-
-  setShowScanner(false);
-  setAnalysisMessage('Analysis complete! Cleaning data...');
+  const validTypes = ['organic', 'synthetic', 'compost', 'mineral', 'microbial'];
+  
+  // FIX: Consistent variable naming
+  const rawValue = Array.isArray(data.type) ? data.type[0] : (data.type || "organic");
+  const normalizedValue = rawValue.toLowerCase();
+  
+  let finalizedType = 'organic'; 
+  if (validTypes.includes(normalizedValue)) {
+    finalizedType = normalizedValue;
+  } else {
+    // Keyword fallback
+    if (normalizedValue.includes('microbial')) finalizedType = 'microbial';
+    else if (normalizedValue.includes('compost')) finalizedType = 'compost';
+  }
 
   setFormData((prev) => ({
     ...prev,
     brand: data.brand || prev.brand,
     name: data.name || prev.name,
-    
-    // FIX: If AI sends an array ["organic", "microbial"], pick the first one
-    type: Array.isArray(data.type) ? data.type[0] : (data.type || prev.type),
+    type: finalizedType as any,
+    // Store original AI string as requested
+    raw_ai_type: rawValue, 
+    // New Guideline Fields
+    application_rate: data.application_rate || "",
+    application_method: data.application_method || "",
     
     n_value: (data.n_value ?? "0").toString(),
     p_value: (data.p_value ?? "0").toString(),
@@ -84,6 +100,9 @@ const handleAnalysisSuccess = (data: any) => {
       magnesium: parseFloat(formData.magnesium) || 0,
       derived_from: formData.derived_from,
       barcode_upc: formData.barcode_upc || null, 
+      application_rate: formData.application_rate,
+  application_method: formData.application_method,
+  raw_ai_type: formData.raw_ai_type,
     };
 
     const { data, error: submitError } = await supabase
@@ -282,6 +301,33 @@ const handleAnalysisSuccess = (data: any) => {
               </div>
             </div>
           </div>
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Application Guidelines</h3>
+            <div className="grid grid-cols-1 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Recommended Rate</label>
+                <input
+                    type="text"
+                    name="application_rate"
+                    value={formData.application_rate}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-900 font-semibold"
+                    placeholder="e.g. 1/2 cup per 10 sq ft"
+                />
+                </div>
+                <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Method</label>
+                <input
+                    type="text"
+                    name="application_method"
+                    value={formData.application_method}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-900 font-semibold"
+                    placeholder="e.g. Broadcast and lightly rake into soil"
+                />
+                </div>
+            </div>
+            </div>
 
           {/* Section: Technical Details */}
           <div className="space-y-4">
