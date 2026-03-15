@@ -6,7 +6,6 @@ import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
 import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout } from 'lucide-react';
 
-// Use react-quill-new to prevent the findDOMNode crash in modern React
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
 import 'react-quill-new/dist/quill.snow.css';
 
@@ -29,12 +28,13 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
     brew_time_hours: initialData?.brew_time_hours || 24,
   });
 
+  // FIX: Default amount is now a string '1' instead of a number 1
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
-    initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: 1, unit: 'cup' }]
+    initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: '1', unit: 'Cup' }]
   );
 
   const handleAddIngredient = () => {
-    setIngredients([...ingredients, { name: '', amount: 1, unit: 'cup' }]);
+    setIngredients([...ingredients, { name: '', amount: '1', unit: 'Cup' }]);
   };
 
   const handleUpdateIngredient = (index: number, field: keyof RecipeIngredient, value: string | number) => {
@@ -96,7 +96,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
     }
   };
 
-  // Custom Quill Toolbar Modules for a clean UI
   const quillModules = {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
@@ -176,7 +175,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                 </div>
               </div>
 
-              {/* RICH TEXT EDITOR: DESCRIPTION */}
               <div className="quill-container">
                 <label className="block text-[10px] font-black text-stone-500 uppercase mb-1.5">Description / Purpose</label>
                 <div className="bg-white rounded-xl overflow-hidden border border-stone-200 shadow-sm">
@@ -193,7 +191,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
             </div>
           </div>
 
-          {/* INGREDIENTS LIST */}
           <div className="space-y-4">
             <div className="flex justify-between items-end px-1">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ingredients List</h3>
@@ -213,13 +210,12 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                       />
                     </div>
                     <div className="col-span-3 border-l border-purple-100 pl-2">
+                      {/* FIX: Changed from type="number" to type="text" to allow fractions like "2/3" */}
                       <input
-                        type="number"
-                        min="0"
-                        step="0.1"
+                        type="text"
                         placeholder="Qty"
-                        value={ing.amount || ''}
-                        onChange={e => handleUpdateIngredient(idx, 'amount', Number(e.target.value))}
+                        value={ing.amount}
+                        onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
                         className="w-full bg-transparent text-sm font-black text-purple-700 text-center outline-none py-1"
                       />
                     </div>
@@ -253,7 +249,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
             </div>
           </div>
 
-          {/* RICH TEXT EDITOR: INSTRUCTIONS */}
           <div className="space-y-4 quill-container">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Brewing Instructions</h3>
             <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
@@ -282,7 +277,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
         </form>
       </div>
 
-     {/* Add some quick global styles so the rich text editor looks clean inside our containers */}
       <style dangerouslySetInnerHTML={{__html: `
         .quill-container .ql-toolbar {
           border: none !important;
@@ -298,11 +292,11 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
         }
         .quill-container .ql-editor {
           min-height: 100%;
-          color: #292524 !important; /* text-stone-800 - Forces dark text */
+          color: #292524 !important; 
           font-weight: 500;
         }
         .quill-container .ql-editor.ql-blank::before {
-          color: #a8a29e !important; /* text-stone-400 - Placeholder color */
+          color: #a8a29e !important; 
           font-style: normal;
         }
       `}} />

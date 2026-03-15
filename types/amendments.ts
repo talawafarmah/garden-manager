@@ -52,7 +52,7 @@ export type BrewStatus = 'brewing' | 'completed' | 'applied' | 'dumped';
 
 export interface RecipeIngredient {
   name: string;
-  amount: number;
+  amount: string | number;
   unit: string;
 }
 
