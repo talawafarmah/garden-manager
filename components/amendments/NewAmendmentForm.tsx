@@ -12,7 +12,6 @@ interface NewAmendmentFormProps {
   initialData?: Amendment | null; 
 }
 
-// Client-side image compressor for instant list-rendering
 const generateThumbnail = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -21,7 +20,7 @@ const generateThumbnail = (file: File): Promise<string> => {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        const MAX_SIZE = 150; // Downscale to 150px square-ish
+        const MAX_SIZE = 150; 
         let width = img.width;
         let height = img.height;
 
@@ -39,7 +38,7 @@ const generateThumbnail = (file: File): Promise<string> => {
         canvas.width = width;
         canvas.height = height;
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6)); // 60% quality jpeg
+        resolve(canvas.toDataURL('image/jpeg', 0.6)); 
       };
       img.src = e.target?.result as string;
     };
@@ -56,8 +55,15 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   const [showScanner, setShowScanner] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   
-  const [pendingImage, setPendingImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.thumbnail || initialData?.image_url || null);
+  // FIX: Track all images instead of just one
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
+  
+  // Initialize previews from existing array, fallback to single URL, or empty
+  const [previewUrls, setPreviewUrls] = useState<string[]>(
+    initialData?.images && initialData.images.length > 0 
+      ? initialData.images 
+      : (initialData?.image_url ? [initialData.image_url] : [])
+  );
 
   const [formData, setFormData] = useState({
     brand: initialData?.brand || '',
@@ -87,9 +93,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setAnalysisMessage('Data populated! Review your changes.');
     setError(null);
 
+    // FIX: Save the entire array of images
     if (capturedImages && capturedImages.length > 0) {
-      setPendingImage(capturedImages[0]);
-      setPreviewUrl(URL.createObjectURL(capturedImages[0]));
+      setPendingImages(capturedImages);
+      setPreviewUrls(capturedImages.map(img => URL.createObjectURL(img)));
     }
 
     const validTypes = ['organic', 'synthetic', 'compost', 'mineral', 'microbial'];
@@ -125,29 +132,40 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setIsSubmitting(true);
     setError(null);
 
-    let finalImageUrl = initialData?.image_url || null;
+    let finalImages = initialData?.images || [];
+    if (initialData?.image_url && finalImages.length === 0) {
+      finalImages = [initialData.image_url];
+    }
+    
     let finalThumbnail = initialData?.thumbnail || null;
+    let finalImageUrl = initialData?.image_url || null;
 
-    if (pendingImage) {
+    // FIX: Loop through and upload ALL captured images
+    if (pendingImages.length > 0) {
       try {
-        // 1. Generate the tiny Base64 string for the list view
-        finalThumbnail = await generateThumbnail(pendingImage);
+        finalThumbnail = await generateThumbnail(pendingImages[0]); // Thumbnail from the first image
+        const newImageUrls = [];
 
-        // 2. Upload the full image to storage
-        const fileExt = pendingImage.name.split('.').pop() || 'jpg';
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('amendment_images')
-          .upload(fileName, pendingImage);
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage
-          .from('amendment_images')
-          .getPublicUrl(fileName);
+        for (const file of pendingImages) {
+          const fileExt = file.name.split('.').pop() || 'jpg';
+          const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           
-        finalImageUrl = publicUrlData.publicUrl;
+          const { error: uploadError } = await supabase.storage
+            .from('amendment_images')
+            .upload(fileName, file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: publicUrlData } = supabase.storage
+            .from('amendment_images')
+            .getPublicUrl(fileName);
+            
+          newImageUrls.push(publicUrlData.publicUrl);
+        }
+
+        finalImages = newImageUrls; // Overwrite existing images with the new set
+        finalImageUrl = newImageUrls[0]; // Set the primary image URL
+        
       } catch (err: any) {
         setError("Image processing failed: " + err.message);
         setIsSubmitting(false);
@@ -167,7 +185,8 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       derived_from: formData.derived_from,
       barcode_upc: formData.barcode_upc || null,
       image_url: finalImageUrl,
-      thumbnail: finalThumbnail, // Save the base64 string directly to the row
+      images: finalImages,     // Save the full array
+      thumbnail: finalThumbnail,
     };
 
     let submitError;
@@ -238,10 +257,14 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           </div>
         )}
 
-        {/* Image Preview */}
-        {previewUrl && (
-          <div className="mb-6 relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-green-500 shadow-md">
-            <img src={previewUrl} alt="Thumbnail Preview" className="w-full h-full object-cover" />
+        {/* FIX: Render an array of preview images side-by-side */}
+        {previewUrls.length > 0 && (
+          <div className="mb-6 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+            {previewUrls.map((url, idx) => (
+              <div key={idx} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-green-500 shadow-md flex-shrink-0">
+                <img src={url} alt={`Thumbnail Preview ${idx + 1}`} className="w-full h-full object-cover" />
+              </div>
+            ))}
           </div>
         )}
 
