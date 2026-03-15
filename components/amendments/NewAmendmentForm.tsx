@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Amendment, AmendmentType } from '@/types/amendments';
-import { Camera, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { Amendment, AmendmentType, FeedingSchedule } from '@/types/amendments';
+import { Camera, AlertCircle, ArrowLeft, Loader2, ListPlus } from 'lucide-react';
 import ProductCapture from './ProductCapture';
 
 interface NewAmendmentFormProps {
@@ -55,10 +55,11 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   const [showScanner, setShowScanner] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   
-  // FIX: Track all images instead of just one
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   
-  // Initialize previews from existing array, fallback to single URL, or empty
+  // NEW: State to hold schedules extracted directly from the photo
+  const [extractedSchedules, setExtractedSchedules] = useState<any[]>([]);
+
   const [previewUrls, setPreviewUrls] = useState<string[]>(
     initialData?.images && initialData.images.length > 0 
       ? initialData.images 
@@ -93,10 +94,15 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setAnalysisMessage('Data populated! Review your changes.');
     setError(null);
 
-    // FIX: Save the entire array of images
+    // Save the array of images
     if (capturedImages && capturedImages.length > 0) {
       setPendingImages(capturedImages);
       setPreviewUrls(capturedImages.map(img => URL.createObjectURL(img)));
+    }
+
+    // Save extracted schedules to be inserted alongside the amendment
+    if (data.schedules && Array.isArray(data.schedules) && data.schedules.length > 0) {
+      setExtractedSchedules(data.schedules);
     }
 
     const validTypes = ['organic', 'synthetic', 'compost', 'mineral', 'microbial'];
@@ -140,10 +146,9 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     let finalThumbnail = initialData?.thumbnail || null;
     let finalImageUrl = initialData?.image_url || null;
 
-    // FIX: Loop through and upload ALL captured images
     if (pendingImages.length > 0) {
       try {
-        finalThumbnail = await generateThumbnail(pendingImages[0]); // Thumbnail from the first image
+        finalThumbnail = await generateThumbnail(pendingImages[0]); 
         const newImageUrls = [];
 
         for (const file of pendingImages) {
@@ -163,8 +168,8 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           newImageUrls.push(publicUrlData.publicUrl);
         }
 
-        finalImages = newImageUrls; // Overwrite existing images with the new set
-        finalImageUrl = newImageUrls[0]; // Set the primary image URL
+        finalImages = isEditing ? [...finalImages, ...newImageUrls] : newImageUrls; 
+        finalImageUrl = finalImages[0]; 
         
       } catch (err: any) {
         setError("Image processing failed: " + err.message);
@@ -185,13 +190,14 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       derived_from: formData.derived_from,
       barcode_upc: formData.barcode_upc || null,
       image_url: finalImageUrl,
-      images: finalImages,     // Save the full array
+      images: finalImages,     
       thumbnail: finalThumbnail,
     };
 
     let submitError;
     let returnedData;
 
+    // 1. SAVE THE AMENDMENT
     if (isEditing && initialData?.id) {
       const { data, error } = await supabase.from('amendments').update(payload).eq('id', initialData.id).select().single();
       submitError = error;
@@ -202,16 +208,35 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       returnedData = data;
     }
 
-    setIsSubmitting(false);
-
     if (submitError) {
       setError(submitError.message);
+      setIsSubmitting(false);
       return;
     }
 
-    if (returnedData) {
-      navigateTo('amendment_detail', returnedData);
+    // 2. SAVE EXTRACTED SCHEDULES (If any were found in the photo)
+    if (returnedData && extractedSchedules.length > 0) {
+      const schedulesPayload = extractedSchedules.map(sched => ({
+        amendment_id: returnedData.id,
+        growth_stage: sched.growth_stage || 'vegetative',
+        method: sched.method || 'soil_drench',
+        dosage_amount: Number(sched.dosage_amount) || 0,
+        dosage_unit: sched.dosage_unit || 'tbsp',
+        dilution_amount: Number(sched.dilution_amount) || 0,
+        dilution_unit: sched.dilution_unit || 'gallon',
+        frequency_days: Number(sched.frequency_days) || null,
+        notes: sched.notes || ''
+      }));
+
+      const { error: scheduleError } = await supabase.from('feeding_schedules').insert(schedulesPayload);
+      if (scheduleError) {
+        console.error("Failed to save extracted schedules:", scheduleError);
+        // We don't block the user, but we log it
+      }
     }
+
+    setIsSubmitting(false);
+    if (returnedData) navigateTo('amendment_detail', returnedData);
   };
 
   return (
@@ -256,8 +281,20 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
             <span>{error}</span>
           </div>
         )}
+        
+        {/* NEW: Visual feedback that schedules were extracted */}
+        {extractedSchedules.length > 0 && (
+           <div className="mb-6 p-4 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-sm flex flex-col gap-2">
+             <div className="flex items-center font-bold">
+               <ListPlus size={18} className="mr-2" />
+               Found {extractedSchedules.length} feeding guidelines!
+             </div>
+             <p className="text-xs text-blue-600 font-medium">
+               These will automatically be saved to the Digital Shed when you submit this form.
+             </p>
+           </div>
+        )}
 
-        {/* FIX: Render an array of preview images side-by-side */}
         {previewUrls.length > 0 && (
           <div className="mb-6 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {previewUrls.map((url, idx) => (

@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No images found in request.' }, { status: 400 });
     }
 
-    // Initialize model and explicitly FORCE JSON output to prevent mobile parsing errors
+    // Explicitly FORCE JSON output to prevent mobile parsing errors
     const model = genAI.getGenerativeModel({ 
       model: "gemini-2.5-flash",
       generationConfig: {
@@ -33,17 +33,17 @@ export async function POST(request: Request) {
     });
     
     const prompt = `
-      You are a specialized horticultural data extractor. Analyze the provided photos.
+      You are a specialized horticultural data extractor. Analyze the provided photos of the product and its labels.
       
       TASK:
-      1. Identify the brand and product name.
-      2. Extract the N-P-K percentages, Calcium, and Magnesium.
-      3. Extract the recommended "application_rate" and "application_method".
+      1. Identify the brand, product name, and main ingredients.
+      2. Extract the Guaranteed Analysis (N-P-K, Ca, Mg).
+      3. EXTRACT FEEDING SCHEDULES: Read the application instructions on the label and convert them into structured guidelines.
       
       REQUIREMENTS:
       - "type" MUST be exactly one of: "organic", "synthetic", "compost", "mineral", or "microbial".
       
-      JSON SCHEMA (You must return a JSON object exactly matching this):
+      JSON SCHEMA (You must return a JSON object exactly matching this structure):
       {
         "brand": "string",
         "name": "string",
@@ -53,15 +53,25 @@ export async function POST(request: Request) {
         "k_value": number,
         "calcium": number,
         "magnesium": number,
-        "application_rate": "string",
-        "application_method": "string",
         "derived_from": "string",
-        "barcode_upc": "string"
+        "barcode_upc": "string",
+        "schedules": [
+          {
+            "growth_stage": "seedling" | "vegetative" | "flowering" | "fruiting" | "dormant" | "pre_plant",
+            "method": "soil_drench" | "foliar_spray" | "top_dress" | "soil_mix" | "hydroponic",
+            "dosage_amount": number,
+            "dosage_unit": "ml" | "tsp" | "tbsp" | "cup" | "oz" | "g" | "lbs" | "kg",
+            "dilution_amount": number (use 0 if none),
+            "dilution_unit": "gallon" | "liter" | "sq_ft" | "cubic_yard" | "acre",
+            "frequency_days": number (e.g., 7 for weekly, 14 for bi-weekly. use null if as-needed),
+            "notes": "string (Crucial mixing warnings or application tips)"
+          }
+        ]
       }
     `;
 
     const result = await model.generateContent([prompt, ...imageParts]);
-    const cleanJson = result.response.text(); // No more regex scrubbing needed!
+    const cleanJson = result.response.text(); 
 
     try {
       const analyzedData = JSON.parse(cleanJson);
