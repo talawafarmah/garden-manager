@@ -62,9 +62,29 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
         const beds: GardenBed[] = bedRes.data || [];
         let currentTasks: FarmTask[] = taskRes.data || [];
 
-        // FIX: AUTOMATION ENGINE now ignores empty beds
+        // Fetch beds that actually have growing plants in them
         const { data: activePlantings } = await supabase.from('field_plantings').select('bed_id').eq('season_id', currentSeasonId).eq('status', 'Growing');
         const activeBedIds = new Set(activePlantings?.map(p => p.bed_id) || []);
+
+        // FIX: SELF-CLEANING ENGINE
+        // Find ghost tasks (watering tasks for beds that are now empty) and prune them
+        const validTasks: FarmTask[] = [];
+        const staleTaskIds: string[] = [];
+
+        for (const task of currentTasks) {
+          if (task.category === 'Watering' && task.related_bed_id && !activeBedIds.has(task.related_bed_id)) {
+            staleTaskIds.push(task.id);
+          } else {
+            validTasks.push(task);
+          }
+        }
+        
+        currentTasks = validTasks; // Update our working list to only show valid tasks
+
+        // Silently delete the ghost tasks from the database so they don't pile up
+        if (staleTaskIds.length > 0) {
+          supabase.from('farm_tasks').delete().in('id', staleTaskIds).then();
+        }
 
         const existingBedIds = new Set(currentTasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
         const todayObj = new Date();
@@ -269,7 +289,6 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
           </div>
         </section>
 
-        {/* FIX: SYSTEM ADMIN PANEL (Role Protected to prevent Access Denied) */}
         {userRole === 'admin' && (
           <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">System Administration</h2>
