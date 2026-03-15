@@ -1,38 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
-import { supabase } from '../../lib/supabase'; // Adjust path if needed
-import { AmendmentType } from '@/types/amendments';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
+import { Amendment, AmendmentType } from '@/types/amendments';
 import { Camera, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import ProductCapture from './ProductCapture';
 
 interface NewAmendmentFormProps {
   navigateTo: (view: any, payload?: any) => void;
   handleGoBack: (fallbackView: any) => void;
+  initialData?: Amendment | null; // NEW: If passed, the form acts as an Editor
 }
 
-export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendmentFormProps) {
+export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData }: NewAmendmentFormProps) {
+  const isEditing = !!initialData;
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const [showScanner, setShowScanner] = useState(false);
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
 
-  // Complete state including new Application and AI tracking fields
+  // Initialize with initialData if editing, else defaults
   const [formData, setFormData] = useState({
-    brand: '',
-    name: '',
-    type: 'organic' as AmendmentType,
-    n_value: '',
-    p_value: '',
-    k_value: '',
-    calcium: '',
-    magnesium: '',
-    derived_from: '',
-    barcode_upc: '', 
-    application_rate: '',
-    application_method: '',
-    raw_ai_type: '',
+    brand: initialData?.brand || '',
+    name: initialData?.name || '',
+    type: initialData?.type || 'organic' as AmendmentType,
+    n_value: initialData?.n_value !== undefined ? String(initialData.n_value) : '',
+    p_value: initialData?.p_value !== undefined ? String(initialData.p_value) : '',
+    k_value: initialData?.k_value !== undefined ? String(initialData.k_value) : '',
+    calcium: initialData?.calcium !== undefined ? String(initialData.calcium) : '',
+    magnesium: initialData?.magnesium !== undefined ? String(initialData.magnesium) : '',
+    derived_from: initialData?.derived_from || '',
+    barcode_upc: initialData?.barcode_upc || '', 
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -71,9 +71,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
       brand: data.brand || prev.brand,
       name: data.name || prev.name,
       type: finalizedType as AmendmentType,
-      raw_ai_type: rawValue,
-      application_rate: data.application_rate || "",
-      application_method: data.application_method || "",
       n_value: (data.n_value ?? "0").toString(),
       p_value: (data.p_value ?? "0").toString(),
       k_value: (data.k_value ?? "0").toString(),
@@ -102,16 +99,31 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
       magnesium: parseFloat(formData.magnesium) || 0,
       derived_from: formData.derived_from,
       barcode_upc: formData.barcode_upc || null, 
-      application_rate: formData.application_rate,
-      application_method: formData.application_method,
-      raw_ai_type: formData.raw_ai_type,
     };
 
-    const { data, error: submitError } = await supabase
-      .from('amendments')
-      .insert([payload])
-      .select()
-      .single();
+    let submitError;
+    let returnedData;
+
+    if (isEditing && initialData?.id) {
+      // UPDATE Mode
+      const { data, error } = await supabase
+        .from('amendments')
+        .update(payload)
+        .eq('id', initialData.id)
+        .select()
+        .single();
+      submitError = error;
+      returnedData = data;
+    } else {
+      // INSERT Mode
+      const { data, error } = await supabase
+        .from('amendments')
+        .insert([payload])
+        .select()
+        .single();
+      submitError = error;
+      returnedData = data;
+    }
 
     setIsSubmitting(false);
 
@@ -124,8 +136,9 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
       return;
     }
 
-    if (data) {
-      navigateTo('amendment_detail', data);
+    if (returnedData) {
+      // Return to detail view
+      navigateTo('amendment_detail', returnedData);
     }
   };
 
@@ -145,11 +158,13 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
         >
           <ArrowLeft size={24} className="text-gray-700" />
         </button>
-        <h2 className="text-lg font-bold text-gray-900">Add Amendment</h2>
+        <h2 className="text-lg font-bold text-gray-900">
+          {isEditing ? 'Edit Amendment' : 'Add Amendment'}
+        </h2>
         <button
           type="button"
           onClick={() => setShowScanner(true)}
-          className="flex items-center gap-2 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95"
+          className="flex items-center gap-2 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95 transition-transform"
         >
           <Camera size={16} />
           <span>Analyze</span>
@@ -174,7 +189,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
           
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Identity</h3>
-            <div className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+            <div className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Brand</label>
                 <input
@@ -183,7 +198,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   required
                   value={formData.brand}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
                   placeholder="e.g., Down To Earth"
                 />
               </div>
@@ -196,7 +211,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   required
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
                   placeholder="e.g., All Purpose Fertilizer"
                 />
               </div>
@@ -207,7 +222,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   name="type"
                   value={formData.type}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500 outline-none appearance-none"
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none appearance-none"
                 >
                   <option value="organic">Organic</option>
                   <option value="synthetic">Synthetic</option>
@@ -222,7 +237,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Guaranteed Analysis (%)</h3>
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-green-50/50 p-3 rounded-2xl border border-green-100">
+              <div className="bg-green-50/50 p-3 rounded-2xl border border-green-200">
                 <label className="block text-[10px] font-bold text-green-700 uppercase mb-2 text-center">Nitrogen (N)</label>
                 <input
                   type="number"
@@ -231,10 +246,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.n_value}
                   onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
-              <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-100">
+              <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-200">
                 <label className="block text-[10px] font-bold text-blue-700 uppercase mb-2 text-center">Phos (P)</label>
                 <input
                   type="number"
@@ -243,10 +258,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.p_value}
                   onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-blue-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-blue-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <div className="bg-orange-50/50 p-3 rounded-2xl border border-orange-100">
+              <div className="bg-orange-50/50 p-3 rounded-2xl border border-orange-200">
                 <label className="block text-[10px] font-bold text-orange-700 uppercase mb-2 text-center">Potash (K)</label>
                 <input
                   type="number"
@@ -255,7 +270,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.k_value}
                   onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-orange-200 rounded-xl py-2 outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-orange-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
             </div>
@@ -263,7 +278,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
 
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Secondary Nutrients (%)</h3>
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Calcium (Ca)</label>
                 <input
@@ -273,7 +288,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.calcium}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
               <div>
@@ -285,48 +300,24 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
                   step="0.01"
                   value={formData.magnesium}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
             </div>
           </div>
 
           <div className="space-y-4 border-t border-gray-100 pt-6">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Guidelines & Sourcing</h3>
-            <div className="grid grid-cols-1 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Application Rate</label>
-                <input
-                  type="text"
-                  name="application_rate"
-                  value={formData.application_rate}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g. 1 cup per 10 sq ft"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Application Method</label>
-                <textarea
-                  name="application_method"
-                  rows={2}
-                  value={formData.application_method}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-semibold focus:ring-2 focus:ring-green-500"
-                  placeholder="How to apply..."
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 mt-2">Derived From (Ingredients)</label>
-                <textarea
-                  name="derived_from"
-                  rows={3}
-                  value={formData.derived_from}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-900 font-medium leading-relaxed"
-                  placeholder="List ingredients..."
-                ></textarea>
-              </div>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Sourcing</h3>
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Derived From (Ingredients)</label>
+              <textarea
+                name="derived_from"
+                rows={3}
+                value={formData.derived_from}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-900 font-medium leading-relaxed"
+                placeholder="List ingredients (e.g., bone meal, feather meal...)"
+              ></textarea>
             </div>
           </div>
 
@@ -338,10 +329,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
             {isSubmitting ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
-                <span>Storing in Shed...</span>
+                <span>{isEditing ? 'Updating...' : 'Storing in Shed...'}</span>
               </>
             ) : (
-              <span>Save Amendment</span>
+              <span>{isEditing ? 'Update Amendment' : 'Save Amendment'}</span>
             )}
           </button>
         </form>

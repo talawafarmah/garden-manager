@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../../lib/supabase'; // Aligned with your file structure
-import { AmendmentWithSchedules, Amendment, FeedingSchedule } from '@/types/amendments';
-import { ArrowLeft, Plus, Beaker, Leaf, Droplets, Sun, Loader2, Sparkles } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
+import { AmendmentWithSchedules, FeedingSchedule } from '@/types/amendments';
+import { ArrowLeft, Plus, Beaker, Loader2, Sparkles, Trash2, Edit } from 'lucide-react';
 
-// Sub-components
 import AmendmentHeader from '@/components/amendments/AmendmentHeader';
 import FeedingScheduleList from '@/components/amendments/FeedingScheduleList';
 import AddFeedingScheduleForm from '@/components/amendments/AddFeedingScheduleForm';
@@ -19,30 +18,65 @@ interface AmendmentDetailPageProps {
 export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }: AmendmentDetailPageProps) {
   const [amendment, setAmendment] = useState<AmendmentWithSchedules | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showAddSchedule, setShowAddSchedule] = useState(false);
+  
+  // States for CRUD forms
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<FeedingSchedule | null>(null);
+  
   const [isSearching, setIsSearching] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchAmendmentData = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('amendments')
-      .select(`
-        *,
-        feeding_schedules (*)
-      `)
+      .select(`*, feeding_schedules (*)`)
       .eq('id', params.id)
       .single();
 
-    if (data) {
-      setAmendment(data as AmendmentWithSchedules);
-    }
+    if (data) setAmendment(data as AmendmentWithSchedules);
     setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchAmendmentData();
+  }, [params.id]);
+
+  // --- AMENDMENT CRUD ---
+  const handleDeleteAmendment = async () => {
+    if (!window.confirm(`Are you sure you want to delete ${amendment?.name}? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    
+    const { error } = await supabase.from('amendments').delete().eq('id', params.id);
+    
+    if (error) {
+      alert("Failed to delete: " + error.message);
+      setIsDeleting(false);
+    } else {
+      handleGoBack('amendments');
+    }
+  };
+
+  // --- SCHEDULE CRUD ---
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    const { error } = await supabase.from('feeding_schedules').delete().eq('id', scheduleId);
+    if (error) alert("Failed to delete schedule: " + error.message);
+    else fetchAmendmentData();
+  };
+
+  const handleOpenEditSchedule = (schedule: FeedingSchedule) => {
+    setEditingSchedule(schedule);
+    setShowScheduleForm(true);
+  };
+
+  const handleCloseScheduleForm = () => {
+    setEditingSchedule(null);
+    setShowScheduleForm(false);
   };
 
   const handleAILookup = async () => {
     if (!amendment) return;
     setIsSearching(true);
-    
     try {
       const response = await fetch('/api/generate-feeding-schedule', {
         method: 'POST',
@@ -53,7 +87,6 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
       const schedules = await response.json();
       if (!response.ok) throw new Error(schedules.error);
 
-      // Strictly map the AI JSON array to your specific Enum/Number schema
       const payload = schedules.map((sched: any) => ({
         amendment_id: amendment.id,
         growth_stage: sched.growth_stage || 'vegetative',
@@ -62,20 +95,14 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
         dosage_unit: sched.dosage_unit || 'tbsp',
         dilution_amount: Number(sched.dilution_amount) || 0,
         dilution_unit: sched.dilution_unit || 'gallon',
-        frequency_days: Number(sched.frequency_days) || 7,
+        frequency_days: Number(sched.frequency_days) || null,
         notes: sched.notes || ''
       }));
 
-      // Bulk insert all schedules at once
-      const { error: submitError } = await supabase
-        .from('feeding_schedules')
-        .insert(payload);
-
+      const { error: submitError } = await supabase.from('feeding_schedules').insert(payload);
       if (submitError) throw submitError;
 
-      // Refresh the page to show the new list of AI-generated cards
       fetchAmendmentData();
-      
     } catch (err: any) {
       alert("AI Search Failed: " + err.message);
     } finally {
@@ -83,64 +110,57 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
     }
   };
 
-  useEffect(() => {
-    fetchAmendmentData();
-  }, [params.id]);
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
+      <p className="text-gray-500 font-medium">Loading product analysis...</p>
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
-        <p className="text-gray-500 font-medium">Loading product analysis...</p>
-      </div>
-    );
-  }
-
-  if (!amendment) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-red-500 mb-4">Amendment not found.</p>
-        <button onClick={() => handleGoBack('amendments')} className="text-green-700 font-bold">
-          Return to Digital Shed
-        </button>
-      </div>
-    );
-  }
+  if (!amendment) return (
+    <div className="p-6 text-center">
+      <p className="text-red-500 mb-4">Amendment not found.</p>
+      <button onClick={() => handleGoBack('amendments')} className="text-green-700 font-bold">Return to Digital Shed</button>
+    </div>
+  );
 
   return (
     <div className="max-w-xl mx-auto pb-24">
       {/* Navigation Header */}
       <div className="flex justify-between items-center mb-6 px-1">
-        <button 
-          onClick={() => handleGoBack('amendments')} 
-          className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
-        >
+        <button onClick={() => handleGoBack('amendments')} className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
           <ArrowLeft size={24} className="text-gray-700" />
         </button>
         <div className="flex gap-2">
-           <button 
-            onClick={() => setShowAddSchedule(!showAddSchedule)}
-            className={`p-2 rounded-full shadow-md transition-colors ${
-              showAddSchedule ? 'bg-gray-800 text-white' : 'bg-green-700 text-white'
-            }`}
+          {/* Amendment Edit & Delete Buttons */}
+          <button 
+            disabled={isDeleting}
+            onClick={handleDeleteAmendment}
+            className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors disabled:opacity-50"
           >
-            {showAddSchedule ? <ArrowLeft size={20} /> : <Plus size={20} />}
+            {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
+          </button>
+          
+          <button 
+            onClick={() => {
+              setEditingSchedule(null);
+              setShowScheduleForm(!showScheduleForm);
+            }}
+            className={`p-2 rounded-full shadow-md transition-colors ${showScheduleForm && !editingSchedule ? 'bg-gray-800 text-white' : 'bg-green-700 text-white'}`}
+          >
+            {showScheduleForm && !editingSchedule ? <ArrowLeft size={20} /> : <Plus size={20} />}
           </button>
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="space-y-6">
-        {!showAddSchedule ? (
+        {!showScheduleForm ? (
           <>
             <AmendmentHeader amendment={amendment} />
             
             <div className="px-1">
-              {/* Header with AI Button Integrated */}
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest">
-                  Nutrient Schedules
-                </h3>
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Nutrient Schedules</h3>
                 <button
                   onClick={handleAILookup}
                   disabled={isSearching}
@@ -151,27 +171,17 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
                 </button>
               </div>
 
-              <FeedingScheduleList schedules={amendment.feeding_schedules} />
-              
-              {/* Manual Add Button (Fallback) */}
-              {amendment.feeding_schedules.length === 0 && (
-                <div className="mt-4 text-center">
-                  <button 
-                    onClick={() => setShowAddSchedule(true)}
-                    className="text-xs font-bold uppercase tracking-wide text-gray-500 hover:text-green-700 underline underline-offset-4 transition-colors"
-                  >
-                    Or add instructions manually
-                  </button>
-                </div>
-              )}
+              <FeedingScheduleList 
+                schedules={amendment.feeding_schedules} 
+                onEdit={handleOpenEditSchedule}
+                onDelete={handleDeleteSchedule}
+              />
             </div>
             
             {amendment.derived_from && (
               <div className="px-4 py-3 bg-white border border-gray-100 rounded-xl shadow-sm">
                 <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Source / Ingredients</h4>
-                <p className="text-sm text-gray-700 font-medium leading-relaxed italic">
-                  {amendment.derived_from}
-                </p>
+                <p className="text-sm text-gray-700 font-medium leading-relaxed italic">{amendment.derived_from}</p>
               </div>
             )}
           </>
@@ -179,23 +189,18 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
           <div className="animate-in slide-in-from-bottom-4 duration-300">
              <div className="flex items-center gap-2 mb-4 px-1">
                 <Beaker className="text-green-700" size={20} />
-                <h2 className="text-xl font-bold">New Instruction</h2>
+                <h2 className="text-xl font-bold">{editingSchedule ? 'Edit Guideline' : 'New Guideline'}</h2>
              </div>
+             
              <AddFeedingScheduleForm 
                 amendmentId={amendment.id}
-                amendmentBrand={amendment.brand} 
-                amendmentName={amendment.name}   
+                initialData={editingSchedule}
                 onSuccess={() => {
-                  setShowAddSchedule(false);
+                  handleCloseScheduleForm();
                   fetchAmendmentData();
                 }} 
+                onCancel={handleCloseScheduleForm}
               />
-             <button 
-               onClick={() => setShowAddSchedule(false)}
-               className="w-full mt-4 py-3 text-gray-500 text-sm font-medium hover:text-gray-800 transition-colors"
-             >
-               Cancel and go back
-             </button>
           </div>
         )}
       </div>

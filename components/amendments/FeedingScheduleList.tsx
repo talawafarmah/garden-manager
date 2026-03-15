@@ -1,14 +1,16 @@
 'use client';
 
 import React from 'react';
-import { Droplets, Calendar, AlertCircle, Leaf } from 'lucide-react';
+import { Droplets, Calendar, AlertCircle, Leaf, Edit2, Trash2 } from 'lucide-react';
 import { FeedingSchedule } from '@/types/amendments';
 
 interface FeedingScheduleListProps {
   schedules: FeedingSchedule[];
+  onEdit: (schedule: FeedingSchedule) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function FeedingScheduleList({ schedules }: FeedingScheduleListProps) {
+export default function FeedingScheduleList({ schedules, onEdit, onDelete }: FeedingScheduleListProps) {
   
   if (!schedules || schedules.length === 0) {
     return (
@@ -37,29 +39,32 @@ export default function FeedingScheduleList({ schedules }: FeedingScheduleListPr
     }
   };
 
-  const formatStageLabel = (stage: string) => {
-    if (!stage) return 'General';
-    return stage.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
-
-  const formatMethodLabel = (method: string) => {
-    if (!method) return '';
-    return method.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const formatLabel = (str: string) => {
+    if (!str) return 'General';
+    return str.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
   return (
     <div className="space-y-4 mt-2">
       {schedules.map((schedule) => (
-        <div 
-          key={schedule.id} 
-          className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm"
-        >
-          <div className="flex justify-between items-start mb-4">
-            <span className={`text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border ${getStageStyles(schedule.growth_stage)}`}>
-              {formatStageLabel(schedule.growth_stage)}
+        <div key={schedule.id} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm relative group">
+          
+          {/* Admin Actions (Edit/Delete) */}
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={() => onEdit(schedule)} className="p-1.5 text-gray-400 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
+              <Edit2 size={14} />
+            </button>
+            <button onClick={() => { if(window.confirm('Delete this guideline?')) onDelete(schedule.id) }} className="p-1.5 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors">
+              <Trash2 size={14} />
+            </button>
+          </div>
+
+          <div className="flex flex-col items-start mb-4 pr-16">
+            <span className={`text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border mb-2 ${getStageStyles(schedule.growth_stage)}`}>
+              {formatLabel(schedule.growth_stage)}
             </span>
-            <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-50 px-2 py-1 rounded">
-              {formatMethodLabel(schedule.method)}
+            <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-50 px-2 py-1 rounded border border-gray-100">
+              {formatLabel(schedule.method)}
             </span>
           </div>
 
