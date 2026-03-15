@@ -1,31 +1,37 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { supabase } from '../../lib/supabase';
-import { RecipeType, RecipeIngredient } from '@/types/amendments'; // Or '@/types/index' depending on where you put them
+import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
 import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout } from 'lucide-react';
+
+// Dynamically import ReactQuill to prevent Next.js SSR "document is not defined" errors
+const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+import 'react-quill/dist/quill.snow.css';
 
 interface RecipeFormProps {
   onClose: () => void;
   onSuccess: () => void;
+  initialData?: Recipe | null; // NEW: Passed in for Edit mode
 }
 
-export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
+export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFormProps) {
+  const isEditing = !!initialData;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    name: '',
-    type: 'liquid_tea' as RecipeType,
-    description: '',
-    instructions: '',
-    brew_time_hours: 24,
+    name: initialData?.name || '',
+    type: initialData?.type || 'liquid_tea' as RecipeType,
+    description: initialData?.description || '',
+    instructions: initialData?.instructions || '',
+    brew_time_hours: initialData?.brew_time_hours || 24,
   });
 
-  // Dynamic state for the JSONB ingredients array
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>([
-    { name: '', amount: 1, unit: 'cup' }
-  ]);
+  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
+    initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: 1, unit: 'cup' }]
+  );
 
   const handleAddIngredient = () => {
     setIngredients([...ingredients, { name: '', amount: 1, unit: 'cup' }]);
@@ -48,7 +54,6 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
       return;
     }
 
-    // Filter out any empty ingredient rows
     const cleanedIngredients = ingredients.filter(i => i.name.trim() !== '');
 
     setIsSubmitting(true);
@@ -60,10 +65,18 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
       description: formData.description.trim(),
       instructions: formData.instructions.trim(),
       brew_time_hours: formData.brew_time_hours,
-      ingredients: cleanedIngredients, // Supabase will automatically parse this array to JSONB
+      ingredients: cleanedIngredients, 
     };
 
-    const { error: submitError } = await supabase.from('recipes').insert([payload]);
+    let submitError;
+
+    if (isEditing && initialData?.id) {
+      const { error } = await supabase.from('recipes').update(payload).eq('id', initialData.id);
+      submitError = error;
+    } else {
+      const { error } = await supabase.from('recipes').insert([payload]);
+      submitError = error;
+    }
 
     setIsSubmitting(false);
 
@@ -83,6 +96,16 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
     }
   };
 
+  // Custom Quill Toolbar Modules for a clean UI
+  const quillModules = {
+    toolbar: [
+      [{ 'header': [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{'list': 'ordered'}, {'list': 'bullet'}],
+      ['clean']
+    ],
+  };
+
   return (
     <div className="animate-in slide-in-from-bottom-4 duration-300 bg-white min-h-screen pb-24">
       <header className="bg-white border-b border-stone-200 p-4 sticky top-0 z-10 flex items-center justify-between">
@@ -90,7 +113,7 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
           <button onClick={onClose} className="p-2 -ml-2 text-stone-400 hover:bg-stone-100 hover:text-stone-800 rounded-full transition-colors">
             <ArrowLeft size={24} />
           </button>
-          <h2 className="text-lg font-black text-stone-800">New Master Recipe</h2>
+          <h2 className="text-lg font-black text-stone-800">{isEditing ? 'Edit Recipe' : 'New Master Recipe'}</h2>
         </div>
       </header>
 
@@ -103,7 +126,6 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
 
         <form onSubmit={handleSubmit} className="space-y-8">
           
-          {/* CORE DETAILS */}
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Recipe Identity</h3>
             <div className="bg-stone-50 p-4 rounded-3xl border border-stone-100 shadow-sm space-y-4">
@@ -154,15 +176,19 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
                 </div>
               </div>
 
-              <div>
+              {/* RICH TEXT EDITOR: DESCRIPTION */}
+              <div className="quill-container">
                 <label className="block text-[10px] font-black text-stone-500 uppercase mb-1.5">Description / Purpose</label>
-                <textarea
-                  rows={2}
-                  value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="What is this recipe best used for?"
-                  className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-medium text-stone-700 outline-none focus:border-purple-500 shadow-sm"
-                />
+                <div className="bg-white rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                  <ReactQuill 
+                    theme="snow"
+                    value={formData.description}
+                    onChange={(val) => setFormData({ ...formData, description: val })}
+                    modules={quillModules}
+                    placeholder="What is this recipe best used for?"
+                    className="h-32"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -227,31 +253,53 @@ export default function RecipeForm({ onClose, onSuccess }: RecipeFormProps) {
             </div>
           </div>
 
-          {/* INSTRUCTIONS */}
-          <div className="space-y-4">
+          {/* RICH TEXT EDITOR: INSTRUCTIONS */}
+          <div className="space-y-4 quill-container">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Brewing Instructions</h3>
-            <textarea
-              rows={4}
-              value={formData.instructions}
-              onChange={e => setFormData({ ...formData, instructions: e.target.value })}
-              placeholder="Step-by-step instructions..."
-              className="w-full bg-white border border-stone-200 rounded-2xl p-4 text-sm font-medium text-stone-700 outline-none focus:border-purple-500 shadow-sm"
-            />
+            <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+               <ReactQuill 
+                  theme="snow"
+                  value={formData.instructions}
+                  onChange={(val) => setFormData({ ...formData, instructions: val })}
+                  modules={quillModules}
+                  placeholder="Step-by-step instructions..."
+                  className="h-40"
+                />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-purple-700 text-white font-black uppercase tracking-widest py-4 rounded-2xl shadow-xl shadow-purple-900/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-purple-600 transition-all"
+            className="w-full bg-purple-700 text-white font-black uppercase tracking-widest py-4 rounded-2xl shadow-xl shadow-purple-900/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-purple-600 transition-all mt-4"
           >
             {isSubmitting ? (
               <><Loader2 size={20} className="animate-spin" /> Saving Recipe...</>
             ) : (
-              'Save Master Recipe'
+              isEditing ? 'Update Master Recipe' : 'Save Master Recipe'
             )}
           </button>
         </form>
       </div>
+
+      {/* Add some quick global styles so the rich text editor looks clean inside our containers */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .quill-container .ql-toolbar {
+          border: none !important;
+          border-bottom: 1px solid #e5e7eb !important;
+          background-color: #fafaf9;
+          border-top-left-radius: 0.75rem;
+          border-top-right-radius: 0.75rem;
+        }
+        .quill-container .ql-container {
+          border: none !important;
+          font-family: inherit;
+          font-size: 0.875rem;
+        }
+        .quill-container .ql-editor {
+          min-height: 100%;
+        }
+      `}} />
     </div>
   );
 }

@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout } from 'lucide-react';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2 } from 'lucide-react';
 import AmendmentList from './amendments/AmendmentList';
 import RecipeForm from './amendments/RecipeForm';
-import { Recipe } from '@/types/amendments'; // Or wherever your types are located
+import { Recipe } from '@/types/amendments'; 
 
 interface ApothecaryProps {
   navigateTo: (view: any, payload?: any) => void;
@@ -16,10 +16,12 @@ interface ApothecaryProps {
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
   const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
   
-  // Recipe State
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
+  
+  // Controls the display and mode of the Recipe Form
   const [showRecipeForm, setShowRecipeForm] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
   const fetchRecipes = async () => {
     setIsLoadingRecipes(true);
@@ -48,14 +50,35 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     }
   };
 
-  // If the user clicked "New Recipe", hijack the view and show the form
+  // --- RECIPE CRUD ACTIONS ---
+  const handleEditRecipe = (recipe: Recipe) => {
+    setEditingRecipe(recipe);
+    setShowRecipeForm(true);
+  };
+
+  const handleDeleteRecipe = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to permanently delete the recipe "${name}"?`)) {
+      const { error } = await supabase.from('recipes').delete().eq('id', id);
+      if (error) {
+        alert("Failed to delete recipe: " + error.message);
+      } else {
+        setRecipes(recipes.filter(r => r.id !== id));
+      }
+    }
+  };
+
   if (showRecipeForm) {
     return (
       <RecipeForm 
-        onClose={() => setShowRecipeForm(false)} 
+        initialData={editingRecipe}
+        onClose={() => {
+          setShowRecipeForm(false);
+          setEditingRecipe(null);
+        }} 
         onSuccess={() => {
           setShowRecipeForm(false);
-          fetchRecipes(); // Refresh the list!
+          setEditingRecipe(null);
+          fetchRecipes(); 
         }} 
       />
     );
@@ -120,10 +143,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               </button>
             </div>
 
-            {/* Mockup Active Brew Card (We will wire this up next!) */}
             <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl pointer-events-none group-hover:scale-110 transition-transform">🫧</div>
-              
               <div className="flex justify-between items-start mb-3 relative z-10">
                 <div>
                   <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md border border-amber-200 mb-2 shadow-sm">
@@ -132,7 +153,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                   <h3 className="text-xl font-black text-stone-900 leading-tight">Fungal Compost Tea (AACT)</h3>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
                   <div className="flex items-center text-stone-400 mb-1">
@@ -149,11 +169,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                   <p className="text-sm font-black text-stone-700">24 - 36 Hours</p>
                 </div>
               </div>
-
               <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
                 <div className="bg-amber-400 h-full w-[65%] rounded-full animate-pulse"></div>
               </div>
-
               <div className="flex gap-2">
                 <button className="flex-1 bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md hover:bg-emerald-500 transition-colors">
                   Mark as Done & Apply
@@ -172,7 +190,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
             <div className="flex justify-between items-center px-1">
               <h2 className="text-lg font-bold text-stone-800">Master Recipes</h2>
               <button 
-                onClick={() => setShowRecipeForm(true)}
+                onClick={() => { setEditingRecipe(null); setShowRecipeForm(true); }}
                 className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-purple-700 bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-200 transition-colors shadow-sm"
               >
                 <Plus size={16} /> New Recipe
@@ -194,20 +212,34 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                 {recipes.map(recipe => {
                   const styles = getTypeStyles(recipe.type);
                   return (
-                    <div key={recipe.id} className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm hover:border-purple-300 transition-colors cursor-pointer group">
-                      <div className="flex justify-between items-start mb-3">
-                        <h3 className="text-lg font-black text-stone-900 leading-tight group-hover:text-purple-700 transition-colors pr-2">
+                    <div key={recipe.id} className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative group">
+                      
+                      {/* CRUD ACTIONS: Hidden until hover (or always visible on mobile) */}
+                      <div className="absolute top-4 right-4 flex gap-1.5 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleEditRecipe(recipe)} className="p-2 bg-stone-100 text-stone-500 hover:bg-blue-100 hover:text-blue-600 rounded-lg transition-colors">
+                          <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => handleDeleteRecipe(recipe.id, recipe.name)} className="p-2 bg-stone-100 text-stone-500 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between items-start mb-3 pr-20">
+                        <h3 className="text-lg font-black text-stone-900 leading-tight">
                           {recipe.name}
                         </h3>
-                        <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border flex-shrink-0`}>
-                          {styles.label}
-                        </span>
                       </div>
+
+                      <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border inline-block mb-3`}>
+                        {styles.label}
+                      </span>
                       
-                      {recipe.description && (
-                        <p className="text-xs text-stone-500 font-medium mb-4 line-clamp-2">
-                          {recipe.description}
-                        </p>
+                      {/* RENDER WYSIWYG HTML CONTENT SAFELY */}
+                      {recipe.description && recipe.description !== '<p><br></p>' && (
+                        <div 
+                          className="prose prose-sm prose-stone mb-4 max-w-none text-stone-600 line-clamp-3"
+                          dangerouslySetInnerHTML={{ __html: recipe.description }} 
+                        />
                       )}
                       
                       {recipe.ingredients && recipe.ingredients.length > 0 && (
@@ -263,6 +295,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
           </div>
         )}
       </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        .prose p { margin-top: 0.25em; margin-bottom: 0.25em; }
+        .prose ul { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: disc; }
+        .prose ol { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: decimal; }
+      `}} />
     </div>
   );
 }
