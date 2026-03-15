@@ -43,29 +43,29 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack }: NewAmendm
    * Handles the successful analysis from the ProductCapture component.
    * This populates the form using data extracted from the photos.
    */
-  const handleAnalysisSuccess = (data: any) => {
-    setShowScanner(false);
-    setAnalysisMessage('Product analysis complete! Data populated.');
-    setError(null);
+ const handleAnalysisSuccess = (data: any) => {
+  setShowScanner(false);
+  setAnalysisMessage('Analysis complete! Data populated.');
+  setError(null);
 
-    setFormData((prev) => ({
-      ...prev,
-      brand: data.brand || prev.brand,
-      name: data.name || prev.name,
-      type: data.type || prev.type,
-      // Handle numeric conversion safely for the UI inputs
-      n_value: data.n_value !== undefined ? data.n_value.toString() : prev.n_value,
-      p_value: data.p_value !== undefined ? data.p_value.toString() : prev.p_value,
-      k_value: data.k_value !== undefined ? data.k_value.toString() : prev.k_value,
-      calcium: data.calcium !== undefined ? data.calcium.toString() : prev.calcium,
-      magnesium: data.magnesium !== undefined ? data.magnesium.toString() : prev.magnesium,
-      derived_from: data.derived_from || prev.derived_from,
-      barcode_upc: data.barcode_upc || prev.barcode_upc,
-    }));
+  setFormData((prev) => ({
+    ...prev,
+    brand: data.brand || prev.brand,
+    name: data.name || prev.name,
+    type: data.type || prev.type,
+    // Safely convert N-P-K (providing "0" as fallback)
+    n_value: (data.n_value ?? "0").toString(),
+    p_value: (data.p_value ?? "0").toString(),
+    k_value: (data.k_value ?? "0").toString(),
+    // Safely convert Secondary Nutrients (fixing the null crash)
+    calcium: (data.calcium ?? "0").toString(),
+    magnesium: (data.magnesium ?? "0").toString(),
+    derived_from: data.derived_from || prev.derived_from,
+    barcode_upc: data.barcode_upc || prev.barcode_upc,
+  }));
 
-    // Clear success message after 5 seconds
-    setTimeout(() => setAnalysisMessage(null), 5000);
-  };
+  setTimeout(() => setAnalysisMessage(null), 5000);
+};
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
