@@ -22,36 +22,40 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
-  // Recipe Form State
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
-  // Start Brew Form State
   const [isStartingBrew, setIsStartingBrew] = useState(false);
   const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', start_time: '' });
 
   // --- DATA FETCHING ---
   const fetchData = async () => {
     setIsLoading(true);
+    // FIX: Using recipes(*) instead of the alias to bypass aggressive caching bugs
     const [recipeRes, brewRes] = await Promise.all([
       supabase.from('recipes').select('*').order('created_at', { ascending: false }),
-      supabase.from('active_brews').select('*, recipe:recipes(*)').order('start_time', { ascending: false })
+      supabase.from('active_brews').select('*, recipes(*)').order('start_time', { ascending: false })
     ]);
       
     if (recipeRes.data) setRecipes(recipeRes.data as Recipe[]);
-    if (brewRes.data) setBrews(brewRes.data as any[]);
+    if (brewRes.data) {
+      // Map the nested 'recipes' object back to 'recipe' for our frontend
+      const mappedBrews = brewRes.data.map(b => ({
+        ...b,
+        recipe: b.recipes || b.recipe
+      }));
+      setBrews(mappedBrews as any[]);
+    }
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchData();
-    // Live timer engine: Update the "now" state every minute to tick progress bars forward
     const interval = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // --- HELPERS ---
   const getTypeStyles = (type: string) => {
     switch (type) {
       case 'liquid_tea': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', label: 'Liquid Tea', icon: <Beaker size={14}/> };
@@ -81,13 +85,10 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     return { percent, elapsedText, isComplete: percent >= 100, isIndefinite: false };
   };
 
-  // --- BREWERY ACTIONS ---
   const handleOpenStartBrew = () => {
-    // Default to the first recipe and right now
     const initialRecipe = recipes.length > 0 ? recipes[0].id : '';
     const initialName = recipes.length > 0 ? `Batch of ${recipes[0].name}` : '';
     
-    // Format local datetime for the input
     const localNow = new Date();
     localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
     const timeStr = localNow.toISOString().slice(0,16);
@@ -117,12 +118,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       target_completion_time: targetObj ? targetObj.toISOString() : null,
     };
 
-    const { data, error } = await supabase.from('active_brews').insert([payload]).select('*, recipe:recipes(*)').single();
-    if (data && !error) {
-      setBrews([data, ...brews]);
+    const { error } = await supabase.from('active_brews').insert([payload]);
+    if (!error) {
+      fetchData(); // Refresh to ensure we pull joined records correctly
       setIsStartingBrew(false);
     } else {
-      alert("Failed to start brew: " + error?.message);
+      alert("Failed to start brew: " + error.message);
     }
   };
 
@@ -133,7 +134,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     }
   };
 
-  // --- RECIPE CRUD ACTIONS ---
   const handleEditRecipe = (recipe: Recipe) => {
     setEditingRecipe(recipe);
     setShowRecipeForm(true);
@@ -174,13 +174,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
              <ArrowLeft size={20} />
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Dashboard">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold">Apothecary</h1>
         </div>
       </header>
 
-      {/* Tab Navigation */}
       <div className="flex bg-white border-b border-stone-200 sticky top-[68px] z-20 shadow-sm">
         <button
           onClick={() => setActiveTab('brewery')}
@@ -213,7 +212,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
       <div className="p-4 max-w-2xl mx-auto">
         
-        {/* --- BREWERY TAB --- */}
         {activeTab === 'brewery' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-1">
@@ -294,7 +292,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               </div>
             )}
 
-            {/* Historical Ledger */}
             {historyBrews.length > 0 && (
               <div className="mt-8">
                 <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 px-1">Brew History</h3>
@@ -477,21 +474,23 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     </select>
                   </div>
                   <div>
+                    {/* FIX: FORCED TEXT-STONE-800 SO TEXT IS READABLE */}
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Batch Name / Identifier</label>
                     <input 
                       type="text" 
                       value={brewForm.custom_name} 
                       onChange={e => setBrewForm({...brewForm, custom_name: e.target.value})}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-purple-500 shadow-sm" 
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
                     />
                   </div>
                   <div>
+                    {/* FIX: FORCED TEXT-STONE-800 SO TEXT IS READABLE */}
                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Start Time</label>
                     <input 
                       type="datetime-local" 
                       value={brewForm.start_time} 
                       onChange={e => setBrewForm({...brewForm, start_time: e.target.value})}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-purple-500 shadow-sm" 
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
                     />
                   </div>
 

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { AmendmentWithSchedules, FeedingSchedule } from '@/types/amendments';
-import { ArrowLeft, Plus, Beaker, Loader2, Sparkles, Trash2, Edit2 } from 'lucide-react';
+import { ArrowLeft, Plus, Beaker, Loader2, Sparkles, Trash2, Edit2, Image as ImageIcon } from 'lucide-react';
 
 import AmendmentHeader from '@/components/amendments/AmendmentHeader';
 import FeedingScheduleList from '@/components/amendments/FeedingScheduleList';
@@ -127,8 +127,8 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
   return (
     <div className="max-w-xl mx-auto pb-24">
       {/* Navigation Header */}
-      <div className="flex justify-between items-center mb-6 px-1">
-        <button onClick={() => handleGoBack('amendments')} className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
+      <div className="flex justify-between items-center mb-6 px-1 sticky top-0 bg-stone-50/90 backdrop-blur-md py-4 z-20">
+        <button onClick={() => handleGoBack('amendments')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors bg-white shadow-sm">
           <ArrowLeft size={24} className="text-gray-700" />
         </button>
         <div className="flex gap-2">
@@ -136,7 +136,8 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
           {/* EDIT AMENDMENT BUTTON */}
           <button 
             onClick={() => navigateTo('amendment_new', amendment)}
-            className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
+            className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors shadow-sm"
+            title="Edit Amendment"
           >
             <Edit2 size={20} />
           </button>
@@ -145,7 +146,8 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
           <button 
             disabled={isDeleting}
             onClick={handleDeleteAmendment}
-            className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors disabled:opacity-50"
+            className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors disabled:opacity-50 shadow-sm"
+            title="Delete Amendment"
           >
             {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
           </button>
@@ -156,7 +158,8 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
               setEditingSchedule(null);
               setShowScheduleForm(!showScheduleForm);
             }}
-            className={`p-2 rounded-full shadow-md transition-colors ${showScheduleForm && !editingSchedule ? 'bg-gray-800 text-white' : 'bg-green-700 text-white'}`}
+            className={`p-2 rounded-full shadow-sm transition-colors ${showScheduleForm && !editingSchedule ? 'bg-gray-800 text-white' : 'bg-green-700 text-white hover:bg-green-600'}`}
+            title="Add Guideline"
           >
             {showScheduleForm && !editingSchedule ? <ArrowLeft size={20} /> : <Plus size={20} />}
           </button>
@@ -166,6 +169,30 @@ export default function AmendmentDetailPage({ params, navigateTo, handleGoBack }
       <div className="space-y-6">
         {!showScheduleForm ? (
           <>
+            {/* IMAGE GALLERY */}
+            {amendment.images && amendment.images.length > 0 && (
+              <div className="flex gap-3 overflow-x-auto pb-2 px-1 scrollbar-hide">
+                {amendment.images.map((url, idx) => (
+                  <div key={idx} className="relative w-40 h-40 flex-shrink-0 rounded-2xl overflow-hidden border border-gray-200 shadow-sm cursor-zoom-in hover:shadow-md transition-shadow">
+                    <img 
+                      src={url} 
+                      alt={`${amendment.name} - Image ${idx + 1}`} 
+                      className="w-full h-full object-cover" 
+                      onClick={() => window.open(url, '_blank')} // Opens full res image in new tab
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* If no images exist, show a placeholder */}
+            {(!amendment.images || amendment.images.length === 0) && (
+              <div className="w-full h-32 bg-gray-100 rounded-2xl border border-gray-200 border-dashed flex flex-col items-center justify-center text-gray-400 mb-6">
+                 <ImageIcon size={32} className="mb-2 opacity-50" />
+                 <span className="text-xs font-bold uppercase tracking-widest">No Images Recorded</span>
+              </div>
+            )}
+
             <AmendmentHeader amendment={amendment} />
             
             <div className="px-1">
