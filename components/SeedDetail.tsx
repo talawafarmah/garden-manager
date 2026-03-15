@@ -6,9 +6,10 @@ interface SeedDetailProps {
   seed: InventorySeed;
   trays: SeedlingTray[];
   categories: any[];
-  navigateTo: (view: any, payload?: any) => void;
+  // FIX: Added the third 'replace' argument to the interface
+  navigateTo: (view: any, payload?: any, replace?: boolean) => void;
   handleGoBack: (view: any) => void;
-  userRole?: string; // <-- Add this line back!
+  userRole?: string; 
 }
 
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
@@ -37,7 +38,7 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
-export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack }: SeedDetailProps) {
+export default function SeedDetail({ seed, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
   const [activeTab, setActiveTab] = useState<'SPECS' | 'PERFORMANCE' | 'JOURNAL'>('SPECS');
   
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
@@ -186,6 +187,18 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
     }
   };
 
+  const toggleOutOfStock = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (userRole !== 'admin') return;
+    const newStatus = !seed.out_of_stock;
+    const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
+    if (!error) {
+       navigateTo('seed_detail', { ...seed, out_of_stock: newStatus }, true);
+    } else {
+       alert("Failed to update stock: " + error.message);
+    }
+  };
+
   const onBack = () => { seed?.returnTo ? navigateTo(seed.returnTo, seed.returnPayload) : handleGoBack('vault'); };
   const onEdit = () => { navigateTo('seed_edit', { ...seed, returnTo: seed?.returnTo, returnPayload: seed?.returnPayload }); };
   const handleDuplicateSeed = () => { navigateTo('seed_edit', { ...seed, id: '', variety_name: `${seed.variety_name} (Copy)`, images: [], thumbnail: '', out_of_stock: false }); };
@@ -316,7 +329,17 @@ export default function SeedDetail({ seed, trays, categories, navigateTo, handle
           <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-stone-900 via-stone-900/40 to-transparent text-white">
             <div className="flex items-center gap-2 mb-1">
               <span className="bg-emerald-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm">{seed.id}</span>
-              {seed.out_of_stock && <span className="bg-red-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm">OUT OF STOCK</span>}
+              {seed.out_of_stock ? (
+                <span onClick={toggleOutOfStock} className={`text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors ${userRole === 'admin' ? 'cursor-pointer bg-red-500 hover:bg-red-600' : 'bg-red-500'}`}>
+                  {userRole === 'admin' ? 'OUT OF STOCK (Click to Fix)' : 'OUT OF STOCK'}
+                </span>
+              ) : (
+                userRole === 'admin' && (
+                  <span onClick={toggleOutOfStock} className="cursor-pointer bg-stone-600/50 hover:bg-red-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors">
+                    MARK OUT OF STOCK
+                  </span>
+                )
+              )}
             </div>
             <h2 className="text-2xl font-black tracking-tight leading-tight">{seed.variety_name}</h2>
             <p className="text-emerald-300 text-xs font-bold uppercase tracking-widest opacity-90">{seed.category} <span className="text-white/60 font-medium italic lowercase">({seed.species})</span></p>

@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { InventorySeed, SeedCategory, AppView } from '../types';
 
-export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', page: 0, scrollY: 0, sortBy: 'created_at_desc' }, setVaultState, userRole }: any) {
+export default function VaultList({ inventory, setInventory, categories, isLoadingDB, navigateTo, handleGoBack, vaultState = { searchQuery: '', activeFilter: 'All', stockFilter: 'All', page: 0, scrollY: 0, sortBy: 'created_at_desc' }, setVaultState, userRole }: any) {
   const [seeds, setSeeds] = useState<InventorySeed[]>([]);
   
   const searchQuery = vaultState.searchQuery || "";
   const activeFilter = vaultState.activeFilter || "All";
+  const stockFilter = vaultState.stockFilter || "All";
   const page = vaultState.page || 0;
   const viewMode = vaultState.viewMode || "list";
   const sortBy = vaultState.sortBy || "created_at_desc";
@@ -19,6 +20,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const handleSetSearchQuery = (val: string) => updateVaultState({ searchQuery: val });
   const handleSetActiveFilter = (val: string) => updateVaultState({ activeFilter: val, page: 0 }); 
+  const handleSetStockFilter = (val: string) => updateVaultState({ stockFilter: val, page: 0 }); 
   const handleSetPage = (val: number) => updateVaultState({ page: val });
   const handleSetViewMode = (val: 'list' | 'gallery') => updateVaultState({ viewMode: val });
   const handleSetSortBy = (val: string) => updateVaultState({ sortBy: val, page: 0 });
@@ -35,21 +37,14 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
 
   const applySort = (query: any, sortOption: string) => {
     switch (sortOption) {
-      case 'variety_name_asc':
-        return query.order('variety_name', { ascending: true });
-      case 'variety_name_desc':
-        return query.order('variety_name', { ascending: false });
-      case 'id_asc':
-        return query.order('id', { ascending: true });
-      case 'id_desc':
-        return query.order('id', { ascending: false });
-      case 'vendor_asc':
-        return query.order('vendor', { ascending: true, nullsFirst: false }).order('variety_name', { ascending: true });
-      case 'created_at_asc':
-        return query.order('created_at', { ascending: true });
+      case 'variety_name_asc': return query.order('variety_name', { ascending: true });
+      case 'variety_name_desc': return query.order('variety_name', { ascending: false });
+      case 'id_asc': return query.order('id', { ascending: true });
+      case 'id_desc': return query.order('id', { ascending: false });
+      case 'vendor_asc': return query.order('vendor', { ascending: true, nullsFirst: false }).order('variety_name', { ascending: true });
+      case 'created_at_asc': return query.order('created_at', { ascending: true });
       case 'created_at_desc':
-      default:
-        return query.order('created_at', { ascending: false });
+      default: return query.order('created_at', { ascending: false });
     }
   };
 
@@ -61,6 +56,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
             let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
             if (activeFilter !== "All") query = query.eq('category', activeFilter);
+            if (stockFilter === "In Stock") query = query.eq('out_of_stock', false);
+            if (stockFilter === "Out of Stock") query = query.eq('out_of_stock', true);
+            
             if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
             query = applySort(query, sortBy);
@@ -84,7 +82,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     if (isInitialMount) return;
     const timeoutId = setTimeout(() => { handleSetPage(0); fetchSeeds(0, true); }, 300); 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, activeFilter, sortBy]);
+  }, [searchQuery, activeFilter, stockFilter, sortBy]);
 
   const fetchSeeds = async (pageNumber: number, reset: boolean = false) => {
     setIsPagingDB(true);
@@ -92,6 +90,9 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
     let query = supabase.from('seed_inventory').select('*', { count: 'exact' });
 
     if (activeFilter !== "All") query = query.eq('category', activeFilter);
+    if (stockFilter === "In Stock") query = query.eq('out_of_stock', false);
+    if (stockFilter === "Out of Stock") query = query.eq('out_of_stock', true);
+
     if (searchQuery.trim() !== "") query = query.or(`variety_name.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%`);
 
     query = applySort(query, sortBy);
@@ -312,11 +313,23 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
           </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          <button onClick={() => handleSetActiveFilter("All")} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === 'All' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>All</button>
-          {categories.map((cat: SeedCategory) => (
-            <button key={cat.name} onClick={() => handleSetActiveFilter(cat.name)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeFilter === cat.name ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}`}>{cat.name}</button>
-          ))}
+        {/* REPLACED PILLS WITH DROPDOWNS */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <select value={activeFilter} onChange={(e) => handleSetActiveFilter(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-2 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-medium appearance-none">
+              <option value="All">All Categories</option>
+              {categories.map((cat: SeedCategory) => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
+            </select>
+            <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </div>
+          <div className="relative flex-1">
+            <select value={stockFilter} onChange={(e) => handleSetStockFilter(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-2 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-medium appearance-none">
+              <option value="All">All Stock</option>
+              <option value="In Stock">In Stock Only</option>
+              <option value="Out of Stock">Out of Stock Only</option>
+            </select>
+            <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </div>
         </div>
 
         <div className={viewMode === 'gallery' ? "grid grid-cols-4 gap-3" : "space-y-3"}>

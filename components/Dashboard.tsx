@@ -9,7 +9,7 @@ interface Props {
   userRole?: string; 
 }
 
-export default function Dashboard({ navigateTo }: Props) {
+export default function Dashboard({ navigateTo, userRole }: Props) {
   const [tasks, setTasks] = useState<FarmTask[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
@@ -62,7 +62,10 @@ export default function Dashboard({ navigateTo }: Props) {
         const beds: GardenBed[] = bedRes.data || [];
         let currentTasks: FarmTask[] = taskRes.data || [];
 
-        // AUTOMATION ENGINE: Check if any beds need watering today
+        // FIX: AUTOMATION ENGINE now ignores empty beds
+        const { data: activePlantings } = await supabase.from('field_plantings').select('bed_id').eq('season_id', currentSeasonId).eq('status', 'Growing');
+        const activeBedIds = new Set(activePlantings?.map(p => p.bed_id) || []);
+
         const existingBedIds = new Set(currentTasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
         const todayObj = new Date();
         todayObj.setHours(0,0,0,0);
@@ -71,19 +74,22 @@ export default function Dashboard({ navigateTo }: Props) {
         const newTasks: Partial<FarmTask>[] = [];
 
         for (const bed of beds) {
+          // If the bed has no active crop, DO NOT generate a watering task
+          if (!activeBedIds.has(bed.id)) continue;
+
           if (!existingBedIds.has(bed.id)) {
             let isDue = false;
             
             if (!bed.last_watered_date) {
-              isDue = true; // Never watered, due immediately
+              isDue = true; 
             } else {
               const lastWateredObj = new Date(bed.last_watered_date + 'T00:00:00');
               const diffTime = Math.abs(todayObj.getTime() - lastWateredObj.getTime());
               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              const freq = bed.watering_frequency_days || 3; // Default to 3 if not set
+              const freq = bed.watering_frequency_days || 3; 
               
               if (diffDays >= freq) {
-                isDue = true; // Enough days have passed
+                isDue = true; 
               }
             }
 
@@ -105,7 +111,6 @@ export default function Dashboard({ navigateTo }: Props) {
           }
         }
 
-        // If we generated new tasks, insert them and append to our state
         if (newTasks.length > 0) {
           const { data } = await supabase.from('farm_tasks').insert(newTasks).select();
           if (data) {
@@ -122,20 +127,17 @@ export default function Dashboard({ navigateTo }: Props) {
   }, []);
 
   const handleCompleteTask = async (task: FarmTask) => {
-    // 1. Optimistic UI update (snappy feel)
     setTasks(tasks.filter(t => t.id !== task.id));
     
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     const nowIso = todayObj.toISOString();
 
-    // 2. Mark task complete
     await supabase.from('farm_tasks').update({ 
       status: 'Completed', 
       completed_at: nowIso 
     }).eq('id', task.id);
 
-    // 3. Update the Bed's last watered date so the auto-generator resets the clock!
     if (task.related_bed_id && task.category === 'Watering') {
       await supabase.from('garden_beds').update({
         last_watered_date: todayStr
@@ -208,7 +210,7 @@ export default function Dashboard({ navigateTo }: Props) {
           </div>
         </section>
 
-  {/* FARM & FIELD SECTION */}
+        {/* FARM & FIELD SECTION */}
         <section>
           <h2 className="text-lg font-semibold text-stone-800 mb-3 px-1">Farm & Field</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -223,7 +225,6 @@ export default function Dashboard({ navigateTo }: Props) {
               </div>
             </button>
 
-            {/* NEW APOTHECARY BUTTON */}
             <button onClick={() => navigateTo('apothecary')} className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-stone-100 hover:border-purple-500 hover:shadow-md transition-all active:scale-95 group">
               <div className="bg-purple-100 p-3 rounded-full text-purple-600 group-hover:scale-110 transition-transform">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
@@ -268,25 +269,27 @@ export default function Dashboard({ navigateTo }: Props) {
           </div>
         </section>
 
-        {/* SYSTEM ADMIN */}
-        <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">System Administration</h2>
-          <button 
-            onClick={() => navigateTo('admin_hub')} 
-            className="w-full bg-stone-900 p-4 rounded-xl shadow-md border border-stone-800 text-left hover:bg-stone-800 hover:border-stone-600 transition-all active:scale-95 flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-stone-800 text-white p-3 rounded-lg group-hover:scale-110 group-hover:bg-emerald-600 transition-all shadow-inner">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        {/* FIX: SYSTEM ADMIN PANEL (Role Protected to prevent Access Denied) */}
+        {userRole === 'admin' && (
+          <section className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-3 px-1">System Administration</h2>
+            <button 
+              onClick={() => navigateTo('admin_hub')} 
+              className="w-full bg-stone-900 p-4 rounded-xl shadow-md border border-stone-800 text-left hover:bg-stone-800 hover:border-stone-600 transition-all active:scale-95 flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="bg-stone-800 text-white p-3 rounded-lg group-hover:scale-110 group-hover:bg-emerald-600 transition-all shadow-inner">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                </div>
+                <div>
+                  <h3 className="font-black text-white text-lg">Admin Control Panel</h3>
+                  <p className="text-xs text-stone-400 font-medium">Planners, Categories & Links</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-black text-white text-lg">Admin Control Panel</h3>
-                <p className="text-xs text-stone-400 font-medium">Planners, Categories & Links</p>
-              </div>
-            </div>
-            <svg className="w-5 h-5 text-stone-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          </button>
-        </section>
+              <svg className="w-5 h-5 text-stone-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </section>
+        )}
 
       </div>
     </main>

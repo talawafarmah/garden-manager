@@ -6,7 +6,7 @@ interface Props {
   categories: SeedCategory[];
   navigateTo: (view: AppView, payload?: any) => void;
   handleGoBack: (view: AppView) => void;
-  userRole?: string; // <-- Ensure this line is here!
+  userRole?: string; 
 }
 
 interface GrowPlanRecord {
@@ -18,7 +18,7 @@ interface GrowPlanRecord {
   sown_qty: number;
   tray_sown_qty?: number;
   indoor_start_date: string;
-  stratification_started?: boolean; // NEW
+  stratification_started?: boolean; 
   seed?: InventorySeed;
 }
 
@@ -68,6 +68,10 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const [formWeeks, setFormWeeks] = useState(6);
   const [formTargetDate, setFormTargetDate] = useState("");
   const [formQty, setFormQty] = useState(0);
+
+  // SWAP SEED STATE
+  const [swapPlan, setSwapPlan] = useState<GrowPlanRecord | null>(null);
+  const [swapSearch, setSwapSearch] = useState("");
 
   useEffect(() => {
     const fetchBaseData = async () => {
@@ -133,6 +137,17 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
       setPlans([...plans, { ...(data as GrowPlanRecord), tray_sown_qty: 0 }]);
       setActiveModal(null);
     } else alert("Error saving plan: " + error?.message);
+  };
+
+  const handleSwapSeed = async (newSeed: InventorySeed) => {
+     if (!swapPlan) return;
+     const { data, error } = await supabase.from('grow_plan').update({ seed_id: newSeed.id }).eq('id', swapPlan.id).select('*, seed:seed_inventory(*)').single();
+     if (!error && data) {
+        setPlans(plans.map(p => p.id === swapPlan.id ? { ...p, seed_id: newSeed.id, seed: data.seed } : p));
+        setSwapPlan(null);
+     } else {
+        alert("Failed to swap seed: " + error?.message);
+     }
   };
 
   const deletePlan = async (id: string) => {
@@ -225,7 +240,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
     return showCompleted || totalSown < p.planned_qty;
   });
 
-  // Calculate the actionable date (Fridge Date OR Sow Date)
   const getActionDate = (p: GrowPlanRecord) => {
     const stratDays = p.seed?.cold_stratification ? (p.seed?.stratification_days || 0) : 0;
     const totalSown = (p.sown_qty || 0) + (p.tray_sown_qty || 0);
@@ -265,6 +279,10 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-20 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('admin_hub')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+          {/* FIX: Home Button added to resolve navigation loops */}
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          </button>
           <h1 className="text-xl font-bold">Grow Planner</h1>
         </div>
       </header>
@@ -394,7 +412,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                     const totalSown = (plan.sown_qty || 0) + (plan.tray_sown_qty || 0);
                     const isComplete = totalSown >= plan.planned_qty;
                     
-                    // Determine which date we are actively waiting on
                     const actionDateStr = getActionDate(plan);
                     const actionDateObj = new Date(actionDateStr + 'T12:00:00');
                     const diffDays = Math.round((actionDateObj.getTime() - todayObj.getTime()) / (1000 * 60 * 60 * 24));
@@ -464,6 +481,12 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                                <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
                                <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
                              </div>
+                             
+                             {/* FIX: SWAP SEED BUTTON ADDED HERE */}
+                             <button onClick={(e) => { e.stopPropagation(); setSwapPlan(plan); }} className="p-1.5 text-stone-300 hover:text-blue-500 transition-colors" title="Swap Seed">
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                             </button>
+                             
                              <button onClick={() => deletePlan(plan.id)} className="p-1.5 text-stone-300 hover:text-red-500 transition-colors" title="Delete Plan"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                            </div>
                         </div>
@@ -490,6 +513,37 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
             </div>
           </div>
         </div>
+      )}
+
+      {/* FIX: SWAP SEED MODAL IMPLEMENTATION */}
+      {swapPlan && (
+         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+               <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0">
+                  <h2 className="font-black text-stone-800 tracking-tight">Swap Seed</h2>
+                  <button onClick={() => setSwapPlan(null)} className="p-1 rounded-full text-stone-400 hover:bg-stone-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+               </div>
+               <div className="p-4 flex-1 overflow-y-auto">
+                  <p className="text-xs text-stone-500 mb-4">Replacing <strong>{swapPlan.seed?.variety_name}</strong>. Showing in-stock seeds in the <strong>{swapPlan.seed?.category}</strong> category.</p>
+                  
+                  <input type="text" placeholder="Search by name..." value={swapSearch} onChange={e => setSwapSearch(e.target.value)} className="w-full mb-4 bg-white border border-stone-200 rounded-xl py-2 px-3 shadow-sm focus:border-emerald-500 outline-none text-sm" />
+                  
+                  <div className="space-y-2">
+                     {inventory
+                        .filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase()))
+                        .map(s => (
+                           <button key={s.id} onClick={() => handleSwapSeed(s)} className="w-full text-left p-3 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors flex justify-between items-center">
+                              <span className="font-bold text-stone-800">{s.variety_name}</span>
+                              <span className="text-[10px] text-stone-400 font-mono">{s.id}</span>
+                           </button>
+                        ))}
+                     {inventory.filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase())).length === 0 && (
+                        <p className="text-center text-stone-400 text-xs py-4">No available seeds to swap with.</p>
+                     )}
+                  </div>
+               </div>
+            </div>
+         </div>
       )}
 
       {/* PLAN SEED MODAL */}

@@ -16,9 +16,13 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
 
   const filteredAmendments = useMemo(() => {
     return initialAmendments.filter((amendment) => {
+      // FIX: Null-safe search matching so missing brand/name records don't crash the filter
+      const safeName = amendment.name || '';
+      const safeBrand = amendment.brand || '';
+      
       const matchesSearch = 
-        amendment.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        amendment.brand.toLowerCase().includes(searchTerm.toLowerCase());
+        safeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        safeBrand.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesType = typeFilter === 'all' || amendment.type === typeFilter;
 
@@ -40,10 +44,16 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
   return (
     <div className="space-y-6 pb-20">
       <div className="flex justify-between items-center px-1">
-        <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors">
-          <ArrowLeft size={24} className="text-gray-700" />
-        </button>
-        <h1 className="text-xl font-bold text-gray-900">Digital Shed</h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 -ml-2 hover:bg-gray-200 rounded-full transition-colors" title="Go Back">
+            <ArrowLeft size={24} className="text-gray-700" />
+          </button>
+          {/* FIX: Explicit Home Button to prevent navigation loops */}
+          <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          </button>
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
         <button 
           onClick={() => navigateTo('amendment_new')}
           className="bg-green-700 text-white p-2 rounded-full shadow-lg active:scale-90 transition-transform"
