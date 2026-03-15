@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Amendment, AmendmentType, FeedingSchedule } from '@/types/amendments';
+import { Amendment, AmendmentType } from '@/types/amendments';
 import { Camera, AlertCircle, ArrowLeft, Loader2, ListPlus } from 'lucide-react';
 import ProductCapture from './ProductCapture';
 
@@ -56,8 +56,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   
   const [pendingImages, setPendingImages] = useState<File[]>([]);
-  
-  // NEW: State to hold schedules extracted directly from the photo
   const [extractedSchedules, setExtractedSchedules] = useState<any[]>([]);
 
   const [previewUrls, setPreviewUrls] = useState<string[]>(
@@ -94,13 +92,11 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     setAnalysisMessage('Data populated! Review your changes.');
     setError(null);
 
-    // Save the array of images
     if (capturedImages && capturedImages.length > 0) {
       setPendingImages(capturedImages);
       setPreviewUrls(capturedImages.map(img => URL.createObjectURL(img)));
     }
 
-    // Save extracted schedules to be inserted alongside the amendment
     if (data.schedules && Array.isArray(data.schedules) && data.schedules.length > 0) {
       setExtractedSchedules(data.schedules);
     }
@@ -151,19 +147,24 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
         finalThumbnail = await generateThumbnail(pendingImages[0]); 
         const newImageUrls = [];
 
+        // Define our centralized bucket and the obfuscated folder path
+        const targetBucket = 'talawa_media';
+        const obfuscatedFolder = 'amend_x8q9p2'; 
+
         for (const file of pendingImages) {
           const fileExt = file.name.split('.').pop() || 'jpg';
-          const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          // File name includes the obfuscated folder structure
+          const filePath = `${obfuscatedFolder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           
           const { error: uploadError } = await supabase.storage
-            .from('amendment_images')
-            .upload(fileName, file);
+            .from(targetBucket)
+            .upload(filePath, file);
 
           if (uploadError) throw uploadError;
 
           const { data: publicUrlData } = supabase.storage
-            .from('amendment_images')
-            .getPublicUrl(fileName);
+            .from(targetBucket)
+            .getPublicUrl(filePath);
             
           newImageUrls.push(publicUrlData.publicUrl);
         }
@@ -231,7 +232,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       const { error: scheduleError } = await supabase.from('feeding_schedules').insert(schedulesPayload);
       if (scheduleError) {
         console.error("Failed to save extracted schedules:", scheduleError);
-        // We don't block the user, but we log it
       }
     }
 
@@ -282,7 +282,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           </div>
         )}
         
-        {/* NEW: Visual feedback that schedules were extracted */}
         {extractedSchedules.length > 0 && (
            <div className="mb-6 p-4 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-sm flex flex-col gap-2">
              <div className="flex items-center font-bold">
