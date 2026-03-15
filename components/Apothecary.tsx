@@ -13,6 +13,46 @@ interface ApothecaryProps {
   amendments: any[]; 
 }
 
+// --- SMART FRACTION PARSER ---
+// Converts strings like "1 1/2" or "2/3" into scalable numbers
+const calculateScaledAmount = (amountStr: string | number, multiplier: number) => {
+  if (multiplier === 1) return amountStr; // Return original text perfectly if 1x
+  if (typeof amountStr === 'number') return +(amountStr * multiplier).toFixed(2);
+  
+  const str = String(amountStr).trim();
+  if (!str) return '';
+
+  let parsed = 0;
+  let isNumeric = false;
+  
+  // Split by spaces to handle things like "1 1/2"
+  const parts = str.split(' ').filter(Boolean);
+  
+  for (const part of parts) {
+    if (part.includes('/')) {
+      const [num, den] = part.split('/');
+      const n = parseFloat(num);
+      const d = parseFloat(den);
+      if (!isNaN(n) && !isNaN(d) && d !== 0) {
+        parsed += (n / d);
+        isNumeric = true;
+      }
+    } else {
+      const n = parseFloat(part);
+      if (!isNaN(n)) {
+        parsed += n;
+        isNumeric = true;
+      }
+    }
+  }
+
+  // If the user typed a pure word like "A pinch" with no numbers, return it untouched
+  if (!isNumeric) return str; 
+  
+  // Scale the number and clean up long decimals (e.g. 1.3333333 -> 1.33)
+  return +(parsed * multiplier).toFixed(2);
+};
+
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
   const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
   
@@ -25,6 +65,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  
+  // NEW: Multiplier state for the recipe view
+  const [recipeScale, setRecipeScale] = useState(1);
 
   const [isStartingBrew, setIsStartingBrew] = useState(false);
   const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', brew_start: '' });
@@ -32,7 +75,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   // --- DATA FETCHING ---
   const fetchData = async () => {
     setIsLoading(true);
-    // Pointing back to the correct "recipes" table!
     const [recipeRes, brewRes] = await Promise.all([
       supabase.from('recipes').select('*').order('created_at', { ascending: false }),
       supabase.from('active_brews').select('*, recipes(*)').order('brew_start', { ascending: false })
@@ -54,6 +96,11 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     const interval = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Reset the recipe scale back to 1x every time a new recipe is clicked
+  useEffect(() => {
+    setRecipeScale(1);
+  }, [selectedRecipe]);
 
   const getTypeStyles = (type: string) => {
     switch (type) {
@@ -436,72 +483,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         )}
       </div>
 
-      {/* --- START BREW MODAL --- */}
-      {isStartingBrew && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-purple-800 p-4 border-b border-purple-900 flex justify-between items-center">
-              <h2 className="font-black text-white tracking-tight flex items-center gap-2"><PlayCircle size={20}/> Start Batch</h2>
-              <button onClick={() => setIsStartingBrew(false)} className="p-1 rounded-full text-purple-300 hover:bg-purple-700 hover:text-white">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-5 space-y-4">
-              {recipes.length === 0 ? (
-                <div className="text-center py-6">
-                  <p className="text-stone-500 text-sm font-medium mb-4">You need to create a recipe first!</p>
-                  <button onClick={() => { setIsStartingBrew(false); setActiveTab('recipes'); }} className="text-purple-600 font-bold">Go to Recipes</button>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Select Recipe</label>
-                    <select 
-                      value={brewForm.recipe_id} 
-                      onChange={e => {
-                        const r = recipes.find(x => x.id === e.target.value);
-                        setBrewForm({...brewForm, recipe_id: e.target.value, custom_name: r ? `Batch of ${r.name}` : ''});
-                      }} 
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-inner"
-                    >
-                      {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Batch Name / Identifier</label>
-                    <input 
-                      type="text" 
-                      value={brewForm.custom_name} 
-                      onChange={e => setBrewForm({...brewForm, custom_name: e.target.value})}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Start Time</label>
-                    <input 
-                      type="datetime-local" 
-                      value={brewForm.brew_start} 
-                      onChange={e => setBrewForm({...brewForm, brew_start: e.target.value})}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
-                    />
-                  </div>
-
-                  <button 
-                    onClick={handleStartBrew}
-                    disabled={!brewForm.recipe_id || !brewForm.custom_name}
-                    className="w-full py-4 bg-purple-700 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-4 disabled:opacity-50 hover:bg-purple-600 flex justify-center items-center gap-2"
-                  >
-                    <Flame size={16} /> Begin Brewing
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- FULL RECIPE VIEW MODAL --- */}
+      {/* --- FULL RECIPE VIEW MODAL WITH SCALER --- */}
       {selectedRecipe && (() => {
          const styles = getTypeStyles(selectedRecipe.type);
          return (
@@ -553,15 +535,36 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
                 {selectedRecipe.ingredients && selectedRecipe.ingredients.length > 0 && (
                   <section>
-                    <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Ingredients Needed</h3>
-                    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                    <div className="flex justify-between items-end mb-3 border-b border-stone-200 pb-2">
+                      <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-0">Ingredients Needed</h3>
+                      
+                      {/* SCALE CONTROLLER */}
+                      <div className="flex items-center gap-1 bg-stone-100 rounded-lg p-1 border border-stone-200 shadow-inner">
+                        <button 
+                          onClick={() => setRecipeScale(prev => Math.max(0.5, prev < 2 ? prev - 0.5 : prev - 1))} 
+                          className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-stone-500 hover:text-purple-700 font-bold"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center text-[10px] font-black text-purple-700">{recipeScale}x</span>
+                        <button 
+                          onClick={() => setRecipeScale(prev => prev < 1 ? prev + 0.5 : prev + 1)} 
+                          className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-stone-500 hover:text-purple-700 font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden transition-all duration-300">
                       <table className="w-full text-left text-sm">
                         <tbody className="divide-y divide-stone-100">
                           {selectedRecipe.ingredients.map((ing, i) => (
                             <tr key={i} className="hover:bg-stone-50 transition-colors">
                               <td className="py-3 px-4 font-bold text-stone-800">{ing.name}</td>
-                              <td className="py-3 px-4 text-right font-black text-purple-700">
-                                {ing.amount} <span className="text-[10px] text-stone-500 uppercase tracking-widest">{ing.unit}</span>
+                              <td className="py-3 px-4 text-right font-black text-purple-700 transition-all duration-300">
+                                {/* Applies the smart scaling function */}
+                                {calculateScaledAmount(ing.amount, recipeScale)} <span className="text-[10px] text-stone-500 uppercase tracking-widest">{ing.unit}</span>
                               </td>
                             </tr>
                           ))}
