@@ -4,10 +4,60 @@ import React, { useRef, useState } from 'react';
 import { Camera, X, Loader2, Send, Plus, Image as ImageIcon } from 'lucide-react';
 
 interface ProductCaptureProps {
-  // We now pass the raw image File back so the form can upload it to Supabase
   onAnalysisSuccess: (data: any, capturedImages: File[]) => void;
   onCancel: () => void;
 }
+
+// SMART COMPRESSOR: Shrinks massive smartphone photos before sending to the server
+const compressImage = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // 1200px is plenty of resolution for Gemini to read fine print
+        const MAX_WIDTH = 1200; 
+        const MAX_HEIGHT = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Compress to 70% quality JPEG
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(newFile);
+          } else {
+            reject(new Error('Image compression failed'));
+          }
+        }, 'image/jpeg', 0.7); 
+      };
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
 
 export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductCaptureProps) {
   const [images, setImages] = useState<File[]>([]);
@@ -26,23 +76,42 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
     setIsProcessing(true);
     setError(null);
 
-    const formData = new FormData();
-    images.forEach((img, i) => formData.append(`image_${i}`, img));
-
     try {
+      // 1. Compress all images simultaneously before sending
+      const compressedImages = await Promise.all(images.map(img => compressImage(img)));
+      
+      const formData = new FormData();
+      compressedImages.forEach((img, i) => formData.append(`image_${i}`, img));
+
+      // 2. Send the lightweight payload to the API
       const response = await fetch('/api/scrape-amendment', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      // Catch the "Request Entity Too Large" error gracefully just in case
+      if (response.status === 413) {
+         throw new Error("Images are still too large. Try taking fewer photos.");
+      }
+
+      const textResponse = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(textResponse);
+      } catch (parseErr) {
+        console.error("Failed to parse:", textResponse);
+        throw new Error("Server returned an invalid format. Please try again.");
+      }
       
       if (!response.ok) {
         throw new Error(data.error || 'Failed to analyze product.');
       }
 
-      // Pass the data AND the images back
-      onAnalysisSuccess(data, images);
+      // Pass the data AND the original images back to the form so high-res versions can be saved if needed
+      // (Or pass the compressed ones to save storage space in Supabase!)
+      onAnalysisSuccess(data, compressedImages);
+      
     } catch (err: any) {
       console.error("Capture Processing Error:", err);
       setError(err.message || 'Analysis failed. Please try clearer photos.');
@@ -112,12 +181,11 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
               className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 shadow-lg shadow-green-900/40 transition-transform"
             >
               {isProcessing ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-              {isProcessing ? 'Analyzing Data...' : 'Analyze Product'}
+              {isProcessing ? 'Compressing & Analyzing...' : 'Analyze Product'}
             </button>
           )}
         </div>
 
-        {/* Removed capture="environment" to allow Gallery access */}
         <input 
           type="file" 
           ref={fileInputRef} 
