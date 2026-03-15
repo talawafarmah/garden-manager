@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2, X } from 'lucide-react';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2, X, CheckCircle2 } from 'lucide-react';
 import AmendmentList from './amendments/AmendmentList';
 import RecipeForm from './amendments/RecipeForm';
-import { Recipe } from '@/types/amendments'; 
+import { Recipe, ActiveBrew } from '@/types/amendments'; 
 
 interface ApothecaryProps {
   navigateTo: (view: any, payload?: any) => void;
@@ -16,31 +16,42 @@ interface ApothecaryProps {
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
   const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
   
+  // --- STATE ---
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
+  const [brews, setBrews] = useState<ActiveBrew[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [now, setNow] = useState(new Date());
   
+  // Recipe Form State
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
-  
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
-  const fetchRecipes = async () => {
-    setIsLoadingRecipes(true);
-    const { data, error } = await supabase
-      .from('recipes')
-      .select('*')
-      .order('created_at', { ascending: false });
+  // Start Brew Form State
+  const [isStartingBrew, setIsStartingBrew] = useState(false);
+  const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', start_time: '' });
+
+  // --- DATA FETCHING ---
+  const fetchData = async () => {
+    setIsLoading(true);
+    const [recipeRes, brewRes] = await Promise.all([
+      supabase.from('recipes').select('*').order('created_at', { ascending: false }),
+      supabase.from('active_brews').select('*, recipe:recipes(*)').order('start_time', { ascending: false })
+    ]);
       
-    if (data && !error) {
-      setRecipes(data as Recipe[]);
-    }
-    setIsLoadingRecipes(false);
+    if (recipeRes.data) setRecipes(recipeRes.data as Recipe[]);
+    if (brewRes.data) setBrews(brewRes.data as any[]);
+    setIsLoading(false);
   };
 
   useEffect(() => {
-    fetchRecipes();
+    fetchData();
+    // Live timer engine: Update the "now" state every minute to tick progress bars forward
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
   }, []);
 
+  // --- HELPERS ---
   const getTypeStyles = (type: string) => {
     switch (type) {
       case 'liquid_tea': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', label: 'Liquid Tea', icon: <Beaker size={14}/> };
@@ -48,6 +59,77 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       case 'extract': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', label: 'Extract', icon: <LeafyGreen size={14}/> };
       case 'ferment': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100', label: 'Ferment', icon: <Flame size={14}/> };
       default: return { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-100', label: 'Unknown', icon: <Beaker size={14}/> };
+    }
+  };
+
+  const getBrewProgress = (startStr: string, targetStr?: string) => {
+    const start = new Date(startStr).getTime();
+    const current = now.getTime();
+    const elapsedMs = Math.max(0, current - start);
+    
+    const hours = Math.floor(elapsedMs / (1000 * 60 * 60));
+    const minutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60));
+    const elapsedText = `${hours}h ${minutes}m`;
+
+    if (!targetStr) return { percent: 100, elapsedText, isComplete: false, isIndefinite: true };
+
+    const target = new Date(targetStr).getTime();
+    const totalMs = Math.max(1, target - start);
+    const rawPercent = (elapsedMs / totalMs) * 100;
+    const percent = Math.min(100, Math.max(0, rawPercent));
+    
+    return { percent, elapsedText, isComplete: percent >= 100, isIndefinite: false };
+  };
+
+  // --- BREWERY ACTIONS ---
+  const handleOpenStartBrew = () => {
+    // Default to the first recipe and right now
+    const initialRecipe = recipes.length > 0 ? recipes[0].id : '';
+    const initialName = recipes.length > 0 ? `Batch of ${recipes[0].name}` : '';
+    
+    // Format local datetime for the input
+    const localNow = new Date();
+    localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
+    const timeStr = localNow.toISOString().slice(0,16);
+
+    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, start_time: timeStr });
+    setIsStartingBrew(true);
+  };
+
+  const handleStartBrew = async () => {
+    if (!brewForm.recipe_id || !brewForm.custom_name) return;
+    
+    const recipe = recipes.find(r => r.id === brewForm.recipe_id);
+    if (!recipe) return;
+
+    const startObj = new Date(brewForm.start_time);
+    let targetObj = null;
+
+    if (recipe.brew_time_hours) {
+      targetObj = new Date(startObj.getTime() + (recipe.brew_time_hours * 60 * 60 * 1000));
+    }
+
+    const payload = {
+      recipe_id: recipe.id,
+      custom_name: brewForm.custom_name,
+      status: 'brewing',
+      start_time: startObj.toISOString(),
+      target_completion_time: targetObj ? targetObj.toISOString() : null,
+    };
+
+    const { data, error } = await supabase.from('active_brews').insert([payload]).select('*, recipe:recipes(*)').single();
+    if (data && !error) {
+      setBrews([data, ...brews]);
+      setIsStartingBrew(false);
+    } else {
+      alert("Failed to start brew: " + error?.message);
+    }
+  };
+
+  const handleUpdateBrewStatus = async (id: string, newStatus: string) => {
+    const { error } = await supabase.from('active_brews').update({ status: newStatus }).eq('id', id);
+    if (!error) {
+      setBrews(brews.map(b => b.id === id ? { ...b, status: newStatus as any } : b));
     }
   };
 
@@ -74,23 +156,18 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     return (
       <RecipeForm 
         initialData={editingRecipe}
-        onClose={() => {
-          setShowRecipeForm(false);
-          setEditingRecipe(null);
-        }} 
-        onSuccess={() => {
-          setShowRecipeForm(false);
-          setEditingRecipe(null);
-          fetchRecipes(); 
-        }} 
+        onClose={() => { setShowRecipeForm(false); setEditingRecipe(null); }} 
+        onSuccess={() => { setShowRecipeForm(false); setEditingRecipe(null); fetchData(); }} 
       />
     );
   }
 
+  const activeBrews = brews.filter(b => b.status === 'brewing');
+  const historyBrews = brews.filter(b => b.status !== 'brewing');
+
   return (
     <div className="min-h-screen bg-stone-50 pb-20 font-sans relative">
       
-      {/* UNIVERSAL HEADER */}
       <header className="bg-purple-800 text-white p-4 shadow-md sticky top-0 z-30 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Go Back">
@@ -136,54 +213,108 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
       <div className="p-4 max-w-2xl mx-auto">
         
-        {/* --- BREWERY SCAFFOLD --- */}
+        {/* --- BREWERY TAB --- */}
         {activeTab === 'brewery' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-lg font-bold text-stone-800">Active Brews</h2>
-              <button className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-200 transition-colors shadow-sm">
+              <button 
+                onClick={handleOpenStartBrew}
+                className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-200 transition-colors shadow-sm"
+              >
                 <PlayCircle size={16} /> Start Brew
               </button>
             </div>
 
-            <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl pointer-events-none group-hover:scale-110 transition-transform">🫧</div>
-              <div className="flex justify-between items-start mb-3 relative z-10">
-                <div>
-                  <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md border border-amber-200 mb-2 shadow-sm">
-                    <Flame size={12} /> Aerating
-                  </span>
-                  <h3 className="text-xl font-black text-stone-900 leading-tight">Fungal Compost Tea (AACT)</h3>
+            {activeBrews.length === 0 ? (
+               <div className="text-center py-12 bg-white rounded-3xl border border-stone-200 shadow-sm">
+                 <div className="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🪣</div>
+                 <h3 className="font-black text-stone-800">Quiet in the Brewery</h3>
+                 <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Start a fresh batch of compost tea or liquid ferment to get things bubbling.</p>
+               </div>
+            ) : (
+              <div className="space-y-4">
+                {activeBrews.map(brew => {
+                  const progress = getBrewProgress(brew.start_time, brew.target_completion_time);
+                  const isExtractOrFerment = brew.recipe?.type === 'extract' || brew.recipe?.type === 'ferment';
+                  
+                  return (
+                    <div key={brew.id} className={`bg-white border ${progress.isComplete ? 'border-emerald-400 shadow-emerald-900/10' : 'border-stone-200 shadow-sm'} rounded-2xl p-5 relative overflow-hidden group transition-all`}>
+                      <div className="absolute top-0 right-0 p-4 opacity-5 text-6xl pointer-events-none group-hover:scale-110 transition-transform">
+                        {isExtractOrFerment ? '🌿' : '🫧'}
+                      </div>
+                      
+                      <div className="flex justify-between items-start mb-3 relative z-10">
+                        <div className="pr-4">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md border mb-2 shadow-sm ${progress.isComplete ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                            {progress.isComplete ? <CheckCircle2 size={12} /> : isExtractOrFerment ? <Clock size={12} /> : <Flame size={12} />} 
+                            {progress.isComplete ? 'Brew Ready!' : isExtractOrFerment ? 'Steeping' : 'Aerating'}
+                          </span>
+                          <h3 className="text-xl font-black text-stone-900 leading-tight">{brew.custom_name}</h3>
+                          <p className="text-xs text-stone-400 font-bold uppercase tracking-widest mt-1">Recipe: {brew.recipe?.name || 'Unknown'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
+                        <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                          <div className="flex items-center text-stone-400 mb-1">
+                            <Clock size={14} className="mr-1.5" />
+                            <span className="text-[9px] font-black uppercase tracking-widest">Time Elapsed</span>
+                          </div>
+                          <p className={`text-sm font-black ${progress.isComplete ? 'text-emerald-600' : 'text-stone-700'}`}>{progress.elapsedText}</p>
+                        </div>
+                        <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                          <div className="flex items-center text-stone-400 mb-1">
+                            <Droplets size={14} className="mr-1.5" />
+                            <span className="text-[9px] font-black uppercase tracking-widest">Target Time</span>
+                          </div>
+                          <p className="text-sm font-black text-stone-700">
+                            {progress.isIndefinite ? 'Indefinite' : `${brew.recipe?.brew_time_hours} Hours`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!progress.isIndefinite && (
+                        <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
+                          <div className={`h-full rounded-full transition-all duration-1000 ${progress.isComplete ? 'bg-emerald-500 w-full' : 'bg-amber-400 animate-pulse'}`} style={{ width: `${progress.percent}%` }}></div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'applied')} className={`flex-1 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md transition-colors ${progress.isComplete ? 'bg-emerald-600 hover:bg-emerald-500 animate-pulse' : 'bg-stone-800 hover:bg-stone-700'}`}>
+                          Mark as Done & Apply
+                        </button>
+                        <button onClick={() => handleUpdateBrewStatus(brew.id, 'dumped')} className="px-4 bg-stone-100 text-stone-500 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-sm border border-stone-200 hover:bg-red-50 hover:text-red-500 transition-colors">
+                          Dump
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Historical Ledger */}
+            {historyBrews.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 px-1">Brew History</h3>
+                <div className="space-y-2">
+                  {historyBrews.slice(0, 10).map(brew => (
+                    <div key={brew.id} className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-sm flex justify-between items-center">
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-0.5 block">
+                          {new Date(brew.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                        <h4 className="text-sm font-black text-stone-700">{brew.custom_name}</h4>
+                      </div>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${brew.status === 'applied' ? 'bg-emerald-200 text-emerald-700' : 'bg-red-200 text-red-700'}`}>
+                        {brew.status === 'applied' ? '✓' : '🗑'}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-4 relative z-10">
-                <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-                  <div className="flex items-center text-stone-400 mb-1">
-                    <Clock size={14} className="mr-1.5" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Time Elapsed</span>
-                  </div>
-                  <p className="text-sm font-black text-stone-700">18h 45m</p>
-                </div>
-                <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-                  <div className="flex items-center text-stone-400 mb-1">
-                    <Droplets size={14} className="mr-1.5" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Target Brew</span>
-                  </div>
-                  <p className="text-sm font-black text-stone-700">24 - 36 Hours</p>
-                </div>
-              </div>
-              <div className="w-full bg-stone-100 rounded-full h-2 mb-4 overflow-hidden shadow-inner border border-stone-200">
-                <div className="bg-amber-400 h-full w-[65%] rounded-full animate-pulse"></div>
-              </div>
-              <div className="flex gap-2">
-                <button className="flex-1 bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-md hover:bg-emerald-500 transition-colors">
-                  Mark as Done & Apply
-                </button>
-                <button className="px-4 bg-stone-100 text-stone-500 font-black uppercase tracking-widest text-[10px] py-3 rounded-xl shadow-sm border border-stone-200 hover:bg-red-50 hover:text-red-500 transition-colors">
-                  Dump
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -200,7 +331,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               </button>
             </div>
 
-            {isLoadingRecipes ? (
+            {isLoading ? (
               <div className="flex justify-center py-10 text-purple-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-700"></div>
               </div>
@@ -313,14 +444,77 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         )}
       </div>
 
+      {/* --- START BREW MODAL --- */}
+      {isStartingBrew && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-purple-800 p-4 border-b border-purple-900 flex justify-between items-center">
+              <h2 className="font-black text-white tracking-tight flex items-center gap-2"><PlayCircle size={20}/> Start Batch</h2>
+              <button onClick={() => setIsStartingBrew(false)} className="p-1 rounded-full text-purple-300 hover:bg-purple-700 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              {recipes.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-stone-500 text-sm font-medium mb-4">You need to create a recipe first!</p>
+                  <button onClick={() => { setIsStartingBrew(false); setActiveTab('recipes'); }} className="text-purple-600 font-bold">Go to Recipes</button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Select Recipe</label>
+                    <select 
+                      value={brewForm.recipe_id} 
+                      onChange={e => {
+                        const r = recipes.find(x => x.id === e.target.value);
+                        setBrewForm({...brewForm, recipe_id: e.target.value, custom_name: r ? `Batch of ${r.name}` : ''});
+                      }} 
+                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-inner"
+                    >
+                      {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Batch Name / Identifier</label>
+                    <input 
+                      type="text" 
+                      value={brewForm.custom_name} 
+                      onChange={e => setBrewForm({...brewForm, custom_name: e.target.value})}
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-purple-500 shadow-sm" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Start Time</label>
+                    <input 
+                      type="datetime-local" 
+                      value={brewForm.start_time} 
+                      onChange={e => setBrewForm({...brewForm, start_time: e.target.value})}
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-purple-500 shadow-sm" 
+                    />
+                  </div>
+
+                  <button 
+                    onClick={handleStartBrew}
+                    disabled={!brewForm.recipe_id || !brewForm.custom_name}
+                    className="w-full py-4 bg-purple-700 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-4 disabled:opacity-50 hover:bg-purple-600 flex justify-center items-center gap-2"
+                  >
+                    <Flame size={16} /> Begin Brewing
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- FULL RECIPE VIEW MODAL --- */}
       {selectedRecipe && (() => {
          const styles = getTypeStyles(selectedRecipe.type);
          return (
           <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
             <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-              
-              {/* Modal Header */}
               <div className="bg-purple-800 text-white p-4 sm:p-5 flex justify-between items-center shrink-0">
                 <div className="flex-1 min-w-0 pr-4">
                   <div className="flex items-center gap-2 mb-1">
@@ -354,9 +548,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                 </div>
               </div>
 
-              {/* Scrollable Content */}
               <div className="p-5 sm:p-6 overflow-y-auto space-y-8 bg-stone-50">
-                
                 {selectedRecipe.description && selectedRecipe.description !== '<p><br></p>' && (
                   <section>
                     <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 border-b border-stone-200 pb-2">Description / Purpose</h3>
@@ -396,14 +588,12 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     />
                   </section>
                 )}
-                
               </div>
             </div>
           </div>
          );
       })()}
 
-      {/* Global Prose Styles for HTML Content - ADDED STRICT WRAPPING RULES */}
       <style dangerouslySetInnerHTML={{__html: `
         .prose { word-break: break-word; overflow-wrap: break-word; }
         .prose p { margin-top: 0.25em; margin-bottom: 0.25em; white-space: pre-wrap; }
