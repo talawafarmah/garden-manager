@@ -282,7 +282,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
         </form>
       </div>
 
-      {/* Add some quick global styles so the rich text editor looks clean inside our containers */}
+     {/* Add some quick global styles so the rich text editor looks clean inside our containers */}
       <style dangerouslySetInnerHTML={{__html: `
         .quill-container .ql-toolbar {
           border: none !important;
@@ -298,6 +298,12 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
         }
         .quill-container .ql-editor {
           min-height: 100%;
+          color: #292524 !important; /* text-stone-800 - Forces dark text */
+          font-weight: 500;
+        }
+        .quill-container .ql-editor.ql-blank::before {
+          color: #a8a29e !important; /* text-stone-400 - Placeholder color */
+          font-style: normal;
         }
       `}} />
     </div>
