@@ -132,11 +132,20 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object. Do not include markdo
     if (!apiKey) { setErrorMsg("Missing API Key!"); setIsAnalyzing(false); return; }
     
     try {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`;
-      const fetchResponse = await fetch(proxyUrl);
-      if (!fetchResponse.ok) throw new Error("Failed to fetch data from proxy.");
+      // SWAPPED: Using our local, secure proxy API to bypass CORS blockades and rate limits
+      const fetchResponse = await fetch('/api/fetch-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importUrl })
+      });
+
       const data = await fetchResponse.json();
-      const htmlContent = data.contents;
+
+      if (!fetchResponse.ok) {
+        throw new Error(data.error || "Failed to fetch data from the target website.");
+      }
+
+      const htmlContent = data.html;
       
       const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
       let extractedImageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
