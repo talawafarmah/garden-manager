@@ -647,7 +647,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         .prose ul { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: disc; }
         .prose ol { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: decimal; }
         .prose strong { color: #1c1917; font-weight: 800; }
-        .prose a { color: #7e22ce; word-break: break-all; }
+        .prose a { color: #7e22ce; word-break: break-all;  }
       `}} />
     </div>
   );
