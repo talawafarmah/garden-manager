@@ -22,11 +22,11 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   // Drag and Drop State
   const [dragState, setDragState] = useState<{ id: string, startX: number, startY: number, initX: number, initY: number } | null>(null);
-  const GRID_SIZE = 20; // 20 pixels = 1 ft
+  const GRID_SIZE = 20; // 20 pixels = 1 unit (ft, m, etc)
 
   // Area Modals
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
-  const [areaForm, setAreaForm] = useState<{ id?: string, name: string, width: number, length: number }>({ name: '', width: 50, length: 50 });
+  const [areaForm, setAreaForm] = useState<{ id?: string, name: string, width: number, length: number, unit: string }>({ name: '', width: 50, length: 50, unit: 'ft' });
 
   // Bed Modals
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
@@ -131,14 +131,20 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   // --- AREA CRUD ---
   const openAreaModal = (area?: GardenArea) => {
-    setAreaForm(area ? { id: area.id, name: area.name, width: (area as any).width || 50, length: (area as any).length || 50 } : { name: '', width: 50, length: 50 });
+    setAreaForm(area ? { 
+      id: area.id, 
+      name: area.name, 
+      width: (area as any).width || 50, 
+      length: (area as any).length || 50,
+      unit: (area as any).unit || 'ft'
+    } : { name: '', width: 50, length: 50, unit: 'ft' });
     setIsAreaModalOpen(true);
   };
 
   const handleSaveArea = async () => {
     if (!areaForm.name.trim()) return;
     
-    const payload = { name: areaForm.name.trim(), width: areaForm.width, length: areaForm.length };
+    const payload = { name: areaForm.name.trim(), width: areaForm.width, length: areaForm.length, unit: areaForm.unit };
 
     if (areaForm.id) {
       const { data, error } = await supabase.from('garden_areas').update(payload).eq('id', areaForm.id).select().single();
@@ -172,7 +178,14 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     if (bed) {
       setBedForm({ ...bed, watering_frequency_days: bed.watering_frequency_days || 3 });
     } else {
-      setBedForm({ name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft', watering_frequency_days: 3 });
+      const activeAreaObj = areas.find(a => a.id === activeAreaId);
+      setBedForm({ 
+        name: '', 
+        type: 'Raised Bed', 
+        irrigation_type: 'Hand-water', 
+        unit: (activeAreaObj as any)?.unit || 'ft', 
+        watering_frequency_days: 3 
+      });
     }
     setIsBedModalOpen(true);
   };
@@ -238,7 +251,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       const newGrowing = Math.max(0, ledger.qty_growing - plantOutForm.qty);
       const newPlanted = ledger.qty_planted + plantOutForm.qty;
       const journalEntry: SeedlingJournalEntry = {
-        id: window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
         date: plantOutForm.date,
         type: 'EVENT',
         note: `Transplanted ${plantOutForm.qty} to ${selectedBedForPlanting.name}.`
@@ -294,7 +307,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
          const newGrowing = ledger.qty_growing + editingPlanting.qty_planted;
          const newPlanted = Math.max(0, ledger.qty_planted - editingPlanting.qty_planted);
          const journalEntry: SeedlingJournalEntry = {
-            id: window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+            id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
             date: new Date().toISOString().split('T')[0],
             type: 'EVENT',
             note: `Reverted ${editingPlanting.qty_planted} back from field map.`
@@ -376,7 +389,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
              </button>
           </div>
 
-          {/* THE SPATIAL MAP (Now bound to Area Dimensions) */}
+          {/* THE SPATIAL MAP */}
           <div className="flex-1 bg-stone-200 rounded-3xl border border-stone-300 shadow-inner overflow-auto relative">
              
              {/* The Area "Fence" Container */}
@@ -391,7 +404,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
              >
                 {/* Area Label inside the fence */}
                 <div className="absolute -top-6 left-0 text-stone-400 font-black tracking-widest uppercase text-xs">
-                  {activeArea.name} Fence Line ({((activeArea as any).width || 50)}x{((activeArea as any).length || 50)})
+                  {activeArea.name} Fence Line ({((activeArea as any).width || 50)}x{((activeArea as any).length || 50)} {((activeArea as any).unit || 'ft')})
                 </div>
 
                 {activeAreaBeds.map((bed: any) => {
@@ -435,7 +448,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
           </div>
           {isLayoutMode && (
              <div className="bg-amber-100 text-amber-800 text-xs font-bold text-center p-2 rounded-xl mt-3 animate-pulse border border-amber-200">
-               Drag and drop beds to arrange them! (1 grid square = 1 unit)
+               Drag and drop beds to arrange them! (1 grid square = 1 {((activeArea as any).unit || 'ft')})
              </div>
           )}
         </div>
@@ -536,16 +549,19 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Area Name</label>
                 <input type="text" autoFocus value={areaForm.name} onChange={(e) => setAreaForm({...areaForm, name: e.target.value})} placeholder="e.g., High Tunnel, Front Yard" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                 <div>
-                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Width (Grid Size)</label>
-                   <input type="number" min="10" value={areaForm.width} onChange={(e) => setAreaForm({...areaForm, width: Number(e.target.value)})} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
-                 </div>
-                 <div>
-                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Length (Grid Size)</label>
-                   <input type="number" min="10" value={areaForm.length} onChange={(e) => setAreaForm({...areaForm, length: Number(e.target.value)})} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
-                 </div>
+              
+              <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
+                <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3">Area Dimensions</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="10" value={areaForm.width} onChange={(e) => setAreaForm({...areaForm, width: Number(e.target.value)})} placeholder="Width" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                  <span className="text-stone-400 font-black text-xs">X</span>
+                  <input type="number" min="10" value={areaForm.length} onChange={(e) => setAreaForm({...areaForm, length: Number(e.target.value)})} placeholder="Length" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                  <select value={areaForm.unit} onChange={e => setAreaForm({...areaForm, unit: e.target.value})} className="bg-stone-200 text-stone-700 font-bold border-none rounded-lg p-2 outline-none appearance-none cursor-pointer">
+                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
               </div>
+
               <button onClick={handleSaveArea} disabled={!areaForm.name.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 disabled:opacity-50">
                 Save Area
               </button>
