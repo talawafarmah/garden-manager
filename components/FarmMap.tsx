@@ -15,13 +15,21 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // New Map UI State
+  const [activeAreaId, setActiveAreaId] = useState<string>("");
+  const [isLayoutMode, setIsLayoutMode] = useState(false);
+  const [viewingBed, setViewingBed] = useState<GardenBed | null>(null);
+
+  // Drag and Drop State
+  const [dragState, setDragState] = useState<{ id: string, startX: number, startY: number, initX: number, initY: number } | null>(null);
+  const GRID_SIZE = 20; // 20 pixels = 1 ft
+
   // Area Modals
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
-  const [areaForm, setAreaForm] = useState<{ id?: string, name: string }>({ name: '' });
+  const [areaForm, setAreaForm] = useState<{ id?: string, name: string, width: number, length: number }>({ name: '', width: 50, length: 50 });
 
   // Bed Modals
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
-  const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ 
     name: '', 
     type: 'Raised Bed', 
@@ -32,7 +40,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   // Planting Out Modal
   const [isPlantOutModalOpen, setIsPlantOutModalOpen] = useState(false);
-  const [selectedBed, setSelectedBed] = useState<GardenBed | null>(null);
+  const [selectedBedForPlanting, setSelectedBedForPlanting] = useState<GardenBed | null>(null);
   const [plantOutForm, setPlantOutForm] = useState({ ledgerId: '', qty: 1, date: '' });
   const [isSubmittingPlantOut, setIsSubmittingPlantOut] = useState(false);
 
@@ -66,7 +74,10 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', currentSeason?.id || '')
     ]);
 
-    if (areaRes.data) setAreas(areaRes.data);
+    if (areaRes.data) {
+      setAreas(areaRes.data);
+      if (areaRes.data.length > 0 && !activeAreaId) setActiveAreaId(areaRes.data[0].id);
+    }
     if (bedRes.data) setBeds(bedRes.data);
     if (plantRes.data) setPlantings(plantRes.data);
     if (ledgerRes.data) setLedgers(ledgerRes.data);
@@ -76,25 +87,70 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
+  // --- MAP DRAG & DROP ENGINE ---
+  const handlePointerDown = (e: React.PointerEvent, bed: GardenBed) => {
+    if (!isLayoutMode) {
+      setViewingBed(bed);
+      return;
+    }
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragState({
+      id: bed.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      initX: (bed as any).pos_x || 0,
+      initY: (bed as any).pos_y || 0
+    });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isLayoutMode || !dragState) return;
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    
+    const gridDx = Math.round(dx / GRID_SIZE);
+    const gridDy = Math.round(dy / GRID_SIZE);
+
+    setBeds(prev => prev.map(b => b.id === dragState.id ? {
+      ...b,
+      pos_x: Math.max(0, dragState.initX + gridDx),
+      pos_y: Math.max(0, dragState.initY + gridDy)
+    } as any : b));
+  };
+
+  const handlePointerUp = async (e: React.PointerEvent) => {
+    if (!isLayoutMode || !dragState) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    const bed: any = beds.find(b => b.id === dragState.id);
+    setDragState(null);
+    if (bed) {
+      await supabase.from('garden_beds').update({ pos_x: bed.pos_x, pos_y: bed.pos_y }).eq('id', bed.id);
+    }
+  };
+
   // --- AREA CRUD ---
   const openAreaModal = (area?: GardenArea) => {
-    setAreaForm(area ? { id: area.id, name: area.name } : { name: '' });
+    setAreaForm(area ? { id: area.id, name: area.name, width: (area as any).width || 50, length: (area as any).length || 50 } : { name: '', width: 50, length: 50 });
     setIsAreaModalOpen(true);
   };
 
   const handleSaveArea = async () => {
     if (!areaForm.name.trim()) return;
     
+    const payload = { name: areaForm.name.trim(), width: areaForm.width, length: areaForm.length };
+
     if (areaForm.id) {
-      const { data, error } = await supabase.from('garden_areas').update({ name: areaForm.name.trim() }).eq('id', areaForm.id).select().single();
+      const { data, error } = await supabase.from('garden_areas').update(payload).eq('id', areaForm.id).select().single();
       if (data) {
         setAreas(areas.map(a => a.id === areaForm.id ? data : a));
         setIsAreaModalOpen(false);
       } else { alert("Error updating area: " + error?.message); }
     } else {
-      const { data, error } = await supabase.from('garden_areas').insert([{ name: areaForm.name.trim() }]).select().single();
+      const { data, error } = await supabase.from('garden_areas').insert([payload]).select().single();
       if (data) {
         setAreas([...areas, data]);
+        setActiveAreaId(data.id);
         setIsAreaModalOpen(false);
       } else { alert("Error adding area: " + error?.message); }
     }
@@ -104,14 +160,15 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     if (confirm("Are you sure you want to delete this entire area? This will delete ALL beds and plantings inside it permanently!")) {
       const { error } = await supabase.from('garden_areas').delete().eq('id', id);
       if (!error) {
-        setAreas(areas.filter(a => a.id !== id));
+        const remaining = areas.filter(a => a.id !== id);
+        setAreas(remaining);
+        if (activeAreaId === id) setActiveAreaId(remaining.length > 0 ? remaining[0].id : "");
       } else { alert("Error deleting area: " + error.message); }
     }
   };
 
   // --- BED CRUD ---
-  const openBedModal = (areaId: string, bed?: GardenBed) => {
-    setActiveAreaId(areaId);
+  const openBedModal = (bed?: GardenBed) => {
     if (bed) {
       setBedForm({ ...bed, watering_frequency_days: bed.watering_frequency_days || 3 });
     } else {
@@ -145,13 +202,14 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       if (!error) {
         setBeds(beds.filter(b => b.id !== id));
         setIsBedModalOpen(false);
+        setViewingBed(null);
       } else { alert("Error deleting bed: " + error.message); }
     }
   };
 
   // --- PLANTING OUT WORKFLOW ---
   const openPlantOutModal = (bed: GardenBed) => {
-    setSelectedBed(bed);
+    setSelectedBedForPlanting(bed);
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     setPlantOutForm({ ledgerId: '', qty: 1, date: localToday });
@@ -159,7 +217,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   };
 
   const handlePlantOutSubmit = async () => {
-    if (!selectedBed || !plantOutForm.ledgerId || plantOutForm.qty < 1 || !activeSeason) return;
+    if (!selectedBedForPlanting || !plantOutForm.ledgerId || plantOutForm.qty < 1 || !activeSeason) return;
     setIsSubmittingPlantOut(true);
 
     try {
@@ -167,7 +225,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       if (!ledger || !ledger.seed) throw new Error("Could not find source ledger.");
 
       const { data: newPlanting, error: plantError } = await supabase.from('field_plantings').insert([{
-        bed_id: selectedBed.id,
+        bed_id: selectedBedForPlanting.id,
         seed_id: ledger.seed_id,
         season_id: activeSeason.id,
         plant_date: plantOutForm.date,
@@ -183,7 +241,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
         id: window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
         date: plantOutForm.date,
         type: 'EVENT',
-        note: `Transplanted ${plantOutForm.qty} to ${selectedBed.name}.`
+        note: `Transplanted ${plantOutForm.qty} to ${selectedBedForPlanting.name}.`
       };
       const updatedJournal = [journalEntry, ...(ledger.journal || [])];
 
@@ -231,7 +289,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     const revertToLedger = confirm("Do you want to return these plants to the Nursery Ledger? (Click OK to return to nursery, or Cancel to just delete them forever).");
 
     if (revertToLedger) {
-       // Revert logic
        const ledger = ledgers.find(l => l.seed_id === editingPlanting.seed_id && l.season_id === editingPlanting.season_id);
        if (ledger) {
          const newGrowing = ledger.qty_growing + editingPlanting.qty_planted;
@@ -262,154 +319,211 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
     return '🚰';
   };
 
+  const activeArea = areas.find(a => a.id === activeAreaId);
+  const activeAreaBeds = beds.filter(b => b.area_id === activeAreaId);
+
   return (
-    <main className="min-h-screen bg-stone-50 text-stone-900 pb-32 font-sans relative">
-      <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+    <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans relative">
+      <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-20 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors" title="Dashboard">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            </button>
+            <h1 className="text-xl font-bold">Farm Map</h1>
+          </div>
+          <button onClick={() => openAreaModal()} className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm hover:bg-emerald-500 transition-colors">
+            + Add Area
           </button>
-          {/* FIX: Explicit Home Button added here! */}
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-          </button>
-          <h1 className="text-xl font-bold">Farm Map</h1>
         </div>
-        <button onClick={() => openAreaModal()} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg shadow-sm hover:bg-emerald-500 transition-colors flex items-center gap-1">
-          + Area
-        </button>
+        
+        {/* AREA TABS */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+          {areas.map(area => (
+            <button 
+              key={area.id} 
+              onClick={() => { setActiveAreaId(area.id); setViewingBed(null); }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeAreaId === area.id ? 'bg-white text-stone-900 shadow-sm' : 'bg-stone-800 text-stone-300 hover:bg-stone-700'}`}
+            >
+              {area.name}
+            </button>
+          ))}
+        </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-4 space-y-8 mt-4">
-        {isLoading ? (
-          <div className="flex justify-center py-20 text-stone-400">
-             <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+      {isLoading ? (
+        <div className="flex justify-center py-20 text-stone-400">
+           <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        </div>
+      ) : activeArea ? (
+        <div className="p-4 flex flex-col h-[calc(100vh-140px)] max-w-6xl mx-auto">
+          {/* MAP CONTROLS */}
+          <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-stone-200 mb-4 shrink-0">
+             <div className="flex items-center gap-3">
+               <button onClick={() => openAreaModal(activeArea)} className="p-1.5 bg-stone-100 rounded-lg text-stone-500 hover:text-emerald-600 transition-colors" title="Edit Area"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+               <button onClick={() => handleDeleteArea(activeArea.id)} className="p-1.5 bg-stone-100 rounded-lg text-stone-500 hover:text-red-600 transition-colors" title="Delete Area"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+               <button onClick={() => openBedModal()} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-stone-100 border border-stone-200 px-3 py-1.5 rounded-lg hover:bg-stone-200 transition-colors shadow-sm">+ Add Bed</button>
+             </div>
+             
+             <button 
+               onClick={() => setIsLayoutMode(!isLayoutMode)} 
+               className={`px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border ${isLayoutMode ? 'bg-amber-100 text-amber-800 border-amber-300 shadow-inner' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50 shadow-sm'}`}
+             >
+               {isLayoutMode ? 'Lock Layout' : 'Map Controls'}
+             </button>
           </div>
-        ) : areas.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border border-stone-200 shadow-sm max-w-xl mx-auto">
-            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">🗺️</div>
-            <h2 className="text-lg font-black text-stone-800">Your map is empty</h2>
-            <p className="text-stone-500 text-sm mt-1 mb-6 max-w-sm mx-auto">Start by adding a high-level area (like "High Tunnel" or "Front Yard") and then build out your specific beds and containers inside it.</p>
-            <button onClick={() => openAreaModal()} className="px-6 py-3 bg-stone-900 text-white font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-stone-800 transition-transform active:scale-95">
-              Create First Area
-            </button>
-          </div>
-        ) : (
-          areas.map(area => {
-            const areaBeds = beds.filter(b => b.area_id === area.id);
-            return (
-              <section key={area.id} className="bg-white rounded-3xl shadow-sm border border-stone-200 overflow-hidden">
-                <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center gap-2">
-                  <h2 className="font-black text-stone-800 text-lg flex items-center gap-2 min-w-0 truncate">
-                    <span className="text-stone-400 shrink-0">📍</span> <span className="truncate">{area.name}</span>
-                  </h2>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => openAreaModal(area)} className="p-1.5 text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors" title="Edit Area">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                    </button>
-                    <button onClick={() => handleDeleteArea(area.id)} className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete Area">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                    <div className="w-px h-5 bg-stone-300 mx-1"></div>
-                    <button onClick={() => openBedModal(area.id)} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg hover:bg-stone-50 transition-colors shadow-sm">
-                      + Bed
-                    </button>
-                  </div>
+
+          {/* THE SPATIAL MAP (Now bound to Area Dimensions) */}
+          <div className="flex-1 bg-stone-200 rounded-3xl border border-stone-300 shadow-inner overflow-auto relative">
+             
+             {/* The Area "Fence" Container */}
+             <div 
+                className="relative bg-[radial-gradient(#a8a29e_1px,transparent_1px)] m-8 border-4 border-stone-400 border-dashed rounded-xl shadow-lg" 
+                style={{ 
+                  width: ((activeArea as any).width || 50) * GRID_SIZE, 
+                  height: ((activeArea as any).length || 50) * GRID_SIZE,
+                  backgroundSize: '20px 20px', 
+                  touchAction: isLayoutMode ? 'none' : 'auto' 
+                }}
+             >
+                {/* Area Label inside the fence */}
+                <div className="absolute -top-6 left-0 text-stone-400 font-black tracking-widest uppercase text-xs">
+                  {activeArea.name} Fence Line ({((activeArea as any).width || 50)}x{((activeArea as any).length || 50)})
                 </div>
-                
-                <div className="p-4 bg-stone-50/50">
-                  {areaBeds.length === 0 ? (
-                    <p className="text-sm text-stone-400 italic text-center py-4">No beds added to this area yet.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {areaBeds.map(bed => {
-                        const bedPlantings = plantings.filter(p => p.bed_id === bed.id);
-                        const hasDims = bed.length && bed.width;
-                        const areaSq = hasDims ? (bed.length! * bed.width!) : null;
+
+                {activeAreaBeds.map((bed: any) => {
+                   const bedPlantings = plantings.filter(p => p.bed_id === bed.id);
+                   const isDragging = dragState?.id === bed.id;
+                   
+                   // Math for rendering on grid (Default 4x8 if missing dims)
+                   const w = (bed.width || 4) * GRID_SIZE;
+                   const h = (bed.length || 8) * GRID_SIZE;
+                   const x = (bed.pos_x || 0) * GRID_SIZE;
+                   const y = (bed.pos_y || 0) * GRID_SIZE;
+
+                   return (
+                     <div 
+                        key={bed.id}
+                        onPointerDown={(e) => handlePointerDown(e, bed)}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerCancel={handlePointerUp}
+                        className={`absolute rounded-md border-2 overflow-hidden flex flex-col items-center justify-center p-1 
+                          ${isLayoutMode ? 'cursor-move' : 'cursor-pointer hover:border-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]'} 
+                          ${isDragging ? 'border-emerald-500 bg-emerald-100/80 shadow-2xl scale-105 z-50' : 'border-amber-900/60 bg-amber-800/80 shadow-md z-10'}
+                          transition-colors`}
+                        style={{ width: w, height: h, left: x, top: y, touchAction: 'none' }}
+                     >
+                        <span className="text-[10px] font-black text-amber-100 text-center leading-none tracking-tight truncate w-full px-1 drop-shadow-md">
+                          {bed.name}
+                        </span>
                         
-                        return (
-                          <div key={bed.id} className="bg-white border border-stone-200 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:border-emerald-300 transition-colors group">
-                            
-                            {/* Bed Header */}
-                            <div className="p-4 border-b border-stone-100 relative bg-stone-50 flex justify-between items-start">
-                              <div className="absolute top-0 right-0 p-3 opacity-10 text-5xl pointer-events-none group-hover:scale-110 transition-transform -translate-y-2 translate-x-2">
-                                {bed.type.includes('SIP') ? '📦' : bed.type.includes('Tree') ? '🌳' : '🛏️'}
-                              </div>
-                              <div className="relative z-10 flex-1 min-w-0 pr-2">
-                                <h3 className="font-black text-stone-800 text-lg leading-tight truncate">{bed.name}</h3>
-                                <p className="text-[9px] font-black text-stone-400 uppercase tracking-widest mt-0.5">{bed.type}</p>
-                                <div className="flex flex-wrap gap-1.5 mt-2">
-                                  <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                    {getIrrigationIcon(bed.irrigation_type)} {bed.irrigation_type} ({bed.watering_frequency_days || 3}d)
-                                  </span>
-                                  {hasDims && (
-                                    <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
-                                      📐 {bed.length}x{bed.width} {bed.unit} ({areaSq} sq {bed.unit})
-                                    </span>
-                                  )}
-                                  {!hasDims && bed.dimensions && (
-                                    <span className="bg-stone-100 text-stone-600 border border-stone-200 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm">
-                                      📐 {bed.dimensions}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <button onClick={() => openBedModal(area.id, bed)} className="p-1.5 bg-white border border-stone-200 text-stone-400 hover:text-emerald-600 hover:border-emerald-300 rounded-lg shadow-sm transition-colors relative z-10">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                              </button>
-                            </div>
+                        {!isLayoutMode && bedPlantings.length > 0 && (
+                           <div className="flex flex-wrap items-center justify-center gap-0.5 mt-1">
+                             {bedPlantings.map(p => (
+                               <span key={p.id} className="text-xs" title={p.seed?.variety_name}>🌱</span>
+                             ))}
+                           </div>
+                        )}
+                     </div>
+                   );
+                })}
+             </div>
+          </div>
+          {isLayoutMode && (
+             <div className="bg-amber-100 text-amber-800 text-xs font-bold text-center p-2 rounded-xl mt-3 animate-pulse border border-amber-200">
+               Drag and drop beds to arrange them! (1 grid square = 1 unit)
+             </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-20 bg-white rounded-3xl border border-stone-200 shadow-sm max-w-xl mx-auto m-4">
+           <h2 className="text-lg font-black text-stone-800">Your map is empty</h2>
+           <button onClick={() => openAreaModal()} className="mt-4 px-6 py-3 bg-stone-900 text-white font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-stone-800 transition-transform active:scale-95">Create First Area</button>
+        </div>
+      )}
 
-                            {/* Bed Contents */}
-                            <div className="p-4 flex-1">
-                               <div className="flex justify-between items-center mb-2">
-                                 <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400">Actively Growing</h4>
-                               </div>
-                               {bedPlantings.length === 0 ? (
-                                 <p className="text-xs text-stone-400 italic">Empty bed. Ready for planting.</p>
-                               ) : (
-                                 <div className="space-y-2">
-                                   {bedPlantings.map(plant => (
-                                      <div key={plant.id} onClick={() => openEditPlantingModal(plant)} className="flex items-center gap-3 bg-stone-50 p-2 rounded-lg border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors group/plant">
-                                        <div className={`font-black text-xs px-2 py-1.5 rounded-md flex-shrink-0 min-w-[32px] text-center border shadow-sm
-                                          ${plant.status === 'Growing' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
-                                            plant.status === 'Harvesting' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
-                                            plant.status === 'Failed' ? 'bg-red-100 text-red-700 border-red-200' : 
-                                            'bg-stone-200 text-stone-600 border-stone-300'}`}
-                                        >
-                                          {plant.qty_planted}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-bold text-stone-800 truncate group-hover/plant:text-emerald-700 transition-colors">{plant.seed?.variety_name || 'Unknown'}</p>
-                                          <p className="text-[9px] text-stone-400 uppercase tracking-widest mt-0.5">Planted {new Date(plant.plant_date).toLocaleDateString()} • {plant.status}</p>
-                                        </div>
-                                        <svg className="w-4 h-4 text-stone-300 group-hover/plant:text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                      </div>
-                                   ))}
-                                 </div>
-                               )}
-                            </div>
+      {/* BED VIEWING DETAILS MODAL (Slide Over) */}
+      {viewingBed && (() => {
+         const bedPlantings = plantings.filter(p => p.bed_id === viewingBed.id);
+         const hasDims = viewingBed.length && viewingBed.width;
+         const areaSq = hasDims ? (viewingBed.length! * viewingBed.width!) : null;
 
-                            {/* Bed Actions */}
-                            <div className="p-3 bg-stone-50 border-t border-stone-100 mt-auto">
-                              <button onClick={() => openPlantOutModal(bed)} className="w-full py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-sm hover:bg-emerald-500">
-                                🌱 Plant Out Here
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
+         return (
+          <div className="fixed inset-0 z-40 bg-stone-900/60 backdrop-blur-sm flex justify-end">
+            <div className="bg-stone-50 w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right-8 duration-300">
+               
+               <div className="bg-stone-900 p-5 shrink-0 relative">
+                  <button onClick={() => setViewingBed(null)} className="absolute top-4 right-4 p-2 bg-stone-800 text-stone-300 hover:text-white rounded-full">
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                  <h2 className="text-2xl font-black text-white leading-tight pr-10">{viewingBed.name}</h2>
+                  <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest mt-1">{viewingBed.type}</p>
+                  
+                  <div className="flex flex-wrap gap-2 mt-4">
+                     <span className="bg-blue-900/50 text-blue-200 border border-blue-700/50 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm flex items-center gap-1">
+                        {getIrrigationIcon(viewingBed.irrigation_type)} {viewingBed.irrigation_type}
+                     </span>
+                     {hasDims && (
+                        <span className="bg-stone-800 text-stone-300 border border-stone-700 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">
+                           📐 {viewingBed.length}x{viewingBed.width} {viewingBed.unit} ({areaSq} sq {viewingBed.unit})
+                        </span>
+                     )}
+                  </div>
+               </div>
+
+               <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                     <h3 className="text-xs font-black uppercase tracking-widest text-stone-400">Planted Crops</h3>
+                     <button onClick={() => { setViewingBed(null); openPlantOutModal(viewingBed); }} className="px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors shadow-sm border border-emerald-200">
+                        + Plant New
+                     </button>
+                  </div>
+
+                  {bedPlantings.length === 0 ? (
+                     <div className="bg-white p-8 rounded-2xl border border-stone-200 text-center shadow-sm">
+                        <span className="text-3xl mb-2 block opacity-50">🌱</span>
+                        <p className="text-sm font-bold text-stone-600">Bed is currently empty.</p>
+                     </div>
+                  ) : (
+                     <div className="space-y-3">
+                        {bedPlantings.map(plant => (
+                           <div key={plant.id} onClick={() => openEditPlantingModal(plant)} className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-stone-200 shadow-sm hover:border-emerald-400 cursor-pointer transition-colors group">
+                              <div className={`font-black text-sm w-12 h-12 rounded-xl flex items-center justify-center border shadow-inner
+                                 ${plant.status === 'Growing' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                                 plant.status === 'Harvesting' ? 'bg-purple-50 text-purple-700 border-purple-200' : 
+                                 plant.status === 'Failed' ? 'bg-red-50 text-red-700 border-red-200' : 
+                                 'bg-stone-100 text-stone-600 border-stone-300'}`}
+                              >
+                                 {plant.qty_planted}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                 <p className="text-base font-bold text-stone-800 truncate group-hover:text-emerald-700 transition-colors">{plant.seed?.variety_name || 'Unknown'}</p>
+                                 <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">Planted {new Date(plant.plant_date).toLocaleDateString()} • {plant.status}</p>
+                              </div>
+                              <svg className="w-5 h-5 text-stone-300 group-hover:text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                           </div>
+                        ))}
+                     </div>
                   )}
-                </div>
-              </section>
-            );
-          })
-        )}
-      </div>
+               </div>
+
+               <div className="p-4 bg-white border-t border-stone-200 shrink-0">
+                  <button onClick={() => { setViewingBed(null); openBedModal(viewingBed); }} className="w-full py-4 bg-stone-100 text-stone-700 rounded-xl font-black uppercase tracking-widest hover:bg-stone-200 transition-colors border border-stone-200">
+                     Edit Bed Settings
+                  </button>
+               </div>
+            </div>
+          </div>
+         );
+      })()}
 
       {/* CREATE/EDIT AREA MODAL */}
       {isAreaModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center">
               <h2 className="font-black text-stone-800 tracking-tight">{areaForm.id ? 'Edit Area' : 'Create Area'}</h2>
@@ -422,6 +536,16 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Area Name</label>
                 <input type="text" autoFocus value={areaForm.name} onChange={(e) => setAreaForm({...areaForm, name: e.target.value})} placeholder="e.g., High Tunnel, Front Yard" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                 <div>
+                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Width (Grid Size)</label>
+                   <input type="number" min="10" value={areaForm.width} onChange={(e) => setAreaForm({...areaForm, width: Number(e.target.value)})} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Length (Grid Size)</label>
+                   <input type="number" min="10" value={areaForm.length} onChange={(e) => setAreaForm({...areaForm, length: Number(e.target.value)})} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
+                 </div>
+              </div>
               <button onClick={handleSaveArea} disabled={!areaForm.name.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all mt-2 disabled:opacity-50">
                 Save Area
               </button>
@@ -432,7 +556,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
       {/* CREATE/EDIT BED MODAL */}
       {isBedModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex justify-between items-center">
               <h2 className="font-black text-emerald-900 tracking-tight">{bedForm.id ? 'Edit Growing Bed' : 'Add Growing Bed'}</h2>
@@ -470,11 +594,20 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
               </div>
 
               <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
-                <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3 text-center">Dimensions (Optional)</label>
+                <div className="flex justify-between items-center mb-3">
+                   <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Dimensions</label>
+                   {/* ROTATION BUTTON */}
+                   <button 
+                     onClick={() => setBedForm({...bedForm, width: bedForm.length, length: bedForm.width})}
+                     className="text-[9px] bg-stone-200 hover:bg-stone-300 text-stone-700 px-2 py-1 rounded font-black uppercase tracking-widest flex items-center gap-1 transition-colors"
+                   >
+                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> Rotate
+                   </button>
+                </div>
                 <div className="flex items-center gap-2">
-                  <input type="number" min="0" value={bedForm.length || ''} onChange={(e) => setBedForm({...bedForm, length: Number(e.target.value)})} placeholder="Length" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
-                  <span className="text-stone-400 font-black text-xs">X</span>
                   <input type="number" min="0" value={bedForm.width || ''} onChange={(e) => setBedForm({...bedForm, width: Number(e.target.value)})} placeholder="Width" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                  <span className="text-stone-400 font-black text-xs">X</span>
+                  <input type="number" min="0" value={bedForm.length || ''} onChange={(e) => setBedForm({...bedForm, length: Number(e.target.value)})} placeholder="Length" className="w-full text-center bg-white border border-stone-200 rounded-lg p-2 font-bold outline-none focus:border-emerald-500 shadow-sm" />
                   <select value={bedForm.unit || 'ft'} onChange={e => setBedForm({...bedForm, unit: e.target.value})} className="bg-stone-200 text-stone-700 font-bold border-none rounded-lg p-2 outline-none appearance-none cursor-pointer">
                     {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
@@ -496,13 +629,13 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       )}
 
       {/* PLANT OUT MODAL (Move from Ledger to Bed) */}
-      {isPlantOutModalOpen && selectedBed && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+      {isPlantOutModalOpen && selectedBedForPlanting && (
+        <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             <div className="bg-emerald-800 p-4 border-b border-emerald-900 flex justify-between items-center shrink-0">
               <div>
                 <h2 className="font-black text-white tracking-tight flex items-center gap-2">🌱 Plant Out</h2>
-                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest mt-0.5">Dest: {selectedBed.name}</p>
+                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest mt-0.5">Dest: {selectedBedForPlanting.name}</p>
               </div>
               <button onClick={() => setIsPlantOutModalOpen(false)} className="p-1 rounded-full text-emerald-300 hover:bg-emerald-700 hover:text-white">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -557,7 +690,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
       {/* MANAGE PLANTING MODAL (Edit Status / Yield / Delete) */}
       {editingPlanting && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
             <div className="bg-stone-100 p-4 border-b border-stone-200 flex justify-between items-center shrink-0">
               <div>
