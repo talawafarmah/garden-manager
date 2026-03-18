@@ -80,7 +80,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       tray.id.toLowerCase().includes(q) || 
       (tray.name && tray.name.toLowerCase().includes(q)) ||
       (tray.location && tray.location.toLowerCase().includes(q)) ||
-      seedNames.some(name => name.includes(q))
+      seedNames.some(name => name.includes(q)) ||
+      seedIds.some(id => id.toLowerCase().includes(q)) // FIX: Now successfully filters by exact Seed ID
     );
   });
 
@@ -148,6 +149,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       
+      {/* Hidden Quick Add Photo Input */}
       <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleQuickPhotoUpload} className="hidden" />
 
       {isDirectAddOpen && (
@@ -249,7 +251,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               const seedNames = uniqueSeedIds.map(id => inventory.find((s: InventorySeed) => s.id === id)?.variety_name || id);
               const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
-              // FIX: Helper to safely extract string URLs
               const getThumbSrc = (seed: any) => {
                   const thumb = seed?.thumbnail;
                   if (!thumb) return null;

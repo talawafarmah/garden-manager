@@ -79,7 +79,7 @@ const getSeedStatus = (seed: InventorySeed, season: any, categories: SeedCategor
   return { canSelect: true, badge: null, modalWarning: null };
 };
 
-const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls, status }: any) => {
+const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls, status, allSeeds, onView }: any) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const rawImages = useMemo(() => { const imgs = (seed.images || []).filter((img: string) => img && typeof img === 'string' && img.trim() !== ''); if (seed.thumbnail && seed.thumbnail.trim() !== '' && !imgs.includes(seed.thumbnail)) { imgs.unshift(seed.thumbnail); } return imgs; }, [seed]);
   const showCarousel = rawImages.length > 1;
@@ -88,12 +88,42 @@ const SeedModal = ({ seed, isSelected, onClose, onToggle, signedUrls, status }: 
   const heatProfile = isPepper && seed.scoville_rating != null ? getHeatProfile(seed.scoville_rating) : null;
   const resolvedSrc = rawDisplayImage && (rawDisplayImage.startsWith('http') || rawDisplayImage.startsWith('data:')) ? rawDisplayImage : (rawDisplayImage ? signedUrls[rawDisplayImage] : null);
   
+  // SWIPE LOGIC
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if ((e.target as Element).closest('button')) return;
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => { 
+    if (touchStart) setTouchEnd(e.targetTouches[0].clientX); 
+  };
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd || !allSeeds || allSeeds.length === 0) return;
+    const distance = touchStart - touchEnd;
+    const currentIndex = allSeeds.findIndex((s: InventorySeed) => s.id === seed.id);
+    
+    if (distance > 75 && currentIndex < allSeeds.length - 1) { 
+        onView(allSeeds[currentIndex + 1]);
+    } else if (distance < -75 && currentIndex > 0) { 
+        onView(allSeeds[currentIndex - 1]);
+    }
+    setTouchStart(0); setTouchEnd(0);
+  };
+
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
       <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm transition-opacity"></div>
-      <div className="relative bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+      <div 
+        className="relative bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 select-none" 
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart} 
+        onTouchMove={handleTouchMove} 
+        onTouchEnd={handleTouchEnd}
+      >
         <button onClick={onClose} className="absolute top-4 right-4 z-50 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-full flex items-center justify-center backdrop-blur-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
         <div className="aspect-[4/3] sm:aspect-[16/10] w-full bg-stone-100 relative shrink-0 group">
           {resolvedSrc ? <img src={resolvedSrc} alt={seed.variety_name} className={`w-full h-full object-contain bg-stone-200 ${(!status.canSelect || seed.out_of_stock) ? 'grayscale opacity-70' : ''}`} /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
@@ -352,7 +382,19 @@ export default function WishlistCatalog() {
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-900 pb-32 font-sans selection:bg-emerald-200">
-      {viewedSeed && <SeedModal seed={viewedSeed} isSelected={selectedSeedIds.includes(viewedSeed.id)} onClose={() => setViewedSeed(null)} onToggle={toggleSeedSelection} signedUrls={signedUrls} status={getSeedStatus(viewedSeed, session.seasons, categories, activeGrowingIds)} />}
+      {/* We pass allSeeds into SeedModal here so the modal knows exactly which list it should swipe through */}
+      {viewedSeed && (
+        <SeedModal 
+          seed={viewedSeed} 
+          isSelected={selectedSeedIds.includes(viewedSeed.id)} 
+          onClose={() => setViewedSeed(null)} 
+          onToggle={toggleSeedSelection} 
+          signedUrls={signedUrls} 
+          status={getSeedStatus(viewedSeed, session.seasons, categories, activeGrowingIds)} 
+          allSeeds={filteredAndSortedSeeds} 
+          onView={setViewedSeed} 
+        />
+      )}
 
       <header className="bg-emerald-800 text-white pt-10 pb-20 px-4 sm:px-6 rounded-b-[2rem] sm:rounded-b-[3rem] shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-100 via-transparent to-transparent"></div>
