@@ -37,7 +37,8 @@ export default function AdminCategories({ categories, setCategories, inventory, 
           await supabase.from('seed_categories').upsert({
             name: cat.name,
             prefix: cat.prefix,
-            default_nursery_weeks: cat.default_nursery_weeks || 4
+            default_nursery_weeks: cat.default_nursery_weeks || 4,
+            is_internal: cat.is_internal || false // NEW: Save internal flag
           }, { onConflict: 'name' });
         }
       }
@@ -114,12 +115,12 @@ export default function AdminCategories({ categories, setCategories, inventory, 
 
       <div className="max-w-2xl mx-auto p-4 mt-4 space-y-8">
         
-        {/* SECTION 1: GLOBAL NURSERY WEEKS */}
+        {/* SECTION 1: GLOBAL NURSERY WEEKS & VISIBILITY */}
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4 border-b border-stone-100 pb-3">
             <div>
-              <h2 className="font-black text-stone-800 text-lg">1. Nursery Times</h2>
-              <p className="text-xs text-stone-500 mt-0.5">Set the default number of weeks each category spends indoors.</p>
+              <h2 className="font-black text-stone-800 text-lg">1. Category Settings</h2>
+              <p className="text-xs text-stone-500 mt-0.5">Manage nursery times and public wishlist visibility.</p>
             </div>
             <button onClick={handleSaveAll} disabled={isSaving} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-emerald-500 active:scale-95 transition-all disabled:opacity-50 shadow-sm flex-shrink-0">
               {isSaving ? 'Saving...' : 'Save All'}
@@ -128,20 +129,42 @@ export default function AdminCategories({ categories, setCategories, inventory, 
 
           <div className="space-y-3">
             {localCategories.map((cat, idx) => (
-              <div key={idx} className="bg-stone-50 p-3 rounded-2xl border border-stone-200 flex items-center justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-black text-stone-800 text-base truncate">{cat.name}</h3>
-                  <p className="text-[10px] font-mono text-stone-400 uppercase tracking-widest">Prefix: {cat.prefix}</p>
+              <div key={idx} className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-black text-stone-800 text-base truncate">{cat.name}</h3>
+                    <p className="text-[10px] font-mono text-stone-400 uppercase tracking-widest">Prefix: {cat.prefix}</p>
+                  </div>
+                  <div className="bg-white p-1.5 rounded-xl border border-stone-200 flex items-center gap-2 shadow-sm flex-shrink-0">
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={cat.default_nursery_weeks ?? 4} 
+                      onChange={(e) => handleUpdate(idx, 'default_nursery_weeks', Number(e.target.value))}
+                      className="w-12 sm:w-16 text-center bg-stone-50 border border-stone-300 rounded-lg py-1.5 text-sm sm:text-lg font-black text-purple-700 outline-none focus:border-purple-500 shadow-inner" 
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 mr-2">Weeks</span>
+                  </div>
                 </div>
-                <div className="bg-white p-1.5 rounded-xl border border-stone-200 flex items-center gap-2 shadow-sm flex-shrink-0">
-                  <input 
-                    type="number" 
-                    min="0"
-                    value={cat.default_nursery_weeks ?? 4} 
-                    onChange={(e) => handleUpdate(idx, 'default_nursery_weeks', Number(e.target.value))}
-                    className="w-12 sm:w-16 text-center bg-stone-50 border border-stone-300 rounded-lg py-1.5 text-sm sm:text-lg font-black text-purple-700 outline-none focus:border-purple-500 shadow-inner" 
-                  />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 mr-2">Weeks</span>
+
+                {/* NEW: Wishlist Visibility Toggle */}
+                <div className="border-t border-stone-200 pt-3 flex items-center justify-between">
+                   <label className="flex items-center gap-2 cursor-pointer group">
+                      <input 
+                        type="checkbox" 
+                        checked={cat.is_internal || false}
+                        onChange={(e) => handleUpdate(idx, 'is_internal', e.target.checked)}
+                        className="w-4 h-4 text-purple-600 rounded border-stone-300 focus:ring-purple-500 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-stone-600 group-hover:text-stone-800 transition-colors">
+                        Hide from Public Wishlist (Internal Farm Use)
+                      </span>
+                   </label>
+                   {cat.is_internal && (
+                     <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded shadow-sm">
+                        Hidden
+                     </span>
+                   )}
                 </div>
               </div>
             ))}

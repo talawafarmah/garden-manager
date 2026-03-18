@@ -19,7 +19,7 @@ export interface Amendment {
   derived_from?: string;
   barcode_upc?: string;
   image_url?: string;  // Primary image
-  images?: string[];   // NEW: Array holding all captured photos
+  images?: string[];   // Array holding all captured photos
   thumbnail?: string;  // Base64 downscaled image
   createdAt: string;
   updatedAt: string;
@@ -64,6 +64,8 @@ export interface Recipe {
   ingredients: RecipeIngredient[];
   instructions?: string;
   brew_time_hours?: number;
+  base_brew_gallons?: number; // NEW
+  dilution_ratio?: number;    // NEW
   created_at: string;
   updated_at: string;
 }

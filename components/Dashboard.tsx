@@ -14,18 +14,12 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
   const [activeSeasonId, setActiveSeasonId] = useState<string | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
 
-  // --- WAKE LOCK LOGIC ---
   const wakeLockRef = useRef<any>(null);
 
   useEffect(() => {
     const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLockRef.current = await navigator.wakeLock.request('screen');
-        }
-      } catch (err: any) {
-        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
-      }
+      try { if ('wakeLock' in navigator) wakeLockRef.current = await navigator.wakeLock.request('screen'); } 
+      catch (err: any) { console.error(`Wake Lock error: ${err.name}, ${err.message}`); }
     };
     requestWakeLock();
     const handleVisibilityChange = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
@@ -36,7 +30,7 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
     };
   }, []);
 
-  // --- SILENT AUTO-GENERATOR ---
+  // --- VERSION 3.0 SMART GENERATOR ---
   useEffect(() => {
     const initializeDashboard = async () => {
       setIsLoadingTasks(true);
@@ -49,93 +43,121 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
       }
 
       if (currentSeasonId) {
-        // Fetch Beds and currently Pending Tasks
-        const [bedRes, taskRes] = await Promise.all([
+        const [bedRes, taskRes, recipeRes, activePlantingsRes] = await Promise.all([
           supabase.from('garden_beds').select('*'),
-          supabase.from('farm_tasks')
-            .select('*')
-            .eq('season_id', currentSeasonId)
-            .eq('status', 'Pending')
-            .order('due_date', { ascending: true })
+          supabase.from('farm_tasks').select('*').eq('season_id', currentSeasonId).eq('status', 'Pending').order('due_date', { ascending: true }),
+          supabase.from('recipes').select('*'),
+          supabase.from('field_plantings').select('bed_id').eq('season_id', currentSeasonId).eq('status', 'Growing')
         ]);
 
-        const beds: GardenBed[] = bedRes.data || [];
-        let currentTasks: FarmTask[] = taskRes.data || [];
+        const beds = bedRes.data || [];
+        const recipes = recipeRes.data || [];
+        let currentTasks = taskRes.data || [];
+        const activeBedIds = new Set(activePlantingsRes.data?.map(p => p.bed_id) || []);
 
-        // Fetch beds that actually have growing plants in them
-        const { data: activePlantings } = await supabase.from('field_plantings').select('bed_id').eq('season_id', currentSeasonId).eq('status', 'Growing');
-        const activeBedIds = new Set(activePlantings?.map(p => p.bed_id) || []);
-
-        // FIX: SELF-CLEANING ENGINE
-        // Find ghost tasks (watering tasks for beds that are now empty) and prune them
+        // 1. SELF-CLEANING GHOST TASKS
         const validTasks: FarmTask[] = [];
         const staleTaskIds: string[] = [];
-
         for (const task of currentTasks) {
-          if (task.category === 'Watering' && task.related_bed_id && !activeBedIds.has(task.related_bed_id)) {
+          if ((task.category === 'Watering' || task.category === 'Feeding') && task.related_bed_id && !activeBedIds.has(task.related_bed_id)) {
             staleTaskIds.push(task.id);
-          } else {
-            validTasks.push(task);
-          }
+          } else { validTasks.push(task); }
         }
+        currentTasks = validTasks; 
+        if (staleTaskIds.length > 0) supabase.from('farm_tasks').delete().in('id', staleTaskIds).then();
+
+        // 2. SETUP VARIABLES FOR NEW TASK GENERATION
+        const existingWaterBeds = new Set(currentTasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
+        const existingFeedBeds = new Set(currentTasks.filter(t => t.category === 'Feeding').map(t => t.related_bed_id));
+        const existingBrewTitles = new Set(currentTasks.filter(t => t.category === 'Brewing').map(t => t.title));
         
-        currentTasks = validTasks; // Update our working list to only show valid tasks
-
-        // Silently delete the ghost tasks from the database so they don't pile up
-        if (staleTaskIds.length > 0) {
-          supabase.from('farm_tasks').delete().in('id', staleTaskIds).then();
-        }
-
-        const existingBedIds = new Set(currentTasks.filter(t => t.category === 'Watering').map(t => t.related_bed_id));
-        const todayObj = new Date();
-        todayObj.setHours(0,0,0,0);
+        const todayObj = new Date(); todayObj.setHours(0,0,0,0);
         const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
         
         const newTasks: Partial<FarmTask>[] = [];
+        const brewAggregation: Record<string, { recipe: any, totalDrench: number, beds: string[] }> = {};
 
+        // 3. ANALYZE BEDS FOR WATERING AND FEEDING
         for (const bed of beds) {
-          // If the bed has no active crop, DO NOT generate a watering task
           if (!activeBedIds.has(bed.id)) continue;
 
-          if (!existingBedIds.has(bed.id)) {
-            let isDue = false;
-            
-            if (!bed.last_watered_date) {
-              isDue = true; 
-            } else {
-              const lastWateredObj = new Date(bed.last_watered_date + 'T00:00:00');
-              const diffTime = Math.abs(todayObj.getTime() - lastWateredObj.getTime());
+          // --- WATERING LOGIC ---
+          if (!existingWaterBeds.has(bed.id)) {
+            let isWaterDue = !bed.last_watered_date;
+            if (bed.last_watered_date) {
+              const diffTime = Math.abs(todayObj.getTime() - new Date(bed.last_watered_date + 'T00:00:00').getTime());
               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              const freq = bed.watering_frequency_days || 3; 
-              
-              if (diffDays >= freq) {
-                isDue = true; 
-              }
+              if (diffDays >= (bed.watering_frequency_days || 3)) isWaterDue = true;
             }
-
-            if (isDue) {
-              let actionText = 'Water';
-              if (bed.irrigation_type?.includes('SIP')) actionText = 'Top up SIP Reservoir for';
-              else if (bed.irrigation_type?.includes('Olla')) actionText = 'Fill Ollas in';
-              else if (bed.irrigation_type?.includes('Drip')) actionText = 'Run Drip Line for';
-
-              newTasks.push({
-                season_id: currentSeasonId,
-                title: `${actionText} ${bed.name}`,
-                category: 'Watering',
-                due_date: todayStr,
-                status: 'Pending',
-                related_bed_id: bed.id
-              });
+            if (isWaterDue) {
+              let actionText = bed.irrigation_type?.includes('SIP') ? 'Top up SIP Reservoir for' : bed.irrigation_type?.includes('Olla') ? 'Fill Ollas in' : bed.irrigation_type?.includes('Drip') ? 'Run Drip Line for' : 'Water';
+              newTasks.push({ season_id: currentSeasonId, title: `${actionText} ${bed.name}`, category: 'Watering', due_date: todayStr, status: 'Pending', related_bed_id: bed.id });
             }
           }
+
+          // --- FEEDING & BREWING LOGIC (V3.0) ---
+          if (bed.feed_frequency_days && bed.drench_volume_gallons) {
+              let isFeedDue = false;
+              let targetFeedDateStr = todayStr;
+
+              if (!bed.last_fed_date) {
+                 isFeedDue = true;
+              } else {
+                 const lastFed = new Date(bed.last_fed_date + 'T00:00:00');
+                 const diffDays = Math.ceil(Math.abs(todayObj.getTime() - lastFed.getTime()) / (1000*60*60*24));
+                 const daysUntilFeed = bed.feed_frequency_days - diffDays;
+                 
+                 // If due within the next 3 days, trigger the workflow
+                 if (daysUntilFeed <= 3) {
+                     isFeedDue = true;
+                     const targetObj = new Date(todayObj);
+                     targetObj.setDate(targetObj.getDate() + Math.max(0, daysUntilFeed));
+                     targetFeedDateStr = `${targetObj.getFullYear()}-${String(targetObj.getMonth() + 1).padStart(2, '0')}-${String(targetObj.getDate()).padStart(2, '0')}`;
+                 }
+              }
+
+              if (isFeedDue && !existingFeedBeds.has(bed.id)) {
+                  const activeRecipeId = (bed.current_stage === 'Flowering/Fruiting' || bed.current_stage === 'Bloom') ? bed.recipe_bloom_id : bed.recipe_veg_id;
+                  const recipe = recipes.find(r => r.id === activeRecipeId);
+                  const recipeName = recipe ? recipe.name : 'Fertilizer';
+
+                  newTasks.push({ season_id: currentSeasonId, title: `Feed ${bed.name} (${recipeName})`, category: 'Feeding', due_date: targetFeedDateStr, status: 'Pending', related_bed_id: bed.id });
+
+                  // Aggregation for brewing tasks
+                  if (recipe && ['liquid_tea', 'extract', 'ferment'].includes(recipe.type)) {
+                      if (!brewAggregation[recipe.id]) brewAggregation[recipe.id] = { recipe, totalDrench: 0, beds: [] };
+                      brewAggregation[recipe.id].totalDrench += Number(bed.drench_volume_gallons);
+                      brewAggregation[recipe.id].beds.push(bed.name);
+                  }
+              }
+          }
+        }
+
+        // 4. GENERATE AGGREGATED BREW TASKS
+        for (const req of Object.values(brewAggregation)) {
+           const { recipe, totalDrench, beds } = req;
+           const dilution = recipe.dilution_ratio || 1;
+           const baseBrew = recipe.base_brew_gallons || 5;
+           
+           const concentrateNeeded = totalDrench / dilution;
+           const multiplier = concentrateNeeded / baseBrew;
+           
+           const brewTitle = `BREW: ${concentrateNeeded.toFixed(2)} Gal of ${recipe.name}`;
+           if (!existingBrewTitles.has(brewTitle)) {
+               newTasks.push({
+                   season_id: currentSeasonId,
+                   title: brewTitle,
+                   category: 'Brewing',
+                   due_date: todayStr, // Brew immediately for upcoming feeds
+                   status: 'Pending',
+                   notes: `${multiplier.toFixed(2)}x Scale Needed.\nRequires ${totalDrench} Gal drench total for: ${beds.join(', ')}`
+               });
+           }
         }
 
         if (newTasks.length > 0) {
           const { data } = await supabase.from('farm_tasks').insert(newTasks).select();
-          if (data) {
-            currentTasks = [...currentTasks, ...data].sort((a, b) => a.due_date.localeCompare(b.due_date));
-          }
+          if (data) currentTasks = [...currentTasks, ...data].sort((a, b) => a.due_date.localeCompare(b.due_date));
         }
 
         setTasks(currentTasks);
@@ -148,21 +170,26 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
 
   const handleCompleteTask = async (task: FarmTask) => {
     setTasks(tasks.filter(t => t.id !== task.id));
-    
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     const nowIso = todayObj.toISOString();
 
-    await supabase.from('farm_tasks').update({ 
-      status: 'Completed', 
-      completed_at: nowIso 
-    }).eq('id', task.id);
+    await supabase.from('farm_tasks').update({ status: 'Completed', completed_at: nowIso }).eq('id', task.id);
 
-    if (task.related_bed_id && task.category === 'Watering') {
-      await supabase.from('garden_beds').update({
-        last_watered_date: todayStr
-      }).eq('id', task.related_bed_id);
+    if (task.related_bed_id) {
+      if (task.category === 'Watering') {
+         await supabase.from('garden_beds').update({ last_watered_date: todayStr }).eq('id', task.related_bed_id);
+      } else if (task.category === 'Feeding') {
+         await supabase.from('garden_beds').update({ last_fed_date: todayStr }).eq('id', task.related_bed_id);
+      }
     }
+  };
+
+  const getCategoryStyles = (category: string) => {
+      if (category === 'Watering') return 'bg-blue-100 text-blue-700 border-blue-200';
+      if (category === 'Feeding') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      if (category === 'Brewing') return 'bg-purple-100 text-purple-800 border-purple-200';
+      return 'bg-amber-100 text-amber-700 border-amber-200';
   };
 
   return (
@@ -203,24 +230,40 @@ export default function Dashboard({ navigateTo, userRole }: Props) {
               <div className="space-y-3">
                 {tasks.map(task => {
                   const isOverdue = new Date(task.due_date + 'T00:00:00') < new Date(new Date().setHours(0,0,0,0));
+                  const isBrewing = task.category === 'Brewing';
+
                   return (
-                    <div key={task.id} className="flex items-center gap-3 p-3 bg-stone-50 rounded-lg border border-stone-100 group">
+                    <div key={task.id} className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl border border-stone-100 group transition-all hover:border-emerald-200">
                       <button 
                         onClick={() => handleCompleteTask(task)}
-                        className="w-6 h-6 rounded-full border-2 border-stone-300 flex-shrink-0 flex items-center justify-center hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
+                        className={`w-6 h-6 rounded-full border-2 mt-0.5 flex-shrink-0 flex items-center justify-center transition-colors ${isBrewing ? 'border-purple-300 hover:border-purple-500 hover:bg-purple-50' : 'border-stone-300 hover:border-emerald-500 hover:bg-emerald-50'}`}
                       >
-                        <div className="w-3 h-3 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className={`w-3 h-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity ${isBrewing ? 'bg-purple-500' : 'bg-emerald-500'}`} />
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-stone-800 leading-tight">{task.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm ${task.category === 'Watering' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                        <p className={`text-sm font-bold leading-tight ${isBrewing ? 'text-purple-900' : 'text-stone-800'}`}>{task.title}</p>
+                        
+                        {task.notes && (
+                           <p className="text-[10px] text-stone-500 mt-1.5 whitespace-pre-wrap leading-relaxed border-l-2 border-stone-200 pl-2">
+                             {task.notes}
+                           </p>
+                        )}
+                        
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${getCategoryStyles(task.category)}`}>
                             {task.category}
                           </span>
                           <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : 'text-stone-400'}`}>
                             Due: {new Date(task.due_date + 'T12:00:00').toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}
                           </span>
                         </div>
+
+                        {isBrewing && (
+                          <button onClick={() => navigateTo('apothecary')} className="mt-3 text-[10px] font-black uppercase tracking-widest text-purple-700 bg-purple-100 hover:bg-purple-200 px-3 py-1.5 rounded-lg border border-purple-200 transition-colors w-fit flex items-center gap-1.5 shadow-sm">
+                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                             Open Brewery
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

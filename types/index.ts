@@ -17,10 +17,13 @@ export type AppView =
   | 'farm_map'
   | 'apothecary';
 
-  export interface GardenArea {
+export interface GardenArea {
   id: string;
   name: string;
   description?: string;
+  width?: number;
+  length?: number;
+  unit?: string;
   created_at?: string;
 }
 
@@ -33,9 +36,17 @@ export interface GardenBed {
   watering_frequency_days?: number; 
   last_watered_date?: string;
   dimensions?: string; // Legacy
-  length?: number;     // NEW
-  width?: number;      // NEW
-  unit?: string;       // NEW
+  length?: number;     
+  width?: number;      
+  unit?: string;       
+  pos_x?: number;
+  pos_y?: number;
+  drench_volume_gallons?: number;
+  current_stage?: string;
+  recipe_veg_id?: string;
+  recipe_bloom_id?: string;
+  feed_frequency_days?: number;
+  last_fed_date?: string;
   soil_mix?: string;
   notes?: string;
   created_at?: string;
@@ -61,6 +72,7 @@ export interface SeedCategory {
   name: string;
   prefix: string;
   default_nursery_weeks?: number; 
+  is_internal?: boolean;
 }
 
 export interface SeedData {
@@ -126,6 +138,7 @@ export interface InventorySeed {
   returnPayload?: any;
   newCatName?: string;
   newCatPrefix?: string;
+  swipeContextList?: InventorySeed[]; // Added for Wishlist swiping context
 }
 
 export interface TraySeedRecord {
@@ -213,7 +226,7 @@ export interface GrowPlanRecord {
   sown_qty: number;
   tray_sown_qty?: number;
   indoor_start_date: string;
-  stratification_started?: boolean; // Added for fridge tracking
+  stratification_started?: boolean;
   seed?: InventorySeed;
 }
 
@@ -267,5 +280,5 @@ export interface ActiveBrew {
   gallons_brewed: number;
   notes?: string;
   created_at?: string;
-  recipe?: TeaRecipe; // For UI display
+  recipe?: TeaRecipe; 
 }

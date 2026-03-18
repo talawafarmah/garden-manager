@@ -13,39 +13,68 @@ interface ApothecaryProps {
   amendments: any[]; 
 }
 
-// --- SMART FRACTION PARSER ---
-const calculateScaledAmount = (amountStr: string | number, multiplier: number) => {
-  if (multiplier === 1) return amountStr; 
-  if (typeof amountStr === 'number') return +(amountStr * multiplier).toFixed(2);
-  
-  const str = String(amountStr).trim();
-  if (!str) return '';
-
-  let parsed = 0;
+// --- SMART UNIT FORMATTER ---
+const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
+  let parsedAmount = 0;
   let isNumeric = false;
+  const str = String(amountStr).trim();
   
   const parts = str.split(' ').filter(Boolean);
-  
   for (const part of parts) {
     if (part.includes('/')) {
       const [num, den] = part.split('/');
-      const n = parseFloat(num);
-      const d = parseFloat(den);
-      if (!isNaN(n) && !isNaN(d) && d !== 0) {
-        parsed += (n / d);
-        isNumeric = true;
-      }
+      const n = parseFloat(num); const d = parseFloat(den);
+      if (!isNaN(n) && !isNaN(d) && d !== 0) { parsedAmount += (n / d); isNumeric = true; }
     } else {
       const n = parseFloat(part);
-      if (!isNaN(n)) {
-        parsed += n;
-        isNumeric = true;
-      }
+      if (!isNaN(n)) { parsedAmount += n; isNumeric = true; }
     }
   }
 
-  if (!isNumeric) return str; 
-  return +(parsed * multiplier).toFixed(2);
+  // Fallback for pure text (e.g., "A pinch")
+  if (!isNumeric) return `${amountStr} ${unitStr}`; 
+
+  let total = parsedAmount * multiplier;
+  let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); // remove trailing 's'
+
+  // US Volume Hierarchy (Base: Teaspoon)
+  const usVol: Record<string, number> = {
+    'tsp': 1, 'teaspoon': 1,
+    'tbsp': 3, 'tablespoon': 3,
+    'fl oz': 6, 'fluid ounce': 6, 'oz': 6, 'ounce': 6, 
+    'c': 48, 'cup': 48,
+    'pt': 96, 'pint': 96,
+    'qt': 192, 'quart': 192,
+    'gal': 768, 'gallon': 768
+  };
+
+  if (usVol[unit]) {
+    let totalTsp = total * usVol[unit];
+    // Scale upwards to the cleanest readable unit
+    if (totalTsp >= 768) return `${+(totalTsp / 768).toFixed(2)} Gal`;
+    if (totalTsp >= 48) return `${+(totalTsp / 48).toFixed(2)} Cup`;
+    if (totalTsp >= 3) return `${+(totalTsp / 3).toFixed(2)} TBSP`;
+    return `${+(totalTsp).toFixed(2)} tsp`;
+  }
+
+  // Metric Volume (Base: ml)
+  const metricVol: Record<string, number> = { 'ml': 1, 'milliliter': 1, 'l': 1000, 'liter': 1000 };
+  if (metricVol[unit]) {
+    let totalMl = total * metricVol[unit];
+    if (totalMl >= 1000) return `${+(totalMl / 1000).toFixed(2)} L`;
+    return `${+(totalMl).toFixed(2)} ml`;
+  }
+
+  // US Weight (Base: oz)
+  const usWeight: Record<string, number> = { 'lb': 16, 'pound': 16 };
+  if (usWeight[unit]) {
+    let totalOz = total * usWeight[unit];
+    if (totalOz < 16) return `${+totalOz.toFixed(2)} oz`;
+    return `${+(totalOz / 16).toFixed(2)} lb`;
+  }
+
+  // Fallback for unrecognized units (e.g., "scoops", "handfuls", "grams")
+  return `${+total.toFixed(2)} ${unitStr}`;
 };
 
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
@@ -122,7 +151,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     return { percent, elapsedText, isComplete: percent >= 100 };
   };
 
-  // FIX 7: Ultra-safe, manual date parsing to prevent silent mobile browser crashes
   const handleOpenStartBrew = () => {
     try {
       const initialRecipe = recipes.length > 0 ? recipes[0].id : '';
@@ -296,7 +324,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                           <h3 className="text-xl font-black text-stone-900 leading-tight">{brew.custom_name}</h3>
                           <div className="flex gap-2 items-center mt-1">
                             <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">Recipe: {brew.recipe?.name || 'Unknown'}</p>
-                            {/* FIX 9: View Application Instructions directly from the active brew */}
                             {brew.recipe && (
                               <button onClick={() => setSelectedRecipe(brew.recipe)} className="flex items-center gap-1 text-[9px] bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded uppercase font-black tracking-widest hover:bg-purple-100">
                                 <ListMinus size={10} /> View Instructions
@@ -513,17 +540,15 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                       />
                     </div>
                     <div>
-                       {/* FIX 8: Batch Size Multiplier for 15-gallon bins etc */}
                        <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-1.5 ml-1">Batch Scale</label>
                        <div className="flex items-center justify-between bg-white border border-purple-200 rounded-xl px-2 py-2 shadow-sm">
-                          <button onClick={() => setBrewForm({...brewForm, multiplier: Math.max(0.5, brewForm.multiplier - 0.5)})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">-</button>
+                          <button onClick={() => setBrewForm({...brewForm, multiplier: Math.max(0.25, brewForm.multiplier - 0.25)})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">-</button>
                           <span className="text-xs font-black text-purple-700">{brewForm.multiplier}x</span>
-                          <button onClick={() => setBrewForm({...brewForm, multiplier: brewForm.multiplier + 0.5})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">+</button>
+                          <button onClick={() => setBrewForm({...brewForm, multiplier: brewForm.multiplier + 0.25})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">+</button>
                        </div>
                     </div>
                   </div>
 
-                  {/* FIX 8: Show the dynamically scaled ingredients list before they start the brew */}
                   {activeStartBrewRecipe && activeStartBrewRecipe.ingredients && activeStartBrewRecipe.ingredients.length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 my-2">
                       <h4 className="text-[9px] font-black uppercase tracking-widest text-purple-400 mb-2">Ingredients Needed For Batch</h4>
@@ -531,8 +556,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         {activeStartBrewRecipe.ingredients.map((ing, i) => (
                           <li key={i} className="flex items-center justify-between gap-2 border-b border-purple-100/50 pb-1 last:border-0 last:pb-0">
                             <span>{ing.name}</span>
+                            {/* FIX: Utilizing the Smart Formatter here */}
                             <span className="text-[10px] text-purple-700 font-black tracking-widest uppercase">
-                              {calculateScaledAmount(ing.amount, brewForm.multiplier)} {ing.unit}
+                              {formatSmartIngredient(ing.amount, ing.unit, brewForm.multiplier)}
                             </span>
                           </li>
                         ))}
@@ -621,14 +647,14 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                       
                       <div className="flex items-center gap-1 bg-stone-100 rounded-lg p-1 border border-stone-200 shadow-inner">
                         <button 
-                          onClick={() => setRecipeScale(prev => Math.max(0.5, prev < 2 ? prev - 0.5 : prev - 1))} 
+                          onClick={() => setRecipeScale(prev => Math.max(0.25, prev < 2 ? prev - 0.25 : prev - 1))} 
                           className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-stone-500 hover:text-purple-700 font-bold"
                         >
                           -
                         </button>
                         <span className="w-8 text-center text-[10px] font-black text-purple-700">{recipeScale}x</span>
                         <button 
-                          onClick={() => setRecipeScale(prev => prev < 1 ? prev + 0.5 : prev + 1)} 
+                          onClick={() => setRecipeScale(prev => prev < 1 ? prev + 0.25 : prev + 1)} 
                           className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-stone-500 hover:text-purple-700 font-bold"
                         >
                           +
@@ -643,7 +669,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             <tr key={i} className="hover:bg-stone-50 transition-colors">
                               <td className="py-3 px-4 font-bold text-stone-800">{ing.name}</td>
                               <td className="py-3 px-4 text-right font-black text-purple-700 transition-all duration-300">
-                                {calculateScaledAmount(ing.amount, recipeScale)} <span className="text-[10px] text-stone-500 uppercase tracking-widest">{ing.unit}</span>
+                                {/* FIX: Utilizing the Smart Formatter here */}
+                                {formatSmartIngredient(ing.amount, ing.unit, recipeScale)}
                               </td>
                             </tr>
                           ))}

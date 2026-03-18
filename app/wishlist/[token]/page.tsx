@@ -268,8 +268,16 @@ export default function WishlistCatalog() {
            supabase.from('season_seedlings').select('seed_id').eq('season_id', sessionData.season_id).gt('qty_growing', 0)
         ]);
 
-        if (seedData) setSeeds(seedData as InventorySeed[]);
-        if (catData) setCategories(catData as SeedCategory[]);
+        // FIX: Dynamic filtering using the 'is_internal' flag directly from the database
+        if (catData && seedData) {
+           const internalCatNames = new Set((catData as SeedCategory[]).filter(c => c.is_internal).map(c => c.name));
+           
+           const publicCats = (catData as SeedCategory[]).filter(c => !c.is_internal);
+           setCategories(publicCats);
+
+           const publicSeeds = (seedData as InventorySeed[]).filter(s => !internalCatNames.has(s.category));
+           setSeeds(publicSeeds);
+        }
 
         const growingSet = new Set<string>();
         growData?.forEach(g => growingSet.add(g.seed_id));

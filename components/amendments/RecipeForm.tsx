@@ -26,9 +26,10 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
     description: initialData?.description || '',
     instructions: initialData?.instructions || '',
     brew_time_hours: initialData?.brew_time_hours || 24,
+    base_brew_gallons: initialData?.base_brew_gallons || 5, // NEW
+    dilution_ratio: initialData?.dilution_ratio || 1,       // NEW
   });
 
-  // FIX: Default amount is now a string '1' instead of a number 1
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
     initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: '1', unit: 'Cup' }]
   );
@@ -65,6 +66,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
       description: formData.description.trim(),
       instructions: formData.instructions.trim(),
       brew_time_hours: formData.brew_time_hours,
+      base_brew_gallons: formData.base_brew_gallons, // NEW
+      dilution_ratio: formData.dilution_ratio,       // NEW
       ingredients: cleanedIngredients, 
     };
 
@@ -191,6 +194,32 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
             </div>
           </div>
 
+          {/* NEW: Smart Scaling Rules */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Smart Scaling Rules</h3>
+            <div className="bg-purple-50 p-4 rounded-3xl border border-purple-100 shadow-sm space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Base Yield Volume</label>
+                  <div className="flex items-center gap-2 bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
+                    <input type="number" min="0.1" step="0.1" value={formData.base_brew_gallons || ''} onChange={e => setFormData({...formData, base_brew_gallons: Number(e.target.value)})} className="w-full text-center font-bold text-purple-900 outline-none" />
+                    <span className="text-purple-400 font-bold text-xs pr-2">Gallons</span>
+                  </div>
+                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">What volume does this ingredient list make naturally?</p>
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Dilution Ratio</label>
+                  <div className="flex items-center gap-2 bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
+                    <span className="text-purple-400 font-black text-xs pl-2">1 :</span>
+                    <input type="number" min="1" value={formData.dilution_ratio || ''} onChange={e => setFormData({...formData, dilution_ratio: Number(e.target.value)})} className="w-full text-center font-bold text-purple-900 outline-none" />
+                  </div>
+                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">e.g., '10' means 1 part concentrate to 10 parts water.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div className="flex justify-between items-end px-1">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ingredients List</h3>
@@ -210,7 +239,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                       />
                     </div>
                     <div className="col-span-3 border-l border-purple-100 pl-2">
-                      {/* FIX: Changed from type="number" to type="text" to allow fractions like "2/3" */}
                       <input
                         type="text"
                         placeholder="Qty"
