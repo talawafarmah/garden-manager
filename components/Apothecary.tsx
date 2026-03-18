@@ -122,16 +122,22 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     return { percent, elapsedText, isComplete: percent >= 100 };
   };
 
+  // FIX 7: Ultra-safe, manual date parsing to prevent silent mobile browser crashes
   const handleOpenStartBrew = () => {
-    const initialRecipe = recipes.length > 0 ? recipes[0].id : '';
-    const initialName = recipes.length > 0 ? `Batch of ${recipes[0].name}` : '';
-    
-    const localNow = new Date();
-    localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
-    const timeStr = localNow.toISOString().slice(0,16);
+    try {
+      const initialRecipe = recipes.length > 0 ? recipes[0].id : '';
+      const initialName = recipes.length > 0 ? `Batch of ${recipes[0].name}` : '';
+      
+      const rightNow = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timeStr = `${rightNow.getFullYear()}-${pad(rightNow.getMonth() + 1)}-${pad(rightNow.getDate())}T${pad(rightNow.getHours())}:${pad(rightNow.getMinutes())}`;
 
-    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, brew_start: timeStr, multiplier: 1 });
-    setIsStartingBrew(true);
+      setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, brew_start: timeStr, multiplier: 1 });
+      setIsStartingBrew(true);
+    } catch (error: any) {
+      console.error("Failed to open start brew modal:", error);
+      alert("Error opening modal: " + (error.message || error));
+    }
   };
 
   const handleStartBrew = async () => {
@@ -150,7 +156,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       status: 'Brewing', 
       brew_start: startObj.toISOString(),
       brew_end: endObj.toISOString(),
-      gallons_brewed: 5 * brewForm.multiplier, // Scale gallons recorded in DB
+      gallons_brewed: 5 * brewForm.multiplier, 
     };
 
     const { error } = await supabase.from('active_brews').insert([payload]);
@@ -209,7 +215,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
              <ArrowLeft size={20} />
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Dashboard">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold">Apothecary</h1>
         </div>
@@ -290,7 +296,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                           <h3 className="text-xl font-black text-stone-900 leading-tight">{brew.custom_name}</h3>
                           <div className="flex gap-2 items-center mt-1">
                             <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">Recipe: {brew.recipe?.name || 'Unknown'}</p>
-                            {/* NEW: View Application Instructions directly from the active brew */}
+                            {/* FIX 9: View Application Instructions directly from the active brew */}
                             {brew.recipe && (
                               <button onClick={() => setSelectedRecipe(brew.recipe)} className="flex items-center gap-1 text-[9px] bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded uppercase font-black tracking-widest hover:bg-purple-100">
                                 <ListMinus size={10} /> View Instructions
@@ -334,6 +340,27 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {historyBrews.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 px-1">Brew History</h3>
+                <div className="space-y-2">
+                  {historyBrews.slice(0, 10).map(brew => (
+                    <div key={brew.id} className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-sm flex justify-between items-center">
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-0.5 block">
+                          {new Date(brew.brew_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                        <h4 className="text-sm font-black text-stone-700">{brew.custom_name}</h4>
+                      </div>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${brew.status === 'Applied' ? 'bg-emerald-200 text-emerald-700' : 'bg-red-200 text-red-700'}`}>
+                        {brew.status === 'Applied' ? '✓' : '🗑'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -442,9 +469,9 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         )}
       </div>
 
-      {/* --- START BREW MODAL --- */}
+      {/* --- START BREW MODAL WITH HIGHER Z-INDEX --- */}
       {isStartingBrew && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             <div className="bg-purple-800 p-4 border-b border-purple-900 flex justify-between items-center shrink-0">
               <h2 className="font-black text-white tracking-tight flex items-center gap-2"><PlayCircle size={20}/> Start Batch</h2>
@@ -486,7 +513,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                       />
                     </div>
                     <div>
-                       {/* NEW: Batch Size Multiplier for 15-gallon bins etc */}
+                       {/* FIX 8: Batch Size Multiplier for 15-gallon bins etc */}
                        <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-1.5 ml-1">Batch Scale</label>
                        <div className="flex items-center justify-between bg-white border border-purple-200 rounded-xl px-2 py-2 shadow-sm">
                           <button onClick={() => setBrewForm({...brewForm, multiplier: Math.max(0.5, brewForm.multiplier - 0.5)})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">-</button>
@@ -496,7 +523,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     </div>
                   </div>
 
-                  {/* NEW: Show the dynamically scaled ingredients list before they start the brew */}
+                  {/* FIX 8: Show the dynamically scaled ingredients list before they start the brew */}
                   {activeStartBrewRecipe && activeStartBrewRecipe.ingredients && activeStartBrewRecipe.ingredients.length > 0 && (
                     <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 my-2">
                       <h4 className="text-[9px] font-black uppercase tracking-widest text-purple-400 mb-2">Ingredients Needed For Batch</h4>
@@ -541,7 +568,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       {selectedRecipe && (() => {
          const styles = getTypeStyles(selectedRecipe.type);
          return (
-          <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+          <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
             <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
               <div className="bg-purple-800 text-white p-4 sm:p-5 flex justify-between items-center shrink-0">
                 <div className="flex-1 min-w-0 pr-4">
@@ -647,7 +674,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         .prose ul { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: disc; }
         .prose ol { margin-top: 0.25em; margin-bottom: 0.25em; padding-left: 1.25em; list-style-type: decimal; }
         .prose strong { color: #1c1917; font-weight: 800; }
-        .prose a { color: #7e22ce; word-break: break-all;  }
+        .prose a { color: #7e22ce; word-break: break-all; }
       `}} />
     </div>
   );
