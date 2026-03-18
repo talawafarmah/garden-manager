@@ -13,7 +13,7 @@ interface ApothecaryProps {
   amendments: any[]; 
 }
 
-// --- SMART UNIT FORMATTER ---
+// --- ADVANCED KITCHEN MATH ENGINE ---
 const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
   let parsedAmount = 0;
   let isNumeric = false;
@@ -31,13 +31,11 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
     }
   }
 
-  // Fallback for pure text (e.g., "A pinch")
   if (!isNumeric) return `${amountStr} ${unitStr}`; 
 
   let total = parsedAmount * multiplier;
-  let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); // remove trailing 's'
+  let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); 
 
-  // US Volume Hierarchy (Base: Teaspoon)
   const usVol: Record<string, number> = {
     'tsp': 1, 'teaspoon': 1,
     'tbsp': 3, 'tablespoon': 3,
@@ -49,31 +47,70 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   };
 
   if (usVol[unit]) {
-    let totalTsp = total * usVol[unit];
-    // Scale upwards to the cleanest readable unit
-    if (totalTsp >= 768) return `${+(totalTsp / 768).toFixed(2)} Gal`;
-    if (totalTsp >= 48) return `${+(totalTsp / 48).toFixed(2)} Cup`;
-    if (totalTsp >= 3) return `${+(totalTsp / 3).toFixed(2)} TBSP`;
-    return `${+(totalTsp).toFixed(2)} tsp`;
+    let remainingTsp = total * usVol[unit];
+    
+    const measures = [
+       { name: 'Gal', tsp: 768 },
+       { name: 'Qt', tsp: 192 },
+       { name: 'Pt', tsp: 96 },
+       { name: 'Cup', tsp: 48 },
+       { name: '1/2 Cup', tsp: 24 },
+       { name: '1/3 Cup', tsp: 16 },
+       { name: '1/4 Cup', tsp: 12 },
+       { name: '1/8 Cup', tsp: 6 },
+       { name: 'TBSP', tsp: 3 },
+       { name: '1/2 TBSP', tsp: 1.5 },
+       { name: 'tsp', tsp: 1 },
+       { name: '1/2 tsp', tsp: 0.5 },
+       { name: '1/4 tsp', tsp: 0.25 }
+    ];
+    
+    const resultParts = [];
+    for (const m of measures) {
+       if (remainingTsp >= m.tsp - 0.05) { 
+          let count = Math.floor(remainingTsp / m.tsp);
+          if (remainingTsp / m.tsp - count > 0.95) count += 1; 
+
+          if (count > 0) {
+              if (m.name.includes('/')) {
+                 resultParts.push(m.name);
+                 remainingTsp -= m.tsp;
+              } else {
+                 resultParts.push(`${count} ${m.name}`);
+                 remainingTsp -= count * m.tsp;
+              }
+          }
+       }
+    }
+    
+    if (resultParts.length === 0) return "A pinch";
+    return resultParts.slice(0, 2).join(' + ');
   }
 
-  // Metric Volume (Base: ml)
   const metricVol: Record<string, number> = { 'ml': 1, 'milliliter': 1, 'l': 1000, 'liter': 1000 };
   if (metricVol[unit]) {
     let totalMl = total * metricVol[unit];
     if (totalMl >= 1000) return `${+(totalMl / 1000).toFixed(2)} L`;
-    return `${+(totalMl).toFixed(2)} ml`;
+    return `${+(totalMl).toFixed(0)} ml`;
   }
 
-  // US Weight (Base: oz)
   const usWeight: Record<string, number> = { 'lb': 16, 'pound': 16 };
   if (usWeight[unit]) {
     let totalOz = total * usWeight[unit];
-    if (totalOz < 16) return `${+totalOz.toFixed(2)} oz`;
-    return `${+(totalOz / 16).toFixed(2)} lb`;
+    if (totalOz < 16) return `${+totalOz.toFixed(1)} oz`;
+    let lbs = Math.floor(totalOz / 16);
+    let ozLeft = +(totalOz % 16).toFixed(1);
+    if (ozLeft > 0) return `${lbs} lb + ${ozLeft} oz`;
+    return `${lbs} lb`;
+  }
+  
+  const metricWeight: Record<string, number> = { 'g': 1, 'gram': 1, 'kg': 1000, 'kilogram': 1000 };
+  if (metricWeight[unit]) {
+      let totalG = total * metricWeight[unit];
+      if (totalG >= 1000) return `${+(totalG / 1000).toFixed(2)} kg`;
+      return `${+(totalG).toFixed(0)} g`;
   }
 
-  // Fallback for unrecognized units (e.g., "scoops", "handfuls", "grams")
   return `${+total.toFixed(2)} ${unitStr}`;
 };
 
@@ -243,7 +280,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
              <ArrowLeft size={20} />
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-purple-900 rounded-full hover:bg-purple-700 transition-colors" title="Dashboard">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold">Apothecary</h1>
         </div>
@@ -556,7 +593,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         {activeStartBrewRecipe.ingredients.map((ing, i) => (
                           <li key={i} className="flex items-center justify-between gap-2 border-b border-purple-100/50 pb-1 last:border-0 last:pb-0">
                             <span>{ing.name}</span>
-                            {/* FIX: Utilizing the Smart Formatter here */}
                             <span className="text-[10px] text-purple-700 font-black tracking-widest uppercase">
                               {formatSmartIngredient(ing.amount, ing.unit, brewForm.multiplier)}
                             </span>
@@ -669,7 +705,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             <tr key={i} className="hover:bg-stone-50 transition-colors">
                               <td className="py-3 px-4 font-bold text-stone-800">{ing.name}</td>
                               <td className="py-3 px-4 text-right font-black text-purple-700 transition-all duration-300">
-                                {/* FIX: Utilizing the Smart Formatter here */}
                                 {formatSmartIngredient(ing.amount, ing.unit, recipeScale)}
                               </td>
                             </tr>
