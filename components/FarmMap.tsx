@@ -389,7 +389,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
              </button>
           </div>
 
-          {/* THE SPATIAL MAP */}
+          {/* THE SPATIAL MAP (Now bound to Area Dimensions) */}
           <div className="flex-1 bg-stone-200 rounded-3xl border border-stone-300 shadow-inner overflow-auto relative">
              
              {/* The Area "Fence" Container */}
@@ -430,7 +430,8 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                           transition-colors`}
                         style={{ width: w, height: h, left: x, top: y, touchAction: 'none' }}
                      >
-                        <span className="text-[10px] font-black text-amber-100 text-center leading-none tracking-tight truncate w-full px-1 drop-shadow-md">
+                        {/* FIX: Removed 'truncate' and added 'break-words line-clamp-3' so text wraps naturally */}
+                        <span className="text-[10px] font-black text-amber-100 text-center leading-tight tracking-tight w-full px-1 drop-shadow-md break-words line-clamp-3">
                           {bed.name}
                         </span>
                         
