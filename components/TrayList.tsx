@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeedlingTray, AppView, InventorySeed, Season } from '../types';
 
@@ -21,12 +21,17 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [seasons, setSeasons] = useState<Season[]>([]);
 
-  // Direct Add Seedlings State (No Tray)
+  // Direct Add Seedlings State
   const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
   const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSeedSearch, setShowSeedSearch] = useState(false);
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
+
+  // Quick Photo State
+  const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchSeasons = async () => {
@@ -44,8 +49,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
     let isMounted = true;
     const loadThumbnailUrls = async () => {
       try {
-        const trayImgUrls = trays.map(t => (t.images || [])[0]).filter(img => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
-        
         const seedThumbUrls = trays
           .flatMap(t => t.contents || [])
           .map(c => {
@@ -54,12 +57,10 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
           })
           .filter(img => img && typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('http'));
 
-        const urlsToFetch = [...trayImgUrls, ...seedThumbUrls as string[]];
-        if (urlsToFetch.length === 0) return;
-
-        const uniqueUrls = Array.from(new Set(urlsToFetch));
+        if (seedThumbUrls.length === 0) return;
+        const uniqueUrls = Array.from(new Set(seedThumbUrls));
         const fetchedUrls: Record<string, string> = {};
-        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(uniqueUrls, 3600);
+        const { data, error } = await supabase.storage.from('talawa_media').createSignedUrls(uniqueUrls as string[], 3600);
 
         if (data && !error) { data.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; }); }
         if (isMounted && Object.keys(fetchedUrls).length > 0) setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
@@ -100,48 +101,55 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
-      const journalEntry = {
-        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-        date: localToday,
-        type: 'ADD',
-        note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}`
-      };
+      const journalEntry = { id: Math.random().toString(36).substring(2), date: localToday, type: 'ADD', note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}` };
 
       if (existingLedger) {
-        await supabase.from('season_seedlings').update({
-          qty_growing: existingLedger.qty_growing + directAddForm.count,
-          journal: [journalEntry, ...(existingLedger.journal || [])]
-        }).eq('id', existingLedger.id);
+        await supabase.from('season_seedlings').update({ qty_growing: existingLedger.qty_growing + directAddForm.count, journal: [journalEntry, ...(existingLedger.journal || [])] }).eq('id', existingLedger.id);
       } else {
-        await supabase.from('season_seedlings').insert([{
-          seed_id: directAddForm.seedId,
-          season_id: directAddForm.seasonId,
-          qty_growing: directAddForm.count,
-          allocate_keep: 0,
-          allocate_reserve: 0,
-          qty_planted: 0,
-          qty_gifted: 0,
-          qty_sold: 0,
-          qty_dead: 0,
-          locations: {},
-          journal: [journalEntry]
-        }]);
+        await supabase.from('season_seedlings').insert([{ seed_id: directAddForm.seedId, season_id: directAddForm.seasonId, qty_growing: directAddForm.count, allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, journal: [journalEntry] }]);
       }
-
       setIsDirectAddOpen(false);
       setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: directAddForm.seasonId });
       alert("Successfully added to your nursery ledger!");
+    } catch (err: any) { alert("Failed to add seedlings: " + err.message); } finally { setIsSubmitting(false); }
+  };
+
+  const triggerPhotoUpload = (e: React.MouseEvent, trayId: string) => {
+    e.stopPropagation();
+    setUploadTargetId(trayId);
+    fileInputRef.current?.click();
+  };
+
+  const handleQuickPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadTargetId) return;
+    
+    setIsUploading(uploadTargetId);
+    try {
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const filePath = `trays/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, file);
+      if (uploadError) throw uploadError;
+      
+      const { data: publicUrlData } = supabase.storage.from('talawa_media').getPublicUrl(filePath);
+      const tray = trays.find(t => t.id === uploadTargetId);
+      const newImages = [...(tray?.images || []), publicUrlData.publicUrl];
+      
+      await supabase.from('seedling_trays').update({ images: newImages }).eq('id', uploadTargetId);
+      alert('Photo instantly added to tray gallery!');
     } catch (err: any) {
-      alert("Failed to add seedlings: " + err.message);
+      alert('Quick upload failed: ' + err.message);
     } finally {
-      setIsSubmitting(false);
+      setIsUploading(null);
+      setUploadTargetId(null);
     }
   };
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
       
-      {/* DIRECT ADD MODAL */}
+      <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleQuickPhotoUpload} className="hidden" />
+
       {isDirectAddOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           {showSeedSearch ? (
@@ -149,31 +157,21 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
                 <div className="relative flex-1">
                   <input type="text" autoFocus placeholder="Search 300+ seeds..." value={seedSearchQuery} onChange={e => setSeedSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-emerald-500 shadow-inner text-sm font-bold" />
-                  <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
-                <button onClick={() => { setShowSeedSearch(false); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <button onClick={() => { setShowSeedSearch(false); setSeedSearchQuery(""); }} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full text-stone-600 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {filteredInventoryForDirectAdd.length === 0 ? (
-                  <div className="text-center py-10 text-stone-400 text-sm">No seeds found matching "{seedSearchQuery}"</div>
-                ) : (
-                  filteredInventoryForDirectAdd.map((s: InventorySeed) => (
-                    <button key={s.id} onClick={() => { setDirectAddForm({ ...directAddForm, seedId: s.id }); setShowSeedSearch(false); setSeedSearchQuery(""); }} className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-emerald-100">
-                      <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 group-hover:border-emerald-300">
-                        {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">
-                          {s.variety_name}
-                          <span className="text-[9px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">{s.id}</span>
-                        </h4>
-                        <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate mt-0.5">{s.category}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
+                {filteredInventoryForDirectAdd.map((s: InventorySeed) => (
+                  <button key={s.id} onClick={() => { setDirectAddForm({ ...directAddForm, seedId: s.id }); setShowSeedSearch(false); setSeedSearchQuery(""); }} className="w-full text-left p-3 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-3 border border-transparent hover:border-emerald-100">
+                    <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200">
+                      {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-stone-800 text-sm truncate flex items-center gap-2">{s.variety_name}</h4>
+                      <p className="text-[10px] text-stone-500 uppercase tracking-widest truncate mt-0.5">{s.category}</p>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
@@ -183,15 +181,12 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                 <button onClick={() => setIsDirectAddOpen(false)} className="p-1 rounded-full text-emerald-600 hover:bg-emerald-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
               </div>
               <div className="p-5 space-y-4">
-                
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Seed Variety</label>
                   <button onClick={() => setShowSeedSearch(true)} className={`w-full text-left bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none hover:border-emerald-400 transition-colors shadow-inner flex items-center justify-between ${directAddForm.seedId ? 'text-stone-800 font-bold' : 'text-stone-400'}`}>
                     {directAddForm.seedId ? inventory.find(s => s.id === directAddForm.seedId)?.variety_name : "Tap to select variety..."}
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                   </button>
                 </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center">
                     <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Quantity Added</span>
@@ -204,14 +199,12 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                     </select>
                   </div>
                 </div>
-
                 <div>
                   <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Source / Notes</label>
-                  <input type="text" placeholder="e.g. Bought from local nursery..." value={directAddForm.note} onChange={(e) => setDirectAddForm({ ...directAddForm, note: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
+                  <input type="text" value={directAddForm.note} onChange={(e) => setDirectAddForm({ ...directAddForm, note: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
                 </div>
-
                 <button onClick={handleDirectAddSubmit} disabled={isSubmitting || !directAddForm.seedId || directAddForm.count < 1} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50 mt-2 hover:bg-emerald-500">
-                  {isSubmitting ? 'Saving...' : 'Add to Ledger'}
+                  Add to Ledger
                 </button>
               </div>
             </div>
@@ -221,12 +214,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
 
       <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Go Back">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-          </button>
+          <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Go Back"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg></button>
         </div>
 
         <h1 className="text-xl font-bold truncate">Nursery Trays</h1>
@@ -234,7 +223,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
         <div className="flex items-center gap-2">
           {userRole === 'admin' && (
             <>
-              {/* FIX: New Direct Add Button */}
               <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-800 text-emerald-100 rounded-lg hover:bg-emerald-600 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-600/50" title="Direct Add Seedlings">
                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
               </button>
@@ -254,61 +242,45 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
 
         <div className="space-y-3">
           {isLoadingDB ? (
-            <div className="flex justify-center items-center py-10 text-emerald-600">
-               <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-            </div>
+            <div className="flex justify-center items-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
           ) : filteredTrays.length > 0 ? (
             filteredTrays.map((tray) => {
-              const firstImage = (tray.images || [])[0];
-              const displayImg = firstImage ? (firstImage.startsWith('http') || firstImage.startsWith('data:') ? firstImage : signedUrls[firstImage]) : null;
-
               const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
-              const seedNames = uniqueSeedIds.map(id => {
-                 const seed = inventory.find((s: InventorySeed) => s.id === id);
-                 return seed ? seed.variety_name : id;
-              });
+              const seedNames = uniqueSeedIds.map(id => inventory.find((s: InventorySeed) => s.id === id)?.variety_name || id);
               const seedsDisplay = seedNames.length > 0 ? seedNames.join(', ') : 'Empty Tray (No seeds planted)';
 
-              let thumbnailContent = null;
-              if (displayImg) {
-                  thumbnailContent = <img src={displayImg} alt="Tray" className="w-full h-full object-cover" />;
-              } else {
-                  const topSeeds = [...(tray.contents || [])]
-                    .sort((a, b) => (b.sown_count || 0) - (a.sown_count || 0))
-                    .map(c => inventory.find((s: InventorySeed) => s.id === c.seed_id))
-                    .filter(s => s && s.thumbnail)
-                    .slice(0, 4);
+              // FIX: Helper to safely extract string URLs
+              const getThumbSrc = (seed: any) => {
+                  const thumb = seed?.thumbnail;
+                  if (!thumb) return null;
+                  if (typeof thumb === 'string' && (thumb.startsWith('http') || thumb.startsWith('data:'))) return thumb;
+                  return signedUrls[thumb as string] || null;
+              };
 
-                  if (topSeeds.length === 1) {
-                      const src = topSeeds[0]?.thumbnail?.startsWith('http') || topSeeds[0]?.thumbnail?.startsWith('data:') ? topSeeds[0]?.thumbnail : signedUrls[topSeeds[0]?.thumbnail || ''];
-                      thumbnailContent = src ? <img src={src} className="w-full h-full object-cover opacity-90" /> : null;
-                  } else if (topSeeds.length === 2) {
-                      const src1 = topSeeds[0]?.thumbnail?.startsWith('http') || topSeeds[0]?.thumbnail?.startsWith('data:') ? topSeeds[0]?.thumbnail : signedUrls[topSeeds[0]?.thumbnail || ''];
-                      const src2 = topSeeds[1]?.thumbnail?.startsWith('http') || topSeeds[1]?.thumbnail?.startsWith('data:') ? topSeeds[1]?.thumbnail : signedUrls[topSeeds[1]?.thumbnail || ''];
-                      thumbnailContent = (
-                          <div className="flex w-full h-full opacity-90">
-                              <div className="w-1/2 h-full border-r border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div>
-                              <div className="w-1/2 h-full">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div>
-                          </div>
-                      );
-                  } else if (topSeeds.length >= 3) {
-                      const src1 = topSeeds[0]?.thumbnail?.startsWith('http') || topSeeds[0]?.thumbnail?.startsWith('data:') ? topSeeds[0]?.thumbnail : signedUrls[topSeeds[0]?.thumbnail || ''];
-                      const src2 = topSeeds[1]?.thumbnail?.startsWith('http') || topSeeds[1]?.thumbnail?.startsWith('data:') ? topSeeds[1]?.thumbnail : signedUrls[topSeeds[1]?.thumbnail || ''];
-                      const src3 = topSeeds[2]?.thumbnail?.startsWith('http') || topSeeds[2]?.thumbnail?.startsWith('data:') ? topSeeds[2]?.thumbnail : signedUrls[topSeeds[2]?.thumbnail || ''];
-                      const src4 = topSeeds[3]?.thumbnail?.startsWith('http') || topSeeds[3]?.thumbnail?.startsWith('data:') ? topSeeds[3]?.thumbnail : signedUrls[topSeeds[3]?.thumbnail || ''];
-                      thumbnailContent = (
-                          <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-90">
-                              <div className="border-r border-b border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div>
-                              <div className="border-b border-stone-200">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div>
-                              <div className="border-r border-stone-200">{src3 && <img src={src3} className="w-full h-full object-cover" />}</div>
-                              <div>{src4 && <img src={src4} className="w-full h-full object-cover" />}</div>
-                          </div>
-                      );
-                  }
-                  
-                  if (!thumbnailContent) {
-                      thumbnailContent = <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>;
-                  }
+              let thumbnailContent = null;
+              const topSeeds = [...(tray.contents || [])]
+                .sort((a, b) => (b.sown_count || 0) - (a.sown_count || 0))
+                .map(c => inventory.find((s: InventorySeed) => s.id === c.seed_id))
+                .filter(s => s && s.thumbnail)
+                .slice(0, 4);
+
+              if (topSeeds.length === 1) {
+                  const src = getThumbSrc(topSeeds[0]);
+                  thumbnailContent = src ? <img src={src} className="w-full h-full object-cover opacity-90" /> : null;
+              } else if (topSeeds.length === 2) {
+                  const src1 = getThumbSrc(topSeeds[0]);
+                  const src2 = getThumbSrc(topSeeds[1]);
+                  thumbnailContent = (<div className="flex w-full h-full opacity-90"><div className="w-1/2 h-full border-r border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div><div className="w-1/2 h-full">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div></div>);
+              } else if (topSeeds.length >= 3) {
+                  const src1 = getThumbSrc(topSeeds[0]);
+                  const src2 = getThumbSrc(topSeeds[1]);
+                  const src3 = getThumbSrc(topSeeds[2]);
+                  const src4 = getThumbSrc(topSeeds[3]);
+                  thumbnailContent = (<div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-90"><div className="border-r border-b border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div><div className="border-b border-stone-200">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div><div className="border-r border-stone-200">{src3 && <img src={src3} className="w-full h-full object-cover" />}</div><div>{src4 && <img src={src4} className="w-full h-full object-cover" />}</div></div>);
+              }
+              
+              if (!thumbnailContent) {
+                  thumbnailContent = <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>;
               }
 
               const today = new Date();
@@ -367,7 +339,11 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               }
 
               return (
-                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className="bg-white p-3 rounded-xl border border-stone-200 shadow-sm flex gap-4 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer">
+                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className="bg-white p-3 rounded-xl border border-stone-200 shadow-sm flex gap-4 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer relative overflow-hidden group">
+                  <button onClick={(e) => triggerPhotoUpload(e, tray.id)} className="absolute top-2 right-2 p-2 bg-stone-100/80 backdrop-blur border border-stone-200 rounded-full text-stone-500 hover:bg-emerald-100 hover:text-emerald-700 hover:border-emerald-300 transition-colors shadow-sm z-10">
+                     {isUploading === tray.id ? <svg className="w-4 h-4 animate-spin text-emerald-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+                  </button>
+
                   <div className="w-20 h-20 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200 relative">
                     {thumbnailContent}
                     <div className="absolute bottom-1 right-1 flex gap-1 z-10">
@@ -375,7 +351,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                       {tray.grow_light && <span className="bg-amber-500/90 text-white p-0.5 rounded shadow-sm backdrop-blur-sm" title="Grow Lights On"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg></span>}
                     </div>
                   </div>
-                  <div className="flex-1 py-1 flex flex-col justify-between min-w-0">
+                  <div className="flex-1 py-1 flex flex-col justify-between min-w-0 pr-8">
                     <div>
                       <div className="flex justify-between items-start mb-0.5">
                         <h3 className="font-black text-stone-800 text-lg leading-none truncate pr-2">{tray.name || tray.id}</h3>
@@ -398,7 +374,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
           ) : (
             <div className="text-center py-10 text-stone-500 bg-white rounded-xl border border-stone-100 shadow-sm">
               <svg className="w-12 h-12 mx-auto text-stone-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-              <p className="font-medium">No trays found.</p>
+              <p className="font-medium">No trays found matching "{searchQuery}".</p>
             </div>
           )}
         </div>
