@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2, X, CheckCircle2 } from 'lucide-react';
+import { Beaker, BookOpen, Warehouse, Camera, Plus, ArrowLeft, Droplets, Clock, LeafyGreen, Flame, PlayCircle, Sprout, Edit2, Trash2, X, CheckCircle2, ListMinus } from 'lucide-react';
 import AmendmentList from './amendments/AmendmentList';
 import RecipeForm from './amendments/RecipeForm';
 import { Recipe, ActiveBrew } from '@/types/amendments'; 
@@ -14,9 +14,8 @@ interface ApothecaryProps {
 }
 
 // --- SMART FRACTION PARSER ---
-// Converts strings like "1 1/2" or "2/3" into scalable numbers
 const calculateScaledAmount = (amountStr: string | number, multiplier: number) => {
-  if (multiplier === 1) return amountStr; // Return original text perfectly if 1x
+  if (multiplier === 1) return amountStr; 
   if (typeof amountStr === 'number') return +(amountStr * multiplier).toFixed(2);
   
   const str = String(amountStr).trim();
@@ -25,7 +24,6 @@ const calculateScaledAmount = (amountStr: string | number, multiplier: number) =
   let parsed = 0;
   let isNumeric = false;
   
-  // Split by spaces to handle things like "1 1/2"
   const parts = str.split(' ').filter(Boolean);
   
   for (const part of parts) {
@@ -46,17 +44,13 @@ const calculateScaledAmount = (amountStr: string | number, multiplier: number) =
     }
   }
 
-  // If the user typed a pure word like "A pinch" with no numbers, return it untouched
   if (!isNumeric) return str; 
-  
-  // Scale the number and clean up long decimals (e.g. 1.3333333 -> 1.33)
   return +(parsed * multiplier).toFixed(2);
 };
 
 export default function Apothecary({ navigateTo, handleGoBack, amendments }: ApothecaryProps) {
   const [activeTab, setActiveTab] = useState<'brewery' | 'recipes' | 'inventory'>('brewery');
   
-  // --- STATE ---
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [brews, setBrews] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
@@ -66,13 +60,11 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   
-  // NEW: Multiplier state for the recipe view
   const [recipeScale, setRecipeScale] = useState(1);
 
   const [isStartingBrew, setIsStartingBrew] = useState(false);
-  const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', brew_start: '' });
+  const [brewForm, setBrewForm] = useState({ recipe_id: '', custom_name: '', brew_start: '', multiplier: 1 });
 
-  // --- DATA FETCHING ---
   const fetchData = async () => {
     setIsLoading(true);
     const [recipeRes, brewRes] = await Promise.all([
@@ -97,7 +89,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     return () => clearInterval(interval);
   }, []);
 
-  // Reset the recipe scale back to 1x every time a new recipe is clicked
   useEffect(() => {
     setRecipeScale(1);
   }, [selectedRecipe]);
@@ -139,7 +130,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
     localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
     const timeStr = localNow.toISOString().slice(0,16);
 
-    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, brew_start: timeStr });
+    setBrewForm({ recipe_id: initialRecipe, custom_name: initialName, brew_start: timeStr, multiplier: 1 });
     setIsStartingBrew(true);
   };
 
@@ -159,7 +150,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       status: 'Brewing', 
       brew_start: startObj.toISOString(),
       brew_end: endObj.toISOString(),
-      gallons_brewed: 5, 
+      gallons_brewed: 5 * brewForm.multiplier, // Scale gallons recorded in DB
     };
 
     const { error } = await supabase.from('active_brews').insert([payload]);
@@ -187,9 +178,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
   const handleDeleteRecipe = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to permanently delete the recipe "${name}"?`)) {
       const { error } = await supabase.from('recipes').delete().eq('id', id);
-      if (error) {
-        alert("Failed to delete recipe: " + error.message);
-      } else {
+      if (error) alert("Failed to delete: " + error.message);
+      else {
         setRecipes(recipes.filter(r => r.id !== id));
         if (selectedRecipe?.id === id) setSelectedRecipe(null);
       }
@@ -208,6 +198,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
   const activeBrews = brews.filter(b => b.status === 'Brewing');
   const historyBrews = brews.filter(b => b.status !== 'Brewing');
+  const activeStartBrewRecipe = recipes.find(r => r.id === brewForm.recipe_id);
 
   return (
     <div className="min-h-screen bg-stone-50 pb-20 font-sans relative">
@@ -256,6 +247,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
 
       <div className="p-4 max-w-2xl mx-auto">
         
+        {/* --- BREWERY TAB --- */}
         {activeTab === 'brewery' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-center px-1">
@@ -272,7 +264,10 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                <div className="text-center py-12 bg-white rounded-3xl border border-stone-200 shadow-sm">
                  <div className="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🪣</div>
                  <h3 className="font-black text-stone-800">Quiet in the Brewery</h3>
-                 <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">Start a fresh batch of compost tea or liquid ferment to get things bubbling.</p>
+                 <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto mb-4">Start a fresh batch of compost tea or liquid ferment to get things bubbling.</p>
+                 <button onClick={handleOpenStartBrew} className="mx-auto flex items-center gap-2 bg-purple-700 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-purple-600 transition-colors">
+                    <PlayCircle size={18} /> Start New Batch
+                 </button>
                </div>
             ) : (
               <div className="space-y-4">
@@ -293,7 +288,15 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             {progress.isComplete ? 'Brew Ready!' : isExtractOrFerment ? 'Steeping' : 'Aerating'}
                           </span>
                           <h3 className="text-xl font-black text-stone-900 leading-tight">{brew.custom_name}</h3>
-                          <p className="text-xs text-stone-400 font-bold uppercase tracking-widest mt-1">Recipe: {brew.recipe?.name || 'Unknown'}</p>
+                          <div className="flex gap-2 items-center mt-1">
+                            <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">Recipe: {brew.recipe?.name || 'Unknown'}</p>
+                            {/* NEW: View Application Instructions directly from the active brew */}
+                            {brew.recipe && (
+                              <button onClick={() => setSelectedRecipe(brew.recipe)} className="flex items-center gap-1 text-[9px] bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded uppercase font-black tracking-widest hover:bg-purple-100">
+                                <ListMinus size={10} /> View Instructions
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -331,27 +334,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     </div>
                   );
                 })}
-              </div>
-            )}
-
-            {historyBrews.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-3 px-1">Brew History</h3>
-                <div className="space-y-2">
-                  {historyBrews.slice(0, 10).map(brew => (
-                    <div key={brew.id} className="bg-stone-100 border border-stone-200 rounded-2xl p-4 shadow-sm flex justify-between items-center">
-                      <div>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 mb-0.5 block">
-                          {new Date(brew.brew_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </span>
-                        <h4 className="text-sm font-black text-stone-700">{brew.custom_name}</h4>
-                      </div>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${brew.status === 'Applied' ? 'bg-emerald-200 text-emerald-700' : 'bg-red-200 text-red-700'}`}>
-                        {brew.status === 'Applied' ? '✓' : '🗑'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>
@@ -429,29 +411,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         />
                       )}
                       
-                      {recipe.ingredients && recipe.ingredients.length > 0 && (
-                        <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
-                          <h4 className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Key Ingredients</h4>
-                          <ul className="text-xs font-bold text-stone-700 space-y-1">
-                            {recipe.ingredients.slice(0, 3).map((ing, i) => (
-                              <li key={i} className="flex items-center justify-between gap-2">
-                                <span className="flex items-center gap-2">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-purple-400"></div>
-                                  {ing.name}
-                                </span>
-                                <span className="text-[10px] text-stone-500 font-black tracking-widest uppercase">
-                                  {ing.amount} {ing.unit}
-                                </span>
-                              </li>
-                            ))}
-                            {recipe.ingredients.length > 3 && (
-                              <li className="text-[10px] text-stone-400 font-black uppercase tracking-widest text-center mt-2 pt-1 border-t border-stone-200/50">
-                                + {recipe.ingredients.length - 3} more
-                              </li>
-                            )}
-                          </ul>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -482,6 +441,101 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
           </div>
         )}
       </div>
+
+      {/* --- START BREW MODAL --- */}
+      {isStartingBrew && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="bg-purple-800 p-4 border-b border-purple-900 flex justify-between items-center shrink-0">
+              <h2 className="font-black text-white tracking-tight flex items-center gap-2"><PlayCircle size={20}/> Start Batch</h2>
+              <button onClick={() => setIsStartingBrew(false)} className="p-1 rounded-full text-purple-300 hover:bg-purple-700 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-5 overflow-y-auto space-y-4">
+              {recipes.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-stone-500 text-sm font-medium mb-4">You need to create a recipe first!</p>
+                  <button onClick={() => { setIsStartingBrew(false); setActiveTab('recipes'); }} className="text-purple-600 font-bold">Go to Recipes</button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Select Recipe</label>
+                    <select 
+                      value={brewForm.recipe_id} 
+                      onChange={e => {
+                        const r = recipes.find(x => x.id === e.target.value);
+                        setBrewForm({...brewForm, recipe_id: e.target.value, custom_name: r ? `Batch of ${r.name}` : ''});
+                      }} 
+                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-inner"
+                    >
+                      {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Batch Identifier</label>
+                      <input 
+                        type="text" 
+                        value={brewForm.custom_name} 
+                        onChange={e => setBrewForm({...brewForm, custom_name: e.target.value})}
+                        className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
+                      />
+                    </div>
+                    <div>
+                       {/* NEW: Batch Size Multiplier for 15-gallon bins etc */}
+                       <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-1.5 ml-1">Batch Scale</label>
+                       <div className="flex items-center justify-between bg-white border border-purple-200 rounded-xl px-2 py-2 shadow-sm">
+                          <button onClick={() => setBrewForm({...brewForm, multiplier: Math.max(0.5, brewForm.multiplier - 0.5)})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">-</button>
+                          <span className="text-xs font-black text-purple-700">{brewForm.multiplier}x</span>
+                          <button onClick={() => setBrewForm({...brewForm, multiplier: brewForm.multiplier + 0.5})} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded text-stone-500 font-bold hover:bg-purple-100 hover:text-purple-700">+</button>
+                       </div>
+                    </div>
+                  </div>
+
+                  {/* NEW: Show the dynamically scaled ingredients list before they start the brew */}
+                  {activeStartBrewRecipe && activeStartBrewRecipe.ingredients && activeStartBrewRecipe.ingredients.length > 0 && (
+                    <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 my-2">
+                      <h4 className="text-[9px] font-black uppercase tracking-widest text-purple-400 mb-2">Ingredients Needed For Batch</h4>
+                      <ul className="text-xs font-bold text-stone-700 space-y-1">
+                        {activeStartBrewRecipe.ingredients.map((ing, i) => (
+                          <li key={i} className="flex items-center justify-between gap-2 border-b border-purple-100/50 pb-1 last:border-0 last:pb-0">
+                            <span>{ing.name}</span>
+                            <span className="text-[10px] text-purple-700 font-black tracking-widest uppercase">
+                              {calculateScaledAmount(ing.amount, brewForm.multiplier)} {ing.unit}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Start Time</label>
+                    <input 
+                      type="datetime-local" 
+                      value={brewForm.brew_start} 
+                      onChange={e => setBrewForm({...brewForm, brew_start: e.target.value})}
+                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm" 
+                    />
+                  </div>
+
+                  <button 
+                    onClick={handleStartBrew}
+                    disabled={!brewForm.recipe_id || !brewForm.custom_name}
+                    className="w-full py-4 bg-purple-700 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-2 disabled:opacity-50 hover:bg-purple-600 flex justify-center items-center gap-2"
+                  >
+                    <Flame size={16} /> Begin Brewing
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- FULL RECIPE VIEW MODAL WITH SCALER --- */}
       {selectedRecipe && (() => {
@@ -538,7 +592,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                     <div className="flex justify-between items-end mb-3 border-b border-stone-200 pb-2">
                       <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-0">Ingredients Needed</h3>
                       
-                      {/* SCALE CONTROLLER */}
                       <div className="flex items-center gap-1 bg-stone-100 rounded-lg p-1 border border-stone-200 shadow-inner">
                         <button 
                           onClick={() => setRecipeScale(prev => Math.max(0.5, prev < 2 ? prev - 0.5 : prev - 1))} 
@@ -563,7 +616,6 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             <tr key={i} className="hover:bg-stone-50 transition-colors">
                               <td className="py-3 px-4 font-bold text-stone-800">{ing.name}</td>
                               <td className="py-3 px-4 text-right font-black text-purple-700 transition-all duration-300">
-                                {/* Applies the smart scaling function */}
                                 {calculateScaledAmount(ing.amount, recipeScale)} <span className="text-[10px] text-stone-500 uppercase tracking-widest">{ing.unit}</span>
                               </td>
                             </tr>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Amendment, AmendmentType } from '@/types/amendments';
 import { Camera, AlertCircle, ArrowLeft, Loader2, ListPlus } from 'lucide-react';
@@ -58,6 +58,9 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [extractedSchedules, setExtractedSchedules] = useState<any[]>([]);
 
+  // Add ref for manual image upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [previewUrls, setPreviewUrls] = useState<string[]>(
     initialData?.images && initialData.images.length > 0 
       ? initialData.images 
@@ -80,6 +83,15 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Handle a user just taking a normal photo without AI analysis
+  const handleManualImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPendingImages((prev) => [...prev, file]);
+      setPreviewUrls((prev) => [...prev, URL.createObjectURL(file)]);
+    }
   };
 
   const handleAnalysisSuccess = (data: any, capturedImages: File[]) => {
@@ -147,13 +159,11 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
         finalThumbnail = await generateThumbnail(pendingImages[0]); 
         const newImageUrls = [];
 
-        // Define our centralized bucket and the obfuscated folder path
         const targetBucket = 'talawa_media';
         const obfuscatedFolder = 'amend_x8q9p2'; 
 
         for (const file of pendingImages) {
           const fileExt = file.name.split('.').pop() || 'jpg';
-          // File name includes the obfuscated folder structure
           const filePath = `${obfuscatedFolder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           
           const { error: uploadError } = await supabase.storage
@@ -198,7 +208,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     let submitError;
     let returnedData;
 
-    // 1. SAVE THE AMENDMENT
     if (isEditing && initialData?.id) {
       const { data, error } = await supabase.from('amendments').update(payload).eq('id', initialData.id).select().single();
       submitError = error;
@@ -215,7 +224,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       return;
     }
 
-    // 2. SAVE EXTRACTED SCHEDULES (If any were found in the photo)
     if (returnedData && extractedSchedules.length > 0) {
       const schedulesPayload = extractedSchedules.map(sched => ({
         amendment_id: returnedData.id,
@@ -264,7 +272,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           className="flex items-center gap-2 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95 transition-transform"
         >
           <Camera size={16} />
-          <span>Analyze</span>
+          <span>Analyze AI</span>
         </button>
       </div>
 
@@ -294,13 +302,42 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
            </div>
         )}
 
-        {previewUrls.length > 0 && (
+        {/* Hidden input to securely capture a photo from the phone camera */}
+        <input 
+          type="file" 
+          accept="image/*" 
+          capture="environment" 
+          ref={fileInputRef}
+          onChange={handleManualImageUpload} 
+          className="hidden" 
+        />
+
+        {previewUrls.length > 0 ? (
           <div className="mb-6 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {previewUrls.map((url, idx) => (
               <div key={idx} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-green-500 shadow-md flex-shrink-0">
                 <img src={url} alt={`Thumbnail Preview ${idx + 1}`} className="w-full h-full object-cover" />
               </div>
             ))}
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:text-green-600 hover:border-green-500 transition-colors flex-shrink-0 bg-gray-50 active:scale-95"
+            >
+              <Camera size={24} className="mb-1" />
+              <span className="text-[9px] font-bold uppercase tracking-widest text-center">Add<br/>Photo</span>
+            </button>
+          </div>
+        ) : (
+          <div className="mb-6">
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-6 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-500 hover:text-green-600 hover:border-green-500 transition-colors bg-gray-50 active:scale-95 shadow-sm"
+            >
+              <Camera size={28} className="mb-2" />
+              <span className="text-xs font-bold uppercase tracking-widest">Take Product Photo</span>
+            </button>
           </div>
         )}
 

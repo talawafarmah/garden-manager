@@ -190,6 +190,7 @@ export default function ProductCapture({ onAnalysisSuccess, onCancel }: ProductC
           type="file" 
           ref={fileInputRef} 
           onChange={handleCapture} 
+          capture="environment"
           accept="image/*" 
           className="hidden" 
           multiple 
