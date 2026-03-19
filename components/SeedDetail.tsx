@@ -38,17 +38,58 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
+// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
+const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width; let height = img.height;
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
+      else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Failed to get canvas context'));
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const gradient = ctx.createLinearGradient(0, height - 80, 0, height);
+      gradient.addColorStop(0, 'transparent');
+      gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, height - 80, width, 80);
+
+      const fontSize = Math.max(16, Math.floor(height * 0.035));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(watermarkText, width - 16, height - 16);
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas toBlob failed'));
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = URL.createObjectURL(file);
+  });
+};
+
 export default function SeedDetail({ seed, inventory, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
   const [activeTab, setActiveTab] = useState<'SPECS' | 'PERFORMANCE' | 'JOURNAL'>('SPECS');
   
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
-  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [parents, setParents] = useState<{mother?: string, father?: string}>({});
 
   const [ledgerHistory, setLedgerHistory] = useState<SeasonSeedling[]>([]);
   const [localSeedJournal, setLocalSeedJournal] = useState<SeedlingJournalEntry[]>(seed.journal || []);
   
+  // --- NEW: Filter State and Carousel ---
+  const [journalFilter, setJournalFilter] = useState<'ALL' | 'OBSERVATION' | 'TASTING' | 'HARVEST' | 'NOTE' | 'PHOTO'>('ALL');
+  const [carousel, setCarousel] = useState<{ images: string[], currentIndex: number } | null>(null);
+
   const [newSeedNote, setNewSeedNote] = useState('');
   const [seedNoteType, setSeedNoteType] = useState<'NOTE'|'TASTING'|'HARVEST'|'OBSERVATION'>('OBSERVATION');
 
@@ -57,7 +98,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({ seasonId: '', targetDate: '', qty: 1, weeks: 6 });
 
-  // Swipe & Quick Add State
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -96,7 +136,10 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
   const allImagePaths = useMemo(() => {
     const paths = [...(seed.images || [])];
     filteredTrays.forEach(t => paths.push(...(t.images || [])));
-    ledgerHistory.forEach(l => paths.push(...(l.images || [])));
+    ledgerHistory.forEach(l => {
+       paths.push(...(l.images || []));
+       (l.journal || []).forEach(j => { if ((j as any).image_path) paths.push((j as any).image_path); });
+    });
     return Array.from(new Set(paths.filter(p => p && typeof p === 'string' && !p.startsWith('http') && !p.startsWith('data:'))));
   }, [seed.images, filteredTrays, ledgerHistory]);
 
@@ -111,16 +154,13 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     loadSignedUrls();
   }, [allImagePaths]);
 
-  // SWIPE LOGIC (Updated to use swipeContextList if provided by Wishlist)
   const handleTouchStart = (e: React.TouchEvent) => {
     if ((e.target as Element).closest('.scrollbar-hide') || (e.target as Element).closest('input') || (e.target as Element).closest('button')) return;
     setTouchStart(e.targetTouches[0].clientX);
   };
   const handleTouchMove = (e: React.TouchEvent) => { if (touchStart) setTouchEnd(e.targetTouches[0].clientX); };
   const handleTouchEnd = () => {
-    // FIX: Fallback to global inventory if a context list isn't provided
     const activeSwipeList = seed.swipeContextList || inventory;
-
     if (!touchStart || !touchEnd || !activeSwipeList || activeSwipeList.length === 0) return;
     const distance = touchStart - touchEnd;
     const currentIndex = activeSwipeList.findIndex((s: InventorySeed) => s.id === seed.id);
@@ -138,19 +178,31 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     if (!file) return;
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop() || 'jpg';
-      const filePath = `vault/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, file);
+      // 1. Watermark Text
+      const today = new Date();
+      const dateStr = today.toLocaleDateString();
+      const watermarkText = `${dateStr} : ${seed.variety_name}`;
+
+      // 2. Process
+      const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
+
+      // 3. Upload raw file
+      const filePath = `vault/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob);
       if (uploadError) throw uploadError;
       
-      const { data: publicUrlData } = supabase.storage.from('talawa_media').getPublicUrl(filePath);
-      const newImages = [...(seed.images || []), publicUrlData.publicUrl];
-      
+      // 4. Instant URL fetch to render
+      const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
+      if (urlData?.signedUrl) {
+         setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
+      }
+
+      // 5. Update array
+      const newImages = [...(seed.images || []), filePath];
       await supabase.from('seed_inventory').update({ images: newImages }).eq('id', seed.id);
       seed.images = newImages; 
     } catch (err: any) { alert('Upload failed: ' + err.message); } finally { setIsUploading(false); }
   };
-
 
   const totalSown = filteredTrays.reduce((sum, t) => sum + (t.contents.find(c => c.seed_id === seed.id)?.sown_count || 0), 0);
   const totalGerm = filteredTrays.reduce((sum, t) => sum + (t.contents.find(c => c.seed_id === seed.id)?.germinated_count || 0), 0);
@@ -263,9 +315,30 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
       {/* Hidden Quick Add Photo Input */}
       <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleQuickPhotoUpload} className="hidden" />
 
-      {fullScreenImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setFullScreenImage(null)}>
-          <img src={fullScreenImage} className="max-w-full max-h-full object-contain rounded-lg" alt="Fullscreen" />
+      {/* FULLSCREEN CAROUSEL MODAL */}
+      {carousel && (
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+          <div className="absolute top-4 right-4 z-50">
+             <button onClick={() => setCarousel(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-sm transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+             </button>
+          </div>
+          
+          {carousel.images.length > 1 && (
+            <>
+              <button onClick={() => setCarousel(prev => ({...prev!, currentIndex: (prev!.currentIndex - 1 + prev!.images.length) % prev!.images.length}))} className="absolute left-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm z-50">
+                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button onClick={() => setCarousel(prev => ({...prev!, currentIndex: (prev!.currentIndex + 1) % prev!.images.length}))} className="absolute right-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm z-50">
+                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+              <div className="absolute bottom-6 left-0 right-0 text-center text-white/70 text-sm font-bold tracking-widest uppercase">
+                 {carousel.currentIndex + 1} / {carousel.images.length}
+              </div>
+            </>
+          )}
+
+          <img src={carousel.images[carousel.currentIndex]} className="w-full h-full object-contain" />
         </div>
       )}
 
@@ -350,7 +423,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
         </div>
-        {/* FIX: Removed the "Master Hub" text while preserving the layout styling */}
         <h1 className="text-lg font-bold truncate px-2 text-center flex-1"></h1>
         <div className="flex gap-2 min-w-[80px] justify-end">
            <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform flex items-center" title="Quick Photo">
@@ -374,7 +446,17 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
       <div className="max-w-md mx-auto">
         <div className="relative aspect-square bg-stone-200 overflow-hidden group">
           {displayImg ? (
-            <img src={displayImg} onClick={() => setFullScreenImage(displayImg)} className="w-full h-full object-cover cursor-zoom-in" alt={seed.variety_name} />
+            <img 
+               src={displayImg} 
+               onClick={() => {
+                 if (seed.images && seed.images.length > 0) {
+                    const photos = seed.images.map(i => i.startsWith('http') || i.startsWith('data:') ? i : signedUrls[i]).filter(Boolean) as string[];
+                    setCarousel({ images: photos, currentIndex: viewingImageIndex });
+                 }
+               }} 
+               className="w-full h-full object-cover cursor-zoom-in" 
+               alt={seed.variety_name} 
+            />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-2">
               <svg className="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -516,7 +598,10 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                     {filteredTrays.flatMap(t => t.images || []).map((img, idx) => {
                        const src = img.startsWith('http') || img.startsWith('data:') ? img : signedUrls[img];
                        return src && (
-                          <div key={`tray-${idx}`} className="w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden border border-stone-200 relative group cursor-zoom-in" onClick={() => setFullScreenImage(src)}>
+                          <div key={`tray-${idx}`} className="w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden border border-stone-200 relative group cursor-zoom-in" onClick={() => {
+                             const photos = filteredTrays.flatMap(t => t.images || []).map(i => i.startsWith('http') || i.startsWith('data:') ? i : signedUrls[i]).filter(Boolean) as string[];
+                             setCarousel({ images: photos, currentIndex: idx });
+                          }}>
                              <img src={src} className="w-full h-full object-cover" />
                              <div className="absolute bottom-0 left-0 right-0 bg-stone-900/70 backdrop-blur-sm p-1 text-[8px] text-white font-black text-center uppercase">Tray</div>
                           </div>
@@ -525,7 +610,10 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                     {ledgerHistory.flatMap(l => l.images || []).map((img, idx) => {
                        const src = img.startsWith('http') || img.startsWith('data:') ? img : signedUrls[img];
                        return src && (
-                          <div key={`ledger-${idx}`} className="w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden border border-stone-200 relative group cursor-zoom-in" onClick={() => setFullScreenImage(src)}>
+                          <div key={`ledger-${idx}`} className="w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden border border-stone-200 relative group cursor-zoom-in" onClick={() => {
+                             const photos = ledgerHistory.flatMap(l => l.images || []).map(i => i.startsWith('http') || i.startsWith('data:') ? i : signedUrls[i]).filter(Boolean) as string[];
+                             setCarousel({ images: photos, currentIndex: idx });
+                          }}>
                              <img src={src} className="w-full h-full object-cover" />
                              <div className="absolute bottom-0 left-0 right-0 bg-emerald-900/70 backdrop-blur-sm p-1 text-[8px] text-white font-black text-center uppercase">Ledger</div>
                           </div>
@@ -570,18 +658,29 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                   </div>
                </div>
 
+               {/* Filter bar for Journal Entries */}
+               <div className="bg-white px-4 py-2 border border-stone-200 rounded-2xl flex gap-2 overflow-x-auto scrollbar-hide shadow-sm">
+                  {['ALL', 'OBSERVATION', 'TASTING', 'HARVEST', 'NOTE', 'PHOTO'].map(f => (
+                    <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
+                      {f}
+                    </button>
+                  ))}
+               </div>
+
                <div className="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-stone-200 before:to-transparent">
-                  {unifiedJournal.length === 0 ? <p className="text-center text-stone-400 text-sm italic py-10 relative z-10">No history recorded yet.</p> : 
-                     unifiedJournal.map((entry, idx) => {
+                  {unifiedJournal.filter(j => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && (j as any).image_path)).length === 0 ? 
+                     <p className="text-center text-stone-400 text-sm italic py-10 relative z-10">No history recorded yet.</p> : 
+                     unifiedJournal.filter(j => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && (j as any).image_path)).map((entry, idx) => {
                         let colorClass = "bg-stone-100 text-stone-600";
                         if (entry.source === 'TRAY') colorClass = "bg-blue-100 text-blue-800";
                         if (entry.source.startsWith('LEDGER')) colorClass = "bg-emerald-100 text-emerald-800";
                         if (entry.type === 'TASTING' || entry.type === 'HARVEST') colorClass = "bg-purple-100 text-purple-800";
+                        if (entry.type === 'PHOTO') colorClass = "bg-indigo-100 text-indigo-800";
 
                         return (
                           <div key={entry.id || idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
                              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-stone-50 bg-stone-200 text-stone-500 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10 text-lg">
-                                {entry.source === 'TRAY' ? '🌱' : entry.source.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
+                                {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
                              </div>
                              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl bg-white border border-stone-200 shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
@@ -589,6 +688,20 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                                    <span className="text-[10px] font-bold text-stone-400">{entry.date}</span>
                                 </div>
                                 <p className="text-sm font-medium text-stone-700 leading-relaxed">{entry.note}</p>
+                                
+                                {/* Embedded Photo Renderer */}
+                                {(entry as any).image_path && signedUrls[(entry as any).image_path] && (
+                                   <div 
+                                      className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
+                                      onClick={() => {
+                                         const jPhotos = unifiedJournal.map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
+                                         const clickedIndex = jPhotos.indexOf(signedUrls[(entry as any).image_path]);
+                                         setCarousel({ images: jPhotos, currentIndex: clickedIndex });
+                                      }}
+                                   >
+                                       <img src={signedUrls[(entry as any).image_path]} className="w-full h-full object-cover" />
+                                   </div>
+                                )}
                              </div>
                           </div>
                         )

@@ -7,7 +7,45 @@ const parseDateString = (dateStr: string) => {
   return new Date(dateStr + 'T12:00:00');
 };
 
-export default function TrayDetail({ tray, trays, inventory, navigateTo, handleGoBack }: any) {
+// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
+const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width; let height = img.height;
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
+      else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Failed to get canvas context'));
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const gradient = ctx.createLinearGradient(0, height - 80, 0, height);
+      gradient.addColorStop(0, 'transparent');
+      gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, height - 80, width, 80);
+
+      const fontSize = Math.max(16, Math.floor(height * 0.035));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(watermarkText, width - 16, height - 16);
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas toBlob failed'));
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = URL.createObjectURL(file);
+  });
+};
+
+export default function TrayDetail({ tray, inventory, trays, navigateTo, handleGoBack }: any) {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -16,7 +54,6 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
   const [potUpState, setPotUpState] = useState<{isOpen: boolean, seedId: string, varietyName: string, count: number, note: string, maxAvailable: number} | null>(null);
   const [isPottingUp, setIsPottingUp] = useState(false);
 
-  // Swipe & Quick Add State
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -29,7 +66,6 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
       const urlsToSign: string[] = [];
       if (localTray.images) urlsToSign.push(...localTray.images);
       
-      // Also prep seed thumbnails for the dynamic header collage
       localTray.contents?.forEach((c: any) => {
          const s = inventory?.find((s: InventorySeed) => s.id === c.seed_id);
          if (s?.thumbnail && !s.thumbnail.startsWith('data:') && !s.thumbnail.startsWith('http')) urlsToSign.push(s.thumbnail as string);
@@ -49,7 +85,6 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
     loadUrls();
   }, [localTray, inventory]);
 
-  // SWIPE LOGIC
   const handleTouchStart = (e: React.TouchEvent) => {
     if ((e.target as Element).closest('.cursor-pointer') || (e.target as Element).closest('input') || (e.target as Element).closest('button')) return;
     setTouchStart(e.targetTouches[0].clientX);
@@ -59,12 +94,8 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
     if (!touchStart || !touchEnd || !trays || trays.length === 0) return;
     const distance = touchStart - touchEnd;
     const currentIndex = trays.findIndex((t: SeedlingTray) => t.id === localTray.id);
-    
-    if (distance > 75 && currentIndex < trays.length - 1) { // Swipe Left -> Next
-        navigateTo('tray_detail', trays[currentIndex + 1], true);
-    } else if (distance < -75 && currentIndex > 0) { // Swipe Right -> Prev
-        navigateTo('tray_detail', trays[currentIndex - 1], true);
-    }
+    if (distance > 75 && currentIndex < trays.length - 1) navigateTo('tray_detail', trays[currentIndex + 1], true);
+    else if (distance < -75 && currentIndex > 0) navigateTo('tray_detail', trays[currentIndex - 1], true);
     setTouchStart(0); setTouchEnd(0);
   };
 
@@ -73,17 +104,42 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
     if (!file) return;
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop() || 'jpg';
-      const filePath = `trays/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, file);
+      // 1. Watermark Text
+      const today = new Date();
+      const dateStr = today.toLocaleDateString();
+      let daysStr = "Not Sown";
+      
+      if (localTray.sown_date) {
+        const sowDate = new Date(localTray.sown_date + 'T12:00:00');
+        const diffDays = Math.floor((today.getTime() - sowDate.getTime()) / (1000 * 60 * 60 * 24));
+        daysStr = `${diffDays} days`;
+      }
+      
+      const watermarkText = `${dateStr} : ${daysStr}`;
+
+      // 2. Process
+      const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
+
+      // 3. Upload raw file
+      const filePath = `trays/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob);
       if (uploadError) throw uploadError;
       
-      const { data: publicUrlData } = supabase.storage.from('talawa_media').getPublicUrl(filePath);
-      const newImages = [...(localTray.images || []), publicUrlData.publicUrl];
-      
+      // 4. Instant URL fetch to render
+      const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
+      if (urlData?.signedUrl) {
+         setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
+      }
+
+      // 5. Update Tray
+      const newImages = [...(localTray.images || []), filePath];
       await supabase.from('seedling_trays').update({ images: newImages }).eq('id', localTray.id);
       setLocalTray({ ...localTray, images: newImages });
-    } catch (err: any) { alert('Upload failed: ' + err.message); } finally { setIsUploading(false); }
+    } catch (err: any) { 
+      alert('Upload failed: ' + err.message); 
+    } finally { 
+      setIsUploading(false); 
+    }
   };
 
   const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
@@ -168,14 +224,12 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
     } catch (err: any) { alert("Failed to pot up: " + err.message); } finally { setIsPottingUp(false); }
   };
 
-  // Generate Dynamic Seed Collage Header
   const topSeeds = [...(localTray.contents || [])]
     .sort((a, b) => (b.sown_count || 0) - (a.sown_count || 0))
     .map(c => inventory.find((s: InventorySeed) => s.id === c.seed_id))
     .filter(s => s && s.thumbnail)
     .slice(0, 4);
 
-  // FIX: Helper to safely extract string URLs
   const getThumbSrc = (seed: any) => {
       const thumb = seed?.thumbnail;
       if (!thumb) return null;
@@ -237,7 +291,7 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2 mr-2">
           <button onClick={() => navigateTo('trays', null, true)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg></button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 0h6" /></svg></button>
         </div>
         <h1 className="text-xl font-bold truncate flex-1 text-center pr-4">Tray Details</h1>
         <div className="flex items-center gap-2">
@@ -380,6 +434,21 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
                      </div>
                    </div>
                  </div>
+
+                 <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
+                    <div>
+                       <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                    </div>
+                 </div>
                </div>
              );
            })}
@@ -388,7 +457,7 @@ export default function TrayDetail({ tray, trays, inventory, navigateTo, handleG
          {localTray.images && localTray.images.length > 0 && (
            <div className="grid grid-cols-3 gap-2 pt-2">
              {localTray.images.map((img: string, idx: number) => {
-                const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img as string] || '';
+                const displaySrc = img.startsWith('data:image') || img.startsWith('http') ? img : signedUrls[img] || '';
                 return (
                   <div key={idx} onClick={() => setFullScreenImage(displaySrc)} className="cursor-zoom-in aspect-square rounded-xl overflow-hidden border border-stone-200 shadow-sm relative bg-stone-100">
                     {displaySrc && <img src={displaySrc} className="w-full h-full object-cover" alt="Gallery" />}

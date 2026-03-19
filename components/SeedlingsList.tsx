@@ -2,33 +2,42 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSeedling, Season, AppView, SeedlingJournalEntry, InventorySeed } from '../types';
 
-const base64ToBlob = (base64: string, mimeType: string): Blob => {
-  const byteString = atob(base64.split(',')[1]);
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
-  return new Blob([ab], { type: mimeType });
-};
-
-const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
-  return new Promise((resolve) => {
-    if (!source) return resolve("");
+// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
+const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous"; 
     img.onload = () => {
-      const canvas = document.createElement('canvas');
       let width = img.width; let height = img.height;
-      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } }
       else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      
+      const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, width, height);
-      try { resolve(canvas.toDataURL('image/jpeg', quality)); } catch (e) { resolve(""); }
+      if (!ctx) return reject(new Error('Failed to get canvas context'));
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Dark overlay gradient for readable text
+      const gradient = ctx.createLinearGradient(0, height - 80, 0, height);
+      gradient.addColorStop(0, 'transparent');
+      gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, height - 80, width, 80);
+
+      const fontSize = Math.max(16, Math.floor(height * 0.035));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(watermarkText, width - 16, height - 16);
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas toBlob failed'));
+      }, 'image/jpeg', 0.85);
     };
-    img.onerror = () => resolve("");
-    let finalSrc = source;
-    if (source.startsWith('http') && !source.includes('supabase.co')) { finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`; }
-    img.src = finalSrc;
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = URL.createObjectURL(file);
   });
 };
 
@@ -42,6 +51,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'ADJUST' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
+
+  const [carousel, setCarousel] = useState<{ images: string[], currentIndex: number } | null>(null);
 
   const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
   const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
@@ -60,7 +71,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
-  const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE'>('ALL');
+  const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE' | 'PHOTO'>('ALL');
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -95,9 +106,15 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
        setLedgers(data);
        
        const urlsToFetch = data.flatMap(l => l.images || []).filter(img => img && !img.startsWith('http') && !img.startsWith('data:'));
+       
+       // FIX: Added (j: any) type definition
+       data.forEach(l => {
+          (l.journal || []).forEach((j: any) => { if (j.image_path) urlsToFetch.push(j.image_path); });
+       });
+
        if (urlsToFetch.length > 0) {
           const fetchedUrls: Record<string, string> = {};
-          const { data: sData } = await supabase.storage.from('talawa_media').createSignedUrls(urlsToFetch, 3600);
+          const { data: sData } = await supabase.storage.from('talawa_media').createSignedUrls(Array.from(new Set(urlsToFetch)), 3600);
           if (sData) sData.forEach((item: any) => { if (item.signedUrl) fetchedUrls[item.path] = item.signedUrl; });
           setSignedUrls(prev => ({ ...prev, ...fetchedUrls }));
        }
@@ -113,40 +130,45 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     
     setIsUploadingPhoto(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        const optimizedBase64 = await resizeImage(base64, 1600, 0.8);
-        if (optimizedBase64) {
-          const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
-          const fileName = `seedling_${crypto.randomUUID()}.jpg`;
-          const filePath = `seedlings/${selectedLedger.id}/${fileName}`;
-          
-          await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
-          
-          const newImages = [...(selectedLedger.images || []), filePath];
-          
-          const todayObj = new Date();
-          const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-          
-          const newEntry: SeedlingJournalEntry = {
-            id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-            date: localToday,
-            type: 'EVENT',
-            note: '📸 Snapped a progression photo of the seedlings.'
-          };
-          const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
+      const today = new Date();
+      const dateStr = today.toLocaleDateString();
+      let daysStr = "Not Sown";
+      if (selectedLedger.created_at) {
+         const sowDate = new Date(selectedLedger.created_at);
+         const diffDays = Math.floor((today.getTime() - sowDate.getTime()) / (1000 * 60 * 60 * 24));
+         daysStr = `${diffDays} days`;
+      }
+      const watermarkText = `${dateStr} : ${selectedLedger.seed?.variety_name || 'Unknown'} : ${daysStr}`;
 
-          setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, images: newImages, journal: updatedJournal } : l));
-          setSelectedLedger({ ...selectedLedger, images: newImages, journal: updatedJournal });
-          
-          await supabase.from('season_seedlings').update({ images: newImages, journal: updatedJournal }).eq('id', selectedLedger.id);
-          
-          const { data } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
-          if (data?.signedUrl) setSignedUrls(prev => ({...prev, [filePath]: data.signedUrl}));
-        }
+      const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
+
+      const fileName = `seedling_${crypto.randomUUID()}.jpg`;
+      const filePath = `seedlings/${selectedLedger.id}/${fileName}`;
+      await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob, { contentType: 'image/jpeg' });
+      
+      const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
+      if (urlData?.signedUrl) {
+         setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
+      }
+
+      const newImages = [...(selectedLedger.images || []), filePath];
+      const todayObj = new Date();
+      const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      
+      const newEntry: any = {
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+        date: localToday,
+        type: 'PHOTO',
+        note: '📸 Progression photo logged.',
+        image_path: filePath
       };
-      reader.readAsDataURL(file);
+      
+      const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
+
+      setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, images: newImages, journal: updatedJournal } : l));
+      setSelectedLedger({ ...selectedLedger, images: newImages, journal: updatedJournal });
+      await supabase.from('season_seedlings').update({ images: newImages, journal: updatedJournal }).eq('id', selectedLedger.id);
+      
     } catch (err: any) { alert("Upload failed: " + err.message); } 
     finally { setIsUploadingPhoto(false); }
   };
@@ -220,56 +242,55 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const handleDirectAddSubmit = async () => {
     if (!directAddForm.seedId || !directAddForm.seasonId || directAddForm.count < 1) return;
     setIsSubmittingDirectAdd(true);
-    
     try {
-      const { data: existingLedger } = await supabase.from('season_seedlings')
-        .select('*').eq('seed_id', directAddForm.seedId).eq('season_id', directAddForm.seasonId).maybeSingle();
-
+      const { data: existingLedger } = await supabase.from('season_seedlings').select('*').eq('seed_id', directAddForm.seedId).eq('season_id', directAddForm.seasonId).maybeSingle();
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
-      const journalEntry = {
-        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-        date: localToday,
-        type: 'EVENT',
-        note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}`
-      };
+      const journalEntry = { id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), date: localToday, type: 'EVENT', note: `Direct added ${directAddForm.count} plants/seedlings. ${directAddForm.note}` };
 
       if (existingLedger) {
-        await supabase.from('season_seedlings').update({
-          qty_growing: existingLedger.qty_growing + directAddForm.count,
-          journal: [journalEntry, ...(existingLedger.journal || [])]
-        }).eq('id', existingLedger.id);
+        await supabase.from('season_seedlings').update({ qty_growing: existingLedger.qty_growing + directAddForm.count, journal: [journalEntry, ...(existingLedger.journal || [])] }).eq('id', existingLedger.id);
       } else {
-        await supabase.from('season_seedlings').insert([{
-          seed_id: directAddForm.seedId,
-          season_id: directAddForm.seasonId,
-          qty_growing: directAddForm.count,
-          allocate_keep: 0,
-          allocate_reserve: 0,
-          qty_planted: 0,
-          qty_gifted: 0,
-          qty_sold: 0,
-          qty_dead: 0,
-          locations: {},
-          journal: [journalEntry]
-        }]);
+        await supabase.from('season_seedlings').insert([{ seed_id: directAddForm.seedId, season_id: directAddForm.seasonId, qty_growing: directAddForm.count, allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, journal: [journalEntry] }]);
       }
-
       setIsDirectAddOpen(false);
       setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: activeSeason });
       fetchLedgers(activeSeason); 
       alert("Successfully added to your nursery ledger!");
-    } catch (err: any) {
-      alert("Failed to add seedlings: " + err.message);
-    } finally {
-      setIsSubmittingDirectAdd(false);
-    }
+    } catch (err: any) { alert("Failed to add seedlings: " + err.message); } 
+    finally { setIsSubmittingDirectAdd(false); }
   };
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
       
+      {/* CAROUSEL MODAL */}
+      {carousel && (
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+          <div className="absolute top-4 right-4 z-50">
+             <button onClick={() => setCarousel(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-sm transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+             </button>
+          </div>
+          
+          {carousel.images.length > 1 && (
+            <>
+              <button onClick={() => setCarousel(prev => ({...prev!, currentIndex: (prev!.currentIndex - 1 + prev!.images.length) % prev!.images.length}))} className="absolute left-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm z-50">
+                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button onClick={() => setCarousel(prev => ({...prev!, currentIndex: (prev!.currentIndex + 1) % prev!.images.length}))} className="absolute right-4 top-1/2 -translate-y-1/2 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm z-50">
+                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+              <div className="absolute bottom-6 left-0 right-0 text-center text-white/70 text-sm font-bold tracking-widest uppercase">
+                 {carousel.currentIndex + 1} / {carousel.images.length}
+              </div>
+            </>
+          )}
+
+          <img src={carousel.images[carousel.currentIndex]} className="w-full h-full object-contain" />
+        </div>
+      )}
+
       {/* DIRECT ADD MODAL */}
       {isDirectAddOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -351,7 +372,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900">
         <div className="flex items-center gap-2">
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold ml-1 truncate">Seedling Nursery</h1>
         </div>
@@ -529,21 +550,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            {selectedLedger.images && selectedLedger.images.length > 0 && (
-               <div className="p-4 bg-white border-b border-stone-100 flex gap-3 overflow-x-auto scrollbar-hide shrink-0">
-                  {selectedLedger.images.map((img, idx) => {
-                     const src = img.startsWith('http') || img.startsWith('data:') ? img : signedUrls[img];
-                     return (
-                        <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border border-stone-200 shadow-sm bg-stone-100 relative">
-                           {src ? <img src={src} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300 animate-pulse">⏳</div>}
-                        </div>
-                     );
-                  })}
-               </div>
-            )}
-
             <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 shadow-sm z-10">
-               {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT'].map(f => (
+               {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT', 'PHOTO'].map(f => (
                  <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
                    {f}
                  </button>
@@ -551,15 +559,21 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100">
-              {(selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).length === 0 ? (
+              {/* FIX: Cast j to any to resolve implicit any error */}
+              {(selectedLedger.journal || [])
+                .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
+                .length === 0 ? (
                 <p className="text-center text-stone-400 text-sm italic py-10">No journal entries found.</p>
               ) : (
-                (selectedLedger.journal || []).filter(j => journalFilter === 'ALL' || j.type === journalFilter).map((entry, idx) => (
+                (selectedLedger.journal || [])
+                .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
+                .map((entry: any, idx) => (
                   <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative">
                     <div className="flex justify-between items-start mb-2">
                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm
                         ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
                           entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 
+                          entry.type === 'PHOTO' ? 'bg-indigo-100 text-indigo-800' :
                           entry.type === 'ALLOCATE' ? 'bg-purple-100 text-purple-800' :
                           entry.type === 'EVENT' ? 'bg-stone-800 text-white' : 'bg-emerald-100 text-emerald-800'}`}
                       >
@@ -568,6 +582,19 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                       <span className="text-[10px] font-bold text-stone-400">{entry.date}</span>
                     </div>
                     <p className="text-sm text-stone-700 font-medium leading-relaxed">{entry.note}</p>
+                    
+                    {entry.image_path && signedUrls[entry.image_path] && (
+                       <div 
+                          className="mt-3 w-full h-40 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
+                          onClick={() => {
+                             const jPhotos = (selectedLedger.journal || []).map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
+                             const clickedIndex = jPhotos.indexOf(signedUrls[entry.image_path]);
+                             setCarousel({ images: jPhotos, currentIndex: clickedIndex });
+                          }}
+                       >
+                           <img src={signedUrls[entry.image_path]} className="w-full h-full object-cover" />
+                       </div>
+                    )}
                   </div>
                 ))
               )}
