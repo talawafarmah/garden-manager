@@ -41,6 +41,7 @@ export interface GardenBed {
   unit?: string;       
   pos_x?: number;
   pos_y?: number;
+  shape?: string;
   drench_volume_gallons?: number;
   current_stage?: string;
   recipe_veg_id?: string;

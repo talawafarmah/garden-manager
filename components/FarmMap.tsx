@@ -16,14 +16,14 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // New Map UI State
+  // Map UI State
   const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [mapMode, setMapMode] = useState<'CROP' | 'NUTRIENT' | 'LAYOUT'>('CROP');
   const [viewingBed, setViewingBed] = useState<GardenBed | null>(null);
 
   // Drag and Drop State
   const [dragState, setDragState] = useState<{ id: string, startX: number, startY: number, initX: number, initY: number } | null>(null);
-  const GRID_SIZE = 20; // 20 pixels = 1 unit (ft, m, etc)
+  const GRID_SIZE = 20; // 20 pixels = 1 unit
 
   // Area Modals
   const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
@@ -33,7 +33,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   const [isBedModalOpen, setIsBedModalOpen] = useState(false);
   const [bedForm, setBedForm] = useState<Partial<GardenBed>>({ 
     name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: 'ft', watering_frequency_days: 3,
-    current_stage: 'Vegetative', drench_volume_gallons: 1.0, feed_frequency_days: 14
+    current_stage: 'Vegetative', drench_volume_gallons: 1.0, feed_frequency_days: 14, shape: 'rectangle'
   });
 
   // Planting Out Modal
@@ -169,12 +169,12 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
   // --- BED CRUD ---
   const openBedModal = (bed?: GardenBed) => {
     if (bed) {
-      setBedForm({ ...bed, watering_frequency_days: bed.watering_frequency_days || 3, drench_volume_gallons: (bed as any).drench_volume_gallons || 1.0, current_stage: (bed as any).current_stage || 'Vegetative' });
+      setBedForm({ ...bed, shape: bed.shape || 'rectangle', watering_frequency_days: bed.watering_frequency_days || 3, drench_volume_gallons: (bed as any).drench_volume_gallons || 1.0, current_stage: (bed as any).current_stage || 'Vegetative' });
     } else {
       const activeAreaObj = areas.find(a => a.id === activeAreaId);
       setBedForm({ 
         name: '', type: 'Raised Bed', irrigation_type: 'Hand-water', unit: (activeAreaObj as any)?.unit || 'ft', watering_frequency_days: 3,
-        current_stage: 'Vegetative', drench_volume_gallons: 1.0, feed_frequency_days: 14
+        current_stage: 'Vegetative', drench_volume_gallons: 1.0, feed_frequency_days: 14, shape: 'rectangle'
       });
     }
     setIsBedModalOpen(true);
@@ -199,6 +199,20 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       const { error } = await supabase.from('garden_beds').delete().eq('id', id);
       if (!error) { setBeds(beds.filter(b => b.id !== id)); setIsBedModalOpen(false); setViewingBed(null); } 
       else { alert("Error deleting bed: " + error.message); }
+    }
+  };
+
+  // --- NEW: RELOCATE BED LOGIC ---
+  const handleRelocateBed = async (bedId: string, newAreaId: string) => {
+    if (!confirm("Move this bed/pot to the new area?")) return;
+    // Reset pos_x and pos_y so it spawns in the top-left of the new area
+    const { error } = await supabase.from('garden_beds').update({ area_id: newAreaId, pos_x: 0, pos_y: 0 }).eq('id', bedId);
+    if (!error) {
+      setBeds(beds.map(b => b.id === bedId ? { ...b, area_id: newAreaId, pos_x: 0, pos_y: 0 } as any : b));
+      setViewingBed(null);
+      setActiveAreaId(newAreaId); // Jump to the new area so they can arrange it
+    } else {
+      alert("Failed to move: " + error.message);
     }
   };
 
@@ -352,7 +366,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
           <div className="flex justify-between items-center bg-white p-2 sm:p-3 rounded-2xl shadow-sm border border-stone-200 mb-4 shrink-0 overflow-x-auto scrollbar-hide gap-4">
              <div className="flex items-center gap-2 shrink-0">
                <button onClick={() => openAreaModal(activeArea)} className="p-2 bg-stone-100 rounded-lg text-stone-500 hover:text-emerald-600 transition-colors" title="Edit Area"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-               <button onClick={() => openBedModal()} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-stone-100 border border-stone-200 px-3 py-2 rounded-lg hover:bg-stone-200 transition-colors shadow-sm whitespace-nowrap">+ Add Bed</button>
+               <button onClick={() => openBedModal()} className="text-[10px] font-black uppercase tracking-widest text-stone-600 bg-stone-100 border border-stone-200 px-3 py-2 rounded-lg hover:bg-stone-200 transition-colors shadow-sm whitespace-nowrap">+ Add Bed / Pot</button>
              </div>
              
              <div className="flex bg-stone-100 p-1 rounded-xl shrink-0">
@@ -380,7 +394,6 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                    const x = (bed.pos_x || 0) * GRID_SIZE;
                    const y = (bed.pos_y || 0) * GRID_SIZE;
 
-                   // Dynamic Coloring based on Map Mode
                    let bedBg = 'bg-amber-800/80';
                    let bedBorder = 'border-amber-900/60';
                    let bedText = 'text-amber-100';
@@ -401,6 +414,9 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                        }
                    }
 
+                   // FIX: Circle shape logic rendering
+                   const shapeClass = bed.shape === 'circle' ? 'rounded-full' : 'rounded-md';
+
                    return (
                      <div 
                         key={bed.id}
@@ -408,7 +424,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                         onPointerMove={handlePointerMove}
                         onPointerUp={handlePointerUp}
                         onPointerCancel={handlePointerUp}
-                        className={`absolute rounded-md border-2 overflow-hidden flex flex-col items-center justify-center p-1 
+                        className={`absolute border-2 overflow-hidden flex flex-col items-center justify-center p-1 ${shapeClass}
                           ${mapMode === 'LAYOUT' ? 'cursor-move' : 'cursor-pointer hover:border-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]'} 
                           ${isDragging ? 'border-emerald-500 bg-emerald-100/80 shadow-2xl scale-105 z-50' : `${bedBorder} ${bedBg} shadow-md z-10`}
                           transition-colors`}
@@ -459,7 +475,17 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
       {viewingBed && (() => {
          const bedPlantings = plantings.filter(p => p.bed_id === viewingBed.id);
          const hasDims = viewingBed.length && viewingBed.width;
-         const areaSq = hasDims ? (viewingBed.length! * viewingBed.width!) : null;
+         
+         // Calculate Square/Circle footprint
+         let areaSq = 0;
+         if (hasDims) {
+             if (viewingBed.shape === 'circle') {
+                 const radius = viewingBed.width! / 2;
+                 areaSq = Number((Math.PI * Math.pow(radius, 2)).toFixed(1));
+             } else {
+                 areaSq = viewingBed.length! * viewingBed.width!;
+             }
+         }
 
          let daysUntilFeed = 0;
          let feedStatusText = 'No schedule set';
@@ -492,7 +518,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                      </span>
                      {hasDims && (
                         <span className="bg-stone-800 text-stone-300 border border-stone-700 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm">
-                           📐 {viewingBed.length}x{viewingBed.width} {viewingBed.unit} ({areaSq} sq {viewingBed.unit})
+                           📐 {viewingBed.shape === 'circle' ? `Ø ${viewingBed.width}` : `${viewingBed.width}x${viewingBed.length}`} {viewingBed.unit} ({areaSq} sq {viewingBed.unit})
                         </span>
                      )}
                   </div>
@@ -554,6 +580,21 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                           ))}
                        </div>
                     )}
+                  </div>
+
+                  {/* NEW: RELOCATE CONTAINER OPTION */}
+                  <div className="pt-4 border-t border-stone-200">
+                     <h3 className="text-xs font-black uppercase tracking-widest text-stone-400 mb-3">Relocate Container</h3>
+                     <select 
+                        value="" 
+                        onChange={(e) => handleRelocateBed(viewingBed.id, e.target.value)}
+                        className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-700 outline-none focus:border-emerald-500 shadow-sm appearance-none"
+                     >
+                        <option value="" disabled>Move to another area...</option>
+                        {areas.filter(a => a.id !== activeAreaId).map(a => (
+                           <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                     </select>
                   </div>
                </div>
 
@@ -622,6 +663,23 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                   <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5 ml-1">Bed/Container Name</label>
                   <input type="text" value={bedForm.name || ''} onChange={(e) => setBedForm({...bedForm, name: e.target.value})} placeholder="e.g., Raised Bed 1, SIP Row A" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-inner" />
                 </div>
+                
+                {/* NEW: Shape Toggle */}
+                <div className="grid grid-cols-2 gap-2 bg-stone-100 p-1 rounded-xl">
+                  <button 
+                    onClick={() => setBedForm({...bedForm, shape: 'rectangle'})}
+                    className={`py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${bedForm.shape !== 'circle' ? 'bg-white text-stone-800 shadow-sm border border-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+                  >
+                    Rectangle
+                  </button>
+                  <button 
+                    onClick={() => setBedForm({...bedForm, shape: 'circle'})}
+                    className={`py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${bedForm.shape === 'circle' ? 'bg-white text-stone-800 shadow-sm border border-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+                  >
+                    Circular / Pot
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5 ml-1">Bed Type</label>
@@ -629,14 +687,31 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                       {BED_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5 ml-1">Dimensions</label>
-                    <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-xl p-2 shadow-sm">
-                      <input type="number" value={bedForm.width || ''} onChange={(e) => setBedForm({...bedForm, width: Number(e.target.value)})} className="w-full text-center font-bold outline-none" />
-                      <span className="text-stone-400 text-xs">x</span>
-                      <input type="number" value={bedForm.length || ''} onChange={(e) => setBedForm({...bedForm, length: Number(e.target.value)})} className="w-full text-center font-bold outline-none" />
-                    </div>
-                  </div>
+
+                  {/* Dynamic Dimension Input based on Shape */}
+                  {bedForm.shape === 'circle' ? (
+                     <div>
+                       <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5 ml-1">Diameter</label>
+                       <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-xl p-2 shadow-sm">
+                         <span className="text-stone-400 text-xs pl-1">Ø</span>
+                         <input 
+                            type="number" 
+                            value={bedForm.width || ''} 
+                            onChange={(e) => setBedForm({...bedForm, width: Number(e.target.value), length: Number(e.target.value)})} 
+                            className="w-full text-center font-bold outline-none" 
+                         />
+                       </div>
+                     </div>
+                  ) : (
+                     <div>
+                       <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5 ml-1">Dimensions</label>
+                       <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-xl p-2 shadow-sm">
+                         <input type="number" value={bedForm.width || ''} onChange={(e) => setBedForm({...bedForm, width: Number(e.target.value)})} className="w-full text-center font-bold outline-none" placeholder="W" />
+                         <span className="text-stone-400 text-xs">x</span>
+                         <input type="number" value={bedForm.length || ''} onChange={(e) => setBedForm({...bedForm, length: Number(e.target.value)})} className="w-full text-center font-bold outline-none" placeholder="L" />
+                       </div>
+                     </div>
+                  )}
                 </div>
               </div>
 
@@ -688,7 +763,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
                        <input type="number" min="0.1" step="0.1" value={(bedForm as any).drench_volume_gallons || ''} onChange={(e) => setBedForm({...bedForm, drench_volume_gallons: Number(e.target.value)} as any)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-purple-500 shadow-sm" />
                        <span className="absolute right-4 top-3 text-stone-400 font-bold pointer-events-none">Gallons</span>
                      </div>
-                     <p className="text-[9px] text-stone-500 mt-1 ml-1">The total amount of liquid fertilizer mixture required to cover this bed.</p>
+                     <p className="text-[9px] text-stone-500 mt-1 ml-1">The total amount of liquid fertilizer required to cover this bed.</p>
                    </div>
                    
                    <div className="grid grid-cols-1 gap-3 pt-2 border-t border-stone-200">
@@ -712,11 +787,11 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
 
               <div className="pt-2">
                 <button onClick={handleSaveBed} disabled={!bedForm.name?.trim()} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50">
-                  Save Bed
+                  Save Bed / Pot
                 </button>
                 {bedForm.id && (
                   <button onClick={() => handleDeleteBed(bedForm.id!)} className="w-full py-3 mt-3 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors">
-                    Delete Bed Permanently
+                    Delete Permanently
                   </button>
                 )}
               </div>
@@ -812,7 +887,7 @@ export default function FarmMap({ navigateTo, handleGoBack }: Props) {
               </button>
 
               <button onClick={handleDeletePlanting} className="w-full py-3 mt-2 bg-red-50 text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-100 transition-colors">
-                Remove from Bed
+                Remove from Map
               </button>
             </div>
           </div>
