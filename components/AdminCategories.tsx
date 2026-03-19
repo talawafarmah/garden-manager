@@ -100,8 +100,7 @@ export default function AdminCategories({ categories, setCategories, inventory, 
     }
   };
 
-  if (userRole !== 'admin') return <div className="p-10 text-center">Access Denied</div>;
-
+  
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans">
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
