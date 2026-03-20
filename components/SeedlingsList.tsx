@@ -472,11 +472,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
                         <p className="text-[9px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">ID: {seed?.id || 'Unknown'}</p>
-                        {ledger.sown_date && (
-                           <p className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">
-                             Sown: {ledger.sown_date}
-                           </p>
-                        )}
+                        
+                        {/* NEW: ALWAYS SHOW SOWN DATE */}
+                        <p className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
+                          Sown: {ledger.sown_date || 'Not Set'}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -609,8 +609,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
       {activeModal === 'JOURNAL' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-[100vw] sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 overflow-hidden">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 rounded-t-3xl w-full">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 border-t border-x sm:border-b border-stone-200 overflow-hidden mx-auto">
+            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 w-full">
               <div className="min-w-0 pr-4">
                 <h2 className="font-black text-stone-800 tracking-tight truncate">Ledger Journal</h2>
                 <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest truncate">{selectedLedger.seed?.variety_name}</p>
@@ -626,7 +626,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100 w-full">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100 w-full overflow-x-hidden">
               {(selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .length === 0 ? (
@@ -635,42 +635,47 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                 (selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .map((entry: any, idx) => (
-                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative group w-full">
-                    
-                    <button 
-                      onClick={() => deleteJournalEntry(entry.id)}
-                      className="absolute top-3 right-3 p-1.5 bg-stone-50 text-stone-300 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                      title="Delete Entry"
-                    >
-                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+                  <div key={entry.id || idx} className="relative flex items-start gap-3 w-full">
+                     <div className="flex items-center justify-center w-10 h-10 rounded-full border border-stone-200 bg-stone-100 text-stone-500 shrink-0 shadow-sm z-10 text-lg mt-1">
+                        {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source?.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
+                     </div>
+                     <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
+                        {/* FIX: DELETE BUTTON ALWAYS VISIBLE */}
+                        <button 
+                          onClick={() => deleteJournalEntry(entry.id)}
+                          className="absolute top-3 right-3 p-2 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
+                          title="Delete Entry"
+                        >
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
 
-                    <div className="flex justify-between items-start mb-2 pr-8 w-full">
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm shrink-0 mr-2
-                        ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
-                          entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 
-                          entry.type === 'PHOTO' ? 'bg-indigo-100 text-indigo-800' :
-                          entry.type === 'ALLOCATE' ? 'bg-purple-100 text-purple-800' :
-                          entry.type === 'EVENT' ? 'bg-stone-800 text-white' : 'bg-emerald-100 text-emerald-800'}`}
-                      >
-                        {entry.type}
-                      </span>
-                      <span className="text-[10px] font-bold text-stone-400 shrink-0">{entry.date}</span>
-                    </div>
-                    <p className="text-sm text-stone-700 font-medium leading-relaxed break-words">{entry.note}</p>
-                    
-                    {entry.image_path && signedUrls[entry.image_path] && (
-                       <div 
-                          className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
-                          onClick={() => {
-                             const jPhotos = (selectedLedger.journal || []).map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
-                             const clickedIndex = jPhotos.indexOf(signedUrls[entry.image_path]);
-                             setCarousel({ images: jPhotos, currentIndex: clickedIndex });
-                          }}
-                       >
-                           <img src={signedUrls[entry.image_path]} className="w-full h-full object-cover" />
-                       </div>
-                    )}
+                        <div className="flex items-center justify-between mb-2 pr-8 w-full">
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm shrink-0 mr-2
+                            ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
+                              entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 
+                              entry.type === 'PHOTO' ? 'bg-indigo-100 text-indigo-800' :
+                              entry.type === 'ALLOCATE' ? 'bg-purple-100 text-purple-800' :
+                              entry.type === 'EVENT' ? 'bg-stone-800 text-white' : 'bg-emerald-100 text-emerald-800'}`}
+                          >
+                            {entry.type}
+                          </span>
+                          <span className="text-[10px] font-bold text-stone-400 shrink-0">{entry.date}</span>
+                        </div>
+                        <p className="text-sm text-stone-700 font-medium leading-relaxed break-words whitespace-pre-wrap">{entry.note}</p>
+                        
+                        {entry.image_path && signedUrls[entry.image_path] && (
+                           <div 
+                              className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
+                              onClick={() => {
+                                 const jPhotos = (selectedLedger.journal || []).map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
+                                 const clickedIndex = jPhotos.indexOf(signedUrls[entry.image_path]);
+                                 setCarousel({ images: jPhotos, currentIndex: clickedIndex });
+                              }}
+                           >
+                               <img src={signedUrls[entry.image_path]} className="w-full h-full object-cover" />
+                           </div>
+                        )}
+                     </div>
                   </div>
                 ))
               )}
