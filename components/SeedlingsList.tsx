@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSeedling, Season, AppView, SeedlingJournalEntry, InventorySeed } from '../types';
 
-// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
 const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -17,7 +16,6 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
       if (!ctx) return reject(new Error('Failed to get canvas context'));
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Dark overlay gradient for readable text
       const gradient = ctx.createLinearGradient(0, height - 80, 0, height);
       gradient.addColorStop(0, 'transparent');
       gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
@@ -41,7 +39,7 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: any) {
+export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
   const [ledgers, setLedgers] = useState<SeasonSeedling[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -55,7 +53,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [carousel, setCarousel] = useState<{ images: string[], currentIndex: number } | null>(null);
 
   const [isDirectAddOpen, setIsDirectAddOpen] = useState(false);
-  const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '' });
+  const [directAddForm, setDirectAddForm] = useState({ seedId: '', count: 1, note: '', seasonId: '', sownDate: '' });
   const [isSubmittingDirectAdd, setIsSubmittingDirectAdd] = useState(false);
   const [showSeedSearch, setShowSeedSearch] = useState(false);
   const [seedSearchQuery, setSeedSearchQuery] = useState("");
@@ -67,7 +65,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const [editKeep, setEditKeep] = useState(0);
   const [editReserve, setEditReserve] = useState(0);
+  
   const [adjustQty, setAdjustQty] = useState(0);
+  const [adjustSownDate, setAdjustSownDate] = useState(''); 
 
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
@@ -76,7 +76,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   useEffect(() => { fetchBaseData(); }, []);
-  useEffect(() => { setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason })); }, [activeSeason]);
+  useEffect(() => { 
+     const todayObj = new Date();
+     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+     setDirectAddForm(prev => ({ ...prev, seasonId: activeSeason, sownDate: localToday })); 
+  }, [activeSeason]);
 
   const fetchBaseData = async () => {
     setIsLoading(true);
@@ -106,8 +110,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
        setLedgers(data);
        
        const urlsToFetch = data.flatMap(l => l.images || []).filter(img => img && !img.startsWith('http') && !img.startsWith('data:'));
-       
-       // FIX: Added (j: any) type definition
        data.forEach(l => {
           (l.journal || []).forEach((j: any) => { if (j.image_path) urlsToFetch.push(j.image_path); });
        });
@@ -132,11 +134,16 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     try {
       const today = new Date();
       const dateStr = today.toLocaleDateString();
-      let daysStr = "Not Sown";
-      if (selectedLedger.created_at) {
-         const sowDate = new Date(selectedLedger.created_at);
+      let daysStr = "Unknown Age";
+      
+      if (selectedLedger.sown_date) {
+         const sowDate = new Date(selectedLedger.sown_date + 'T12:00:00');
          const diffDays = Math.floor((today.getTime() - sowDate.getTime()) / (1000 * 60 * 60 * 24));
-         daysStr = `${diffDays} days`;
+         daysStr = `${diffDays} days old`;
+      } else if (selectedLedger.created_at) {
+         const createdAt = new Date(selectedLedger.created_at);
+         const diffDays = Math.floor((today.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+         daysStr = `Potted ${diffDays}d ago`;
       }
       const watermarkText = `${dateStr} : ${selectedLedger.seed?.variety_name || 'Unknown'} : ${daysStr}`;
 
@@ -175,7 +182,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const openEventModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setEventType('qty_planted'); setDeductKeep(0); setDeductReserve(0); setDeductAvailable(0); setActiveModal('LOG_EVENT'); };
   const openAllocateModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setEditKeep(ledger.allocate_keep); setEditReserve(ledger.allocate_reserve); setActiveModal('ALLOCATE'); };
-  const openAdjustModal = (ledger: SeasonSeedling) => { setSelectedLedger(ledger); setAdjustQty(ledger.qty_growing); setActiveModal('ADJUST'); };
+  
+  const openAdjustModal = (ledger: SeasonSeedling) => { 
+      setSelectedLedger(ledger); 
+      setAdjustQty(ledger.qty_growing); 
+      setAdjustSownDate(ledger.sown_date || '');
+      setActiveModal('ADJUST'); 
+  };
 
   const submitEvent = async () => {
     if (!selectedLedger) return;
@@ -208,17 +221,37 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
 
   const submitAdjustment = async () => {
     if (!selectedLedger) return;
-    const delta = adjustQty - selectedLedger.qty_growing;
-    if (delta === 0) { setActiveModal(null); return; }
+    const deltaQty = adjustQty - selectedLedger.qty_growing;
+    const isDateChanged = adjustSownDate !== (selectedLedger.sown_date || '');
+    
+    if (deltaQty === 0 && !isDateChanged) { setActiveModal(null); return; }
     
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     
-    const newJournalEntry: SeedlingJournalEntry = { id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), date: localToday, type: 'EVENT', note: `Inventory Audit: Corrected total growing from ${selectedLedger.qty_growing} to ${adjustQty} (${delta > 0 ? '+' : ''}${delta}).` };
-    const updates = { qty_growing: adjustQty, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
-    setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...updates } : l));
+    let noteText = '';
+    if (deltaQty !== 0) noteText += `Corrected total growing to ${adjustQty} (${deltaQty > 0 ? '+' : ''}${deltaQty}). `;
+    if (isDateChanged) noteText += `Updated Original Sow Date to ${adjustSownDate}.`;
+
+    const newJournalEntry: SeedlingJournalEntry = { 
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2), 
+        date: localToday, 
+        type: 'EVENT', 
+        note: `Inventory Audit: ${noteText.trim()}` 
+    };
+    
+    // FIX: Using undefined for local React state strictly to satisfy TS 'string | undefined'
+    const localUpdates = { qty_growing: adjustQty, sown_date: adjustSownDate || undefined, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
+    
+    setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...localUpdates } : l));
     setActiveModal(null);
-    await supabase.from('season_seedlings').update(updates).eq('id', selectedLedger.id);
+    
+    // FIX: Passing null directly to Supabase to clear DB columns if necessary
+    await supabase.from('season_seedlings').update({ 
+        qty_growing: adjustQty, 
+        sown_date: adjustSownDate || null, 
+        journal: [newJournalEntry, ...(selectedLedger.journal || [])] 
+    }).eq('id', selectedLedger.id);
   };
 
   const submitJournalNote = async () => {
@@ -230,6 +263,17 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, journal: updatedJournal } : l));
     setSelectedLedger({ ...selectedLedger, journal: updatedJournal });
     setNewNote('');
+    await supabase.from('season_seedlings').update({ journal: updatedJournal }).eq('id', selectedLedger.id);
+  };
+
+  const deleteJournalEntry = async (entryId: string) => {
+    if (!selectedLedger) return;
+    if (!confirm("Are you sure you want to delete this journal entry?")) return;
+    
+    const updatedJournal = (selectedLedger.journal || []).filter(j => j.id !== entryId);
+    
+    setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, journal: updatedJournal } : l));
+    setSelectedLedger({ ...selectedLedger, journal: updatedJournal });
     await supabase.from('season_seedlings').update({ journal: updatedJournal }).eq('id', selectedLedger.id);
   };
 
@@ -251,10 +295,16 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
       if (existingLedger) {
         await supabase.from('season_seedlings').update({ qty_growing: existingLedger.qty_growing + directAddForm.count, journal: [journalEntry, ...(existingLedger.journal || [])] }).eq('id', existingLedger.id);
       } else {
-        await supabase.from('season_seedlings').insert([{ seed_id: directAddForm.seedId, season_id: directAddForm.seasonId, qty_growing: directAddForm.count, allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, journal: [journalEntry] }]);
+        await supabase.from('season_seedlings').insert([{ 
+            seed_id: directAddForm.seedId, season_id: directAddForm.seasonId, 
+            qty_growing: directAddForm.count, 
+            sown_date: directAddForm.sownDate || localToday,
+            allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, 
+            journal: [journalEntry] 
+        }]);
       }
       setIsDirectAddOpen(false);
-      setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: activeSeason });
+      setDirectAddForm({ seedId: '', count: 1, note: '', seasonId: activeSeason, sownDate: localToday });
       fetchLedgers(activeSeason); 
       alert("Successfully added to your nursery ledger!");
     } catch (err: any) { alert("Failed to add seedlings: " + err.message); } 
@@ -353,6 +403,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                       {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="col-span-2">
+                     <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Original Sow Date</label>
+                     <input type="date" value={directAddForm.sownDate} onChange={(e) => setDirectAddForm({ ...directAddForm, sownDate: e.target.value })} className="w-full bg-white border border-stone-200 rounded-xl p-2.5 text-xs font-bold outline-none focus:border-emerald-500 shadow-sm" />
+                   </div>
                 </div>
 
                 <div>
@@ -465,6 +522,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
             </div>
             <div className="p-5 space-y-4">
               <p className="text-xs text-stone-500 leading-relaxed">Fix a miscount without logging them as "Dead" or doing another "Direct Add". This will add a note to your journal.</p>
+              
               <div className="flex items-center justify-between bg-white border border-stone-200 p-4 rounded-2xl shadow-sm">
                 <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Current Total</span><span className="text-2xl font-black text-stone-400 line-through decoration-red-500 decoration-2">{selectedLedger.qty_growing}</span></div>
                 <div className="text-xl text-stone-300">➡️</div>
@@ -473,12 +531,19 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                   <input type="number" min="0" value={adjustQty === 0 && adjustQty !== selectedLedger.qty_growing ? '' : adjustQty} onChange={(e) => setAdjustQty(Number(e.target.value))} className="w-24 text-center border-b-2 border-amber-300 py-1 text-2xl font-black text-stone-800 outline-none focus:border-amber-500" />
                 </div>
               </div>
+              
               {adjustQty !== selectedLedger.qty_growing && (
                 <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-center text-sm font-bold text-stone-600 animate-in fade-in">
                   Difference: <span className={adjustQty > selectedLedger.qty_growing ? 'text-emerald-600' : 'text-red-600'}>{adjustQty > selectedLedger.qty_growing ? '+' : ''}{adjustQty - selectedLedger.qty_growing}</span>
                 </div>
               )}
-              <button onClick={submitAdjustment} disabled={adjustQty === selectedLedger.qty_growing} className="w-full py-4 bg-amber-500 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-amber-900/20 active:scale-95 transition-all mt-2 hover:bg-amber-600 disabled:opacity-50 disabled:grayscale">Confirm Adjustment</button>
+
+              <div>
+                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Original Sow Date</label>
+                <input type="date" value={adjustSownDate} onChange={(e) => setAdjustSownDate(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-amber-500 shadow-sm" />
+              </div>
+
+              <button onClick={submitAdjustment} disabled={adjustQty === selectedLedger.qty_growing && adjustSownDate === (selectedLedger.sown_date || '')} className="w-full py-4 bg-amber-500 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-amber-900/20 active:scale-95 transition-all mt-2 hover:bg-amber-600 disabled:opacity-50 disabled:grayscale">Confirm Adjustment</button>
             </div>
           </div>
         </div>
@@ -559,7 +624,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100">
-              {/* FIX: Cast j to any to resolve implicit any error */}
               {(selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .length === 0 ? (
@@ -568,8 +632,17 @@ export default function SeedlingsList({ navigateTo, handleGoBack, userRole }: an
                 (selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .map((entry: any, idx) => (
-                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative">
-                    <div className="flex justify-between items-start mb-2">
+                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative group">
+                    
+                    <button 
+                      onClick={() => deleteJournalEntry(entry.id)}
+                      className="absolute top-3 right-3 p-1.5 bg-stone-50 text-stone-300 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      title="Delete Entry"
+                    >
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+
+                    <div className="flex justify-between items-start mb-2 pr-8">
                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm
                         ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
                           entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 

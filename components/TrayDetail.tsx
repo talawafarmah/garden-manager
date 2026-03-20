@@ -7,7 +7,6 @@ const parseDateString = (dateStr: string) => {
   return new Date(dateStr + 'T12:00:00');
 };
 
-// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
 const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -104,7 +103,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
     if (!file) return;
     setIsUploading(true);
     try {
-      // 1. Watermark Text
       const today = new Date();
       const dateStr = today.toLocaleDateString();
       let daysStr = "Not Sown";
@@ -116,30 +114,20 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       }
       
       const watermarkText = `${dateStr} : ${daysStr}`;
-
-      // 2. Process
       const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
 
-      // 3. Upload raw file
       const filePath = `trays/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
       const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob);
       if (uploadError) throw uploadError;
       
-      // 4. Instant URL fetch to render
       const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
-      if (urlData?.signedUrl) {
-         setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
-      }
+      if (urlData?.signedUrl) { setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl})); }
 
-      // 5. Update Tray
       const newImages = [...(localTray.images || []), filePath];
       await supabase.from('seedling_trays').update({ images: newImages }).eq('id', localTray.id);
       setLocalTray({ ...localTray, images: newImages });
-    } catch (err: any) { 
-      alert('Upload failed: ' + err.message); 
-    } finally { 
-      setIsUploading(false); 
-    }
+    } catch (err: any) { alert('Upload failed: ' + err.message); } 
+    finally { setIsUploading(false); }
   };
 
   const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
@@ -205,16 +193,31 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       if (!sId) throw new Error("No active season found to attach these seedlings to.");
 
       const { data: existingLedger } = await supabase.from('season_seedlings').select('*').eq('seed_id', potUpState.seedId).eq('season_id', sId).maybeSingle();
-      const trayReference = localTray.name || 'a tray';
+      
+      const seedRecord = localTray.contents.find((c: any) => c.seed_id === potUpState.seedId);
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+      
+      // FIX: Grab the actual sown date for the new Ledger entry
+      const actualSownDate = seedRecord?.sown_date || localTray.sown_date || localToday;
 
+      const trayReference = localTray.name || 'a tray';
       const journalEntry: SeedlingJournalEntry = { id: crypto.randomUUID(), date: localToday, type: 'UPPOT', note: `Potted up ${potUpState.count} from ${trayReference}. ${potUpState.note}` };
 
       if (existingLedger) {
-        await supabase.from('season_seedlings').update({ qty_growing: existingLedger.qty_growing + potUpState.count, journal: [journalEntry, ...(existingLedger.journal || [])] }).eq('id', existingLedger.id);
+        await supabase.from('season_seedlings').update({ 
+            qty_growing: existingLedger.qty_growing + potUpState.count, 
+            journal: [journalEntry, ...(existingLedger.journal || [])] 
+        }).eq('id', existingLedger.id);
       } else {
-        await supabase.from('season_seedlings').insert([{ seed_id: potUpState.seedId, season_id: sId, qty_growing: potUpState.count, allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, journal: [journalEntry] }]);
+        await supabase.from('season_seedlings').insert([{ 
+            seed_id: potUpState.seedId, 
+            season_id: sId, 
+            qty_growing: potUpState.count, 
+            sown_date: actualSownDate, // Pass sown date!
+            allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, 
+            journal: [journalEntry] 
+        }]);
       }
 
       const updatedContents = localTray.contents.map((c: any) => c.seed_id === potUpState.seedId ? { ...c, planted_count: (c.planted_count || 0) + potUpState.count } : c);
@@ -242,14 +245,10 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       const src = getThumbSrc(topSeeds[0]);
       collageHeader = src ? <img src={src} className="w-full h-full object-cover opacity-90" /> : null;
   } else if (topSeeds.length === 2) {
-      const src1 = getThumbSrc(topSeeds[0]);
-      const src2 = getThumbSrc(topSeeds[1]);
+      const src1 = getThumbSrc(topSeeds[0]); const src2 = getThumbSrc(topSeeds[1]);
       collageHeader = (<div className="flex w-full h-full opacity-90"><div className="w-1/2 h-full border-r border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div><div className="w-1/2 h-full">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div></div>);
   } else if (topSeeds.length >= 3) {
-      const src1 = getThumbSrc(topSeeds[0]);
-      const src2 = getThumbSrc(topSeeds[1]);
-      const src3 = getThumbSrc(topSeeds[2]);
-      const src4 = getThumbSrc(topSeeds[3]);
+      const src1 = getThumbSrc(topSeeds[0]); const src2 = getThumbSrc(topSeeds[1]); const src3 = getThumbSrc(topSeeds[2]); const src4 = getThumbSrc(topSeeds[3]);
       collageHeader = (<div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-90"><div className="border-r border-b border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div><div className="border-b border-stone-200">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div><div className="border-r border-stone-200">{src3 && <img src={src3} className="w-full h-full object-cover" />}</div><div>{src4 && <img src={src4} className="w-full h-full object-cover" />}</div></div>);
   }
 
@@ -291,7 +290,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2 mr-2">
           <button onClick={() => navigateTo('trays', null, true)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 0h6" /></svg></button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg></button>
         </div>
         <h1 className="text-xl font-bold truncate flex-1 text-center pr-4">Tray Details</h1>
         <div className="flex items-center gap-2">
@@ -304,7 +303,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-5">
-         
          {collageHeader && (
             <div className="w-full h-32 bg-stone-200 rounded-3xl overflow-hidden shadow-sm border border-stone-200">
                {collageHeader}

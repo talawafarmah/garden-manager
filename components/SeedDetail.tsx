@@ -9,7 +9,6 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any, replace?: boolean) => void;
   handleGoBack: (view: any) => void;
-  userRole?: string; 
 }
 
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
@@ -38,7 +37,6 @@ const calculateStartDate = (target: string, weeks: number, germStr?: string) => 
   return `${y}-${m}-${d}`;
 };
 
-// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
 const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -76,7 +74,7 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function SeedDetail({ seed, inventory, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
+export default function SeedDetail({ seed, inventory, trays, categories, navigateTo, handleGoBack }: SeedDetailProps) {
   const [activeTab, setActiveTab] = useState<'SPECS' | 'PERFORMANCE' | 'JOURNAL'>('SPECS');
   
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
@@ -86,7 +84,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
   const [ledgerHistory, setLedgerHistory] = useState<SeasonSeedling[]>([]);
   const [localSeedJournal, setLocalSeedJournal] = useState<SeedlingJournalEntry[]>(seed.journal || []);
   
-  // --- NEW: Filter State and Carousel ---
   const [journalFilter, setJournalFilter] = useState<'ALL' | 'OBSERVATION' | 'TASTING' | 'HARVEST' | 'NOTE' | 'PHOTO'>('ALL');
   const [carousel, setCarousel] = useState<{ images: string[], currentIndex: number } | null>(null);
 
@@ -138,7 +135,7 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     filteredTrays.forEach(t => paths.push(...(t.images || [])));
     ledgerHistory.forEach(l => {
        paths.push(...(l.images || []));
-       (l.journal || []).forEach(j => { if ((j as any).image_path) paths.push((j as any).image_path); });
+       (l.journal || []).forEach((j: any) => { if (j.image_path) paths.push(j.image_path); });
     });
     return Array.from(new Set(paths.filter(p => p && typeof p === 'string' && !p.startsWith('http') && !p.startsWith('data:'))));
   }, [seed.images, filteredTrays, ledgerHistory]);
@@ -178,26 +175,21 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     if (!file) return;
     setIsUploading(true);
     try {
-      // 1. Watermark Text
       const today = new Date();
       const dateStr = today.toLocaleDateString();
       const watermarkText = `${dateStr} : ${seed.variety_name}`;
 
-      // 2. Process
       const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
 
-      // 3. Upload raw file
       const filePath = `vault/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
       const { error: uploadError } = await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob);
       if (uploadError) throw uploadError;
       
-      // 4. Instant URL fetch to render
       const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
       if (urlData?.signedUrl) {
          setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
       }
 
-      // 5. Update array
       const newImages = [...(seed.images || []), filePath];
       await supabase.from('seed_inventory').update({ images: newImages }).eq('id', seed.id);
       seed.images = newImages; 
@@ -236,6 +228,14 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     
     setLocalSeedJournal(updatedJournal);
     setNewSeedNote('');
+    await supabase.from('seed_inventory').update({ journal: updatedJournal }).eq('id', seed.id);
+  };
+
+  const handleDeleteJournalEntry = async (entryId: string) => {
+    if (!confirm("Are you sure you want to delete this master journal entry?")) return;
+    
+    const updatedJournal = localSeedJournal.filter(j => j.id !== entryId);
+    setLocalSeedJournal(updatedJournal);
     await supabase.from('seed_inventory').update({ journal: updatedJournal }).eq('id', seed.id);
   };
 
@@ -288,7 +288,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
 
   const toggleOutOfStock = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (userRole !== 'admin') return;
     const newStatus = !seed.out_of_stock;
     const { error } = await supabase.from('seed_inventory').update({ out_of_stock: newStatus }).eq('id', seed.id);
     if (!error) {
@@ -420,13 +419,13 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
         </div>
         <h1 className="text-lg font-bold truncate px-2 text-center flex-1"></h1>
         <div className="flex gap-2 min-w-[80px] justify-end">
            <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform flex items-center" title="Quick Photo">
-             {isUploading ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+             {isUploading ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
            </button>
            <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Schedule in Planner">
              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -467,15 +466,13 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
             <div className="flex items-center gap-2 mb-1">
               <span className="bg-emerald-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm">{seed.id}</span>
               {seed.out_of_stock ? (
-                <span onClick={toggleOutOfStock} className={`text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors ${userRole === 'admin' ? 'cursor-pointer bg-red-500 hover:bg-red-600' : 'bg-red-500'}`}>
-                  {userRole === 'admin' ? 'OUT OF STOCK (Click to Fix)' : 'OUT OF STOCK'}
+                <span onClick={toggleOutOfStock} className="text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors cursor-pointer bg-red-500 hover:bg-red-600">
+                  OUT OF STOCK (Click to Fix)
                 </span>
               ) : (
-                userRole === 'admin' && (
-                  <span onClick={toggleOutOfStock} className="cursor-pointer bg-stone-600/50 hover:bg-red-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors">
-                    MARK OUT OF STOCK
-                  </span>
-                )
+                <span onClick={toggleOutOfStock} className="cursor-pointer bg-stone-600/50 hover:bg-red-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors">
+                  MARK OUT OF STOCK
+                </span>
               )}
             </div>
             <h2 className="text-2xl font-black tracking-tight leading-tight">{seed.variety_name}</h2>
@@ -658,7 +655,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                   </div>
                </div>
 
-               {/* Filter bar for Journal Entries */}
                <div className="bg-white px-4 py-2 border border-stone-200 rounded-2xl flex gap-2 overflow-x-auto scrollbar-hide shadow-sm">
                   {['ALL', 'OBSERVATION', 'TASTING', 'HARVEST', 'NOTE', 'PHOTO'].map(f => (
                     <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
@@ -668,9 +664,9 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                </div>
 
                <div className="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-stone-200 before:to-transparent">
-                  {unifiedJournal.filter(j => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && (j as any).image_path)).length === 0 ? 
+                  {unifiedJournal.filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path)).length === 0 ? 
                      <p className="text-center text-stone-400 text-sm italic py-10 relative z-10">No history recorded yet.</p> : 
-                     unifiedJournal.filter(j => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && (j as any).image_path)).map((entry, idx) => {
+                     unifiedJournal.filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path)).map((entry: any, idx) => {
                         let colorClass = "bg-stone-100 text-stone-600";
                         if (entry.source === 'TRAY') colorClass = "bg-blue-100 text-blue-800";
                         if (entry.source.startsWith('LEDGER')) colorClass = "bg-emerald-100 text-emerald-800";
@@ -682,24 +678,35 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-stone-50 bg-stone-200 text-stone-500 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10 text-lg">
                                 {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
                              </div>
-                             <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl bg-white border border-stone-200 shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
+                             <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative group/card">
+                                
+                                {/* NEW: Delete Entry Button (Only for Master Seed Notes) */}
+                                {entry.source === 'SEED' && (
+                                  <button 
+                                    onClick={() => handleDeleteJournalEntry(entry.id)}
+                                    className="absolute top-3 right-3 p-1.5 bg-stone-50 text-stone-300 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover/card:opacity-100"
+                                    title="Delete Entry"
+                                  >
+                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                )}
+
+                                <div className="flex items-center justify-between mb-2 pr-8">
                                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm ${colorClass}`}>{entry.source} • {entry.type}</span>
                                    <span className="text-[10px] font-bold text-stone-400">{entry.date}</span>
                                 </div>
                                 <p className="text-sm font-medium text-stone-700 leading-relaxed">{entry.note}</p>
                                 
-                                {/* Embedded Photo Renderer */}
-                                {(entry as any).image_path && signedUrls[(entry as any).image_path] && (
+                                {entry.image_path && signedUrls[entry.image_path] && (
                                    <div 
                                       className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
                                       onClick={() => {
                                          const jPhotos = unifiedJournal.map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
-                                         const clickedIndex = jPhotos.indexOf(signedUrls[(entry as any).image_path]);
+                                         const clickedIndex = jPhotos.indexOf(signedUrls[entry.image_path]);
                                          setCarousel({ images: jPhotos, currentIndex: clickedIndex });
                                       }}
                                    >
-                                       <img src={signedUrls[(entry as any).image_path]} className="w-full h-full object-cover" />
+                                       <img src={signedUrls[entry.image_path]} className="w-full h-full object-cover" />
                                    </div>
                                 )}
                              </div>

@@ -212,6 +212,7 @@ export interface SeasonSeedling {
   locations: Record<string, number>; 
   journal: SeedlingJournalEntry[];
   images?: string[];
+  sown_date?: string;
   created_at?: string;
   updated_at?: string;
   seed?: InventorySeed;
