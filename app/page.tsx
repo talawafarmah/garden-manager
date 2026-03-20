@@ -52,6 +52,37 @@ export default function App() {
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
   const [userRole, setUserRole] = useState<'admin' | 'viewer'>('viewer');
 
+  // --- GLOBAL SCREEN WAKE LOCK ---
+  useEffect(() => {
+    let wakeLock: any = null;
+
+    const requestWakeLock = async () => {
+      try {
+        const nav = navigator as any;
+        if (nav.wakeLock) {
+          wakeLock = await nav.wakeLock.request('screen');
+        }
+      } catch (err: any) {
+        console.log(`Wake Lock error: ${err.message}`);
+      }
+    };
+
+    // Request wake lock initially
+    requestWakeLock();
+
+    // Re-request wake lock if the app becomes visible again after being minimized
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock) wakeLock.release().catch(() => {});
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split('; ');
