@@ -240,13 +240,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         note: `Inventory Audit: ${noteText.trim()}` 
     };
     
-    // FIX: Using undefined for local React state strictly to satisfy TS 'string | undefined'
     const localUpdates = { qty_growing: adjustQty, sown_date: adjustSownDate || undefined, journal: [newJournalEntry, ...(selectedLedger.journal || [])] };
     
     setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, ...localUpdates } : l));
     setActiveModal(null);
     
-    // FIX: Passing null directly to Supabase to clear DB columns if necessary
     await supabase.from('season_seedlings').update({ 
         qty_growing: adjustQty, 
         sown_date: adjustSownDate || null, 
@@ -471,9 +469,14 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-black text-lg text-stone-900 truncate hover:text-emerald-600 cursor-pointer" onClick={() => navigateTo('seed_detail', seed)}>{seed?.variety_name || 'Unknown Seed'}</h3>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
                         <p className="text-[9px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">ID: {seed?.id || 'Unknown'}</p>
+                        {ledger.sown_date && (
+                           <p className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">
+                             Sown: {ledger.sown_date}
+                           </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -521,7 +524,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-amber-600 hover:bg-amber-200"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-xs text-stone-500 leading-relaxed">Fix a miscount without logging them as "Dead" or doing another "Direct Add". This will add a note to your journal.</p>
+              <p className="text-xs text-stone-500 leading-relaxed">Fix a miscount without logging them as "Dead". You can also correct the original sow date. This adds a note to your journal.</p>
               
               <div className="flex items-center justify-between bg-white border border-stone-200 p-4 rounded-2xl shadow-sm">
                 <div><span className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Current Total</span><span className="text-2xl font-black text-stone-400 line-through decoration-red-500 decoration-2">{selectedLedger.qty_growing}</span></div>
@@ -606,24 +609,24 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
       {activeModal === 'JOURNAL' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
-            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 rounded-t-3xl">
-              <div>
-                <h2 className="font-black text-stone-800 tracking-tight">Ledger Journal</h2>
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{selectedLedger.seed?.variety_name}</p>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-[100vw] sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 overflow-hidden">
+            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 rounded-t-3xl w-full">
+              <div className="min-w-0 pr-4">
+                <h2 className="font-black text-stone-800 tracking-tight truncate">Ledger Journal</h2>
+                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest truncate">{selectedLedger.seed?.variety_name}</p>
               </div>
-              <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              <button onClick={() => setActiveModal(null)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800 shrink-0"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 shadow-sm z-10">
+            <div className="bg-white px-4 py-2 border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 shadow-sm z-10 w-full">
                {['ALL', 'NOTE', 'UPPOT', 'FERTILIZE', 'EVENT', 'PHOTO'].map(f => (
-                 <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
+                 <button key={f} onClick={() => setJournalFilter(f as any)} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap shrink-0 ${journalFilter === f ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>
                    {f}
                  </button>
                ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100 w-full">
               {(selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .length === 0 ? (
@@ -632,7 +635,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                 (selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .map((entry: any, idx) => (
-                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative group">
+                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-stone-200 relative group w-full">
                     
                     <button 
                       onClick={() => deleteJournalEntry(entry.id)}
@@ -642,8 +645,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
 
-                    <div className="flex justify-between items-start mb-2 pr-8">
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm
+                    <div className="flex justify-between items-start mb-2 pr-8 w-full">
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm shrink-0 mr-2
                         ${entry.type === 'UPPOT' ? 'bg-amber-100 text-amber-800' : 
                           entry.type === 'FERTILIZE' ? 'bg-blue-100 text-blue-800' : 
                           entry.type === 'PHOTO' ? 'bg-indigo-100 text-indigo-800' :
@@ -652,13 +655,13 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                       >
                         {entry.type}
                       </span>
-                      <span className="text-[10px] font-bold text-stone-400">{entry.date}</span>
+                      <span className="text-[10px] font-bold text-stone-400 shrink-0">{entry.date}</span>
                     </div>
-                    <p className="text-sm text-stone-700 font-medium leading-relaxed">{entry.note}</p>
+                    <p className="text-sm text-stone-700 font-medium leading-relaxed break-words">{entry.note}</p>
                     
                     {entry.image_path && signedUrls[entry.image_path] && (
                        <div 
-                          className="mt-3 w-full h-40 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
+                          className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
                           onClick={() => {
                              const jPhotos = (selectedLedger.journal || []).map((j: any) => j.image_path ? signedUrls[j.image_path] : null).filter(Boolean) as string[];
                              const clickedIndex = jPhotos.indexOf(signedUrls[entry.image_path]);
@@ -673,9 +676,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
               )}
             </div>
 
-            <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+            <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)] w-full">
               <div className="flex gap-2 mb-3">
-                <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50">
+                <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50 shrink-0">
                   {isUploadingPhoto ? '⏳' : '📸'} Photo
                 </button>
                 <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handleCapturePhoto} />
@@ -684,9 +687,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                   <button key={t} onClick={() => setNoteType(t as any)} className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-colors shadow-sm ${noteType === t ? 'bg-stone-800 text-white border-stone-800' : 'bg-stone-50 text-stone-500 border-stone-200'}`}>{t}</button>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Type a note or log pot size..." className="flex-1 border border-stone-200 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 outline-none bg-stone-50 shadow-inner font-medium" />
-                <button onClick={submitJournalNote} disabled={!newNote.trim()} className="bg-emerald-600 text-white px-4 rounded-xl shadow-md disabled:opacity-50 active:scale-95 transition-all">
+              <div className="flex gap-2 w-full">
+                <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Type a note or log pot size..." className="flex-1 min-w-0 border border-stone-200 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 outline-none bg-stone-50 shadow-inner font-medium" />
+                <button onClick={submitJournalNote} disabled={!newNote.trim()} className="bg-emerald-600 text-white px-4 rounded-xl shadow-md disabled:opacity-50 active:scale-95 transition-all shrink-0">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 </button>
               </div>
