@@ -9,6 +9,7 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any, replace?: boolean) => void;
   handleGoBack: (view: any) => void;
+  userRole?: string; // Add this line back in!
 }
 
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
