@@ -424,21 +424,22 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         </div>
       )}
 
-      <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
+      {/* FIX: HEADER WIDTH OPTIMIZATION FOR MOBILE */}
+      <header className="bg-emerald-800 text-white px-3 py-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900 gap-2 overflow-hidden">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0">
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors shrink-0" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
-          <h1 className="text-xl font-bold ml-1 truncate">Seedling Nursery</h1>
+          <h1 className="text-lg sm:text-xl font-bold truncate">Nursery</h1>
         </div>
-        <div className="flex items-center gap-3">
-            <button onClick={() => setIsDirectAddOpen(true)} className="px-3 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-xs font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50" title="Direct Add Seedlings">
-               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Add
+        <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => setIsDirectAddOpen(true)} className="px-2 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-[10px] font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50">
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> <span className="hidden sm:inline">Add</span>
             </button>
             <select 
               value={activeSeason} 
               onChange={(e) => { setActiveSeason(e.target.value); fetchLedgers(e.target.value); }}
-              className="bg-emerald-900 border border-emerald-700 text-sm font-bold rounded-xl px-3 py-1.5 outline-none appearance-none cursor-pointer max-w-[120px] truncate"
+              className="bg-emerald-900 border border-emerald-700 text-[10px] sm:text-xs font-bold rounded-xl px-2 py-1.5 outline-none appearance-none cursor-pointer w-[90px] sm:w-[120px] truncate shadow-inner"
             >
               {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
@@ -471,12 +472,17 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                       <h3 className="font-black text-lg text-stone-900 truncate hover:text-emerald-600 cursor-pointer" onClick={() => navigateTo('seed_detail', seed)}>{seed?.variety_name || 'Unknown Seed'}</h3>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
-                        <p className="text-[9px] font-mono text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm">ID: {seed?.id || 'Unknown'}</p>
                         
-                        {/* NEW: ALWAYS SHOW SOWN DATE */}
-                        <p className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
-                          Sown: {ledger.sown_date || 'Not Set'}
-                        </p>
+                        {/* FIX: MAKE SOWN BADGE DIRECTLY CLICKABLE */}
+                        {ledger.sown_date ? (
+                           <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap cursor-pointer hover:border-emerald-300">
+                             Sown: {ledger.sown_date}
+                           </button>
+                        ) : (
+                           <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap cursor-pointer hover:bg-amber-100">
+                             Sown: Not Set (Fix)
+                           </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -607,9 +613,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         </div>
       )}
 
+      {/* FIX: MOBILE OPTIMIZED JOURNAL MODAL WIDTH */}
       {activeModal === 'JOURNAL' && selectedLedger && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 border-t border-x sm:border-b border-stone-200 overflow-hidden mx-auto">
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-full sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 overflow-hidden mx-auto">
             <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 w-full">
               <div className="min-w-0 pr-4">
                 <h2 className="font-black text-stone-800 tracking-tight truncate">Ledger Journal</h2>
@@ -626,7 +633,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-100 w-full overflow-x-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-stone-100 w-full">
               {(selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .length === 0 ? (
@@ -635,15 +642,15 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                 (selectedLedger.journal || [])
                 .filter((j: any) => journalFilter === 'ALL' || j.type === journalFilter || (journalFilter === 'PHOTO' && j.image_path))
                 .map((entry: any, idx) => (
-                  <div key={entry.id || idx} className="relative flex items-start gap-3 w-full">
+                  <div key={entry.id || idx} className="relative flex items-start gap-3 w-full group">
                      <div className="flex items-center justify-center w-10 h-10 rounded-full border border-stone-200 bg-stone-100 text-stone-500 shrink-0 shadow-sm z-10 text-lg mt-1">
                         {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source?.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
                      </div>
                      <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
-                        {/* FIX: DELETE BUTTON ALWAYS VISIBLE */}
+                        {/* FIX: TRASH CAN ALWAYS VISIBLE */}
                         <button 
                           onClick={() => deleteJournalEntry(entry.id)}
-                          className="absolute top-3 right-3 p-2 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
+                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
                           title="Delete Entry"
                         >
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -681,7 +688,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
               )}
             </div>
 
-            <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)] w-full">
+            <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)] w-full box-border">
               <div className="flex gap-2 mb-3">
                 <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50 shrink-0">
                   {isUploadingPhoto ? '⏳' : '📸'} Photo
