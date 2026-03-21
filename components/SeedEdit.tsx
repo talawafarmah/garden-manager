@@ -53,7 +53,29 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
   });
 };
 
+// --- FIX: FETCH URL AS BLOB TO PREVENT CANVAS TAINTING ---
+const fetchAsDataUrl = async (url: string): Promise<string> => {
+  if (!url) return "";
+  if (url.startsWith('data:')) return url;
+  try {
+    const proxyUrl = url.includes('supabase.co') ? url : `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return "";
+  }
+};
+
 const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
+  // Pre-fetch images as Data URLs to bypass strict Canvas CORS rules
+  const mDataUrl = await fetchAsDataUrl(motherSrc);
+  const fDataUrl = await fetchAsDataUrl(fatherSrc);
+
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     canvas.width = 800; canvas.height = 800;
@@ -67,7 +89,6 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
       return new Promise<void>((res) => {
         if (!src) return res();
         const img = new Image();
-        img.crossOrigin = "anonymous";
         img.onload = () => {
           const scale = Math.max(400 / img.width, 800 / img.height);
           const w = img.width * scale;
@@ -77,7 +98,6 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
           
           ctx.save();
           ctx.beginPath();
-          // FIX: Added the missing 0 for the Y coordinate (x, y, w, h)
           ctx.rect(isLeft ? 0 : 400, 0, 400, 800);
           ctx.clip();
           ctx.drawImage(img, x, y, w, h);
@@ -85,31 +105,24 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
           res();
         };
         img.onerror = () => res();
-        
-        let finalSrc = src;
-        if (src.startsWith('http') && !src.includes('supabase.co') && !src.includes('corsproxy')) {
-           finalSrc = `https://corsproxy.io/?${encodeURIComponent(src)}`;
-        } else if (!src.startsWith('http') && !src.startsWith('data:')) {
-           finalSrc = `data:image/jpeg;base64,${src}`;
-        }
-        img.src = finalSrc;
+        img.src = src; 
       });
     };
 
-    Promise.all([drawSide(motherSrc, true), drawSide(fatherSrc, false)]).then(() => {
+    Promise.all([drawSide(mDataUrl, true), drawSide(fDataUrl, false)]).then(() => {
       ctx.fillStyle = '#1c1917'; 
       ctx.fillRect(396, 0, 8, 800);
 
       ctx.font = '900 24px sans-serif';
       
-      if (motherSrc) {
+      if (mDataUrl) {
         ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; 
         ctx.fillRect(20, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♀ Mother', 35, 48);
       }
 
-      if (fatherSrc) {
+      if (fDataUrl) {
         ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; 
         ctx.fillRect(420, 20, 140, 40);
         ctx.fillStyle = 'white';
@@ -313,18 +326,14 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          let mSrc = mother?.thumbnail || '';
          let fSrc = father?.thumbnail || '';
 
-         const pathsToSign = [];
-         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
-         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
-
-         if (pathsToSign.length > 0) {
-           const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
-           if (data) {
-             data.forEach((item: any) => {
-               if (item.path === mSrc) mSrc = item.signedUrl;
-               if (item.path === fSrc) fSrc = item.signedUrl;
-             });
-           }
+         // Explicitly sign urls one by one to ensure exact matching
+         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) {
+           const { data } = await supabase.storage.from('talawa_media').createSignedUrl(mSrc, 60);
+           if (data?.signedUrl) mSrc = data.signedUrl;
+         }
+         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) {
+           const { data } = await supabase.storage.from('talawa_media').createSignedUrl(fSrc, 60);
+           if (data?.signedUrl) fSrc = data.signedUrl;
          }
 
          if (mSrc || fSrc) {
@@ -520,7 +529,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" />
             </svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
