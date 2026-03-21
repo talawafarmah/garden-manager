@@ -1,41 +1,36 @@
 import React, { useState } from 'react';
 
-// The exact function from our app
+// Notice we now point to OUR OWN Next.js API route!
 const fetchImageAsDataURL = async (url: string, log: (msg: string) => void): Promise<string> => {
   if (!url) return "";
   if (url.startsWith('data:')) return url;
   
-  const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  ];
+  const localProxy = `/api/proxy-image?url=${encodeURIComponent(url)}`;
 
-  for (const proxy of proxies) {
-    try {
-      log(`Trying proxy: ${proxy.split('/')[2]}...`);
-      const res = await fetch(proxy);
-      if (res.ok) {
-        const blob = await res.blob();
-        if (!blob.type.includes('image')) {
-            log(`❌ Proxy returned non-image data: ${blob.type}`);
-            continue;
-        }
-        return await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            log(`✅ Success! Converted to Base64 (${(reader.result as string).length} bytes)`);
-            resolve(reader.result as string);
-          };
-          reader.readAsDataURL(blob);
-        });
-      } else {
-        log(`❌ Proxy returned status: ${res.status}`);
+  try {
+    log(`Trying local server proxy: /api/proxy-image...`);
+    const res = await fetch(localProxy);
+    
+    if (res.ok) {
+      const blob = await res.blob();
+      if (!blob.type.includes('image')) {
+          log(`❌ Proxy returned non-image data: ${blob.type}`);
+          return "";
       }
-    } catch (e: any) {
-       log(`❌ Proxy fetch failed: ${e.message}`);
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          log(`✅ Success! Converted to Base64 (${(reader.result as string).length} bytes)`);
+          resolve(reader.result as string);
+        };
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      log(`❌ Local proxy returned status: ${res.status}`);
     }
+  } catch (e: any) {
+     log(`❌ Local proxy fetch failed: ${e.message}`);
   }
-  log(`🚨 All proxies failed for ${url}`);
   return "";
 };
 
@@ -120,7 +115,6 @@ export default function CollageTester({ handleGoBack }: any) {
 
     await Promise.all([drawSide(mBase64, true, "Mother"), drawSide(fBase64, false, "Father")]);
 
-    // Center UI
     ctx.fillStyle = '#1c1917'; ctx.fillRect(396, 0, 8, 800);
     ctx.font = '900 24px sans-serif';
     if (mBase64) { ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; ctx.fillRect(20, 20, 140, 40); ctx.fillStyle = 'white'; ctx.fillText('♀ Mother', 35, 48); }
@@ -166,7 +160,7 @@ export default function CollageTester({ handleGoBack }: any) {
       </div>
 
       {finalCollage && (
-        <div className="border-4 border-emerald-500 rounded-xl overflow-hidden shadow-2xl">
+        <div className="border-4 border-emerald-500 rounded-xl overflow-hidden shadow-2xl mt-4">
            <div className="bg-emerald-500 text-white text-center font-black py-1 text-xs">FINAL RENDER SUCCESS</div>
            <img src={finalCollage} className="w-full h-auto" />
         </div>
