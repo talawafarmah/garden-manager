@@ -9,7 +9,7 @@ interface SeedDetailProps {
   categories: any[];
   navigateTo: (view: any, payload?: any, replace?: boolean) => void;
   handleGoBack: (view: any) => void;
-  userRole?: string; // Add this line back in!
+  userRole?: string; 
 }
 
 const resolveNurseryWeeks = (seed: any, categories: any[]) => {
@@ -75,7 +75,7 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function SeedDetail({ seed, inventory, trays, categories, navigateTo, handleGoBack }: SeedDetailProps) {
+export default function SeedDetail({ seed, inventory, trays, categories, navigateTo, handleGoBack, userRole }: SeedDetailProps) {
   const [activeTab, setActiveTab] = useState<'SPECS' | 'PERFORMANCE' | 'JOURNAL'>('SPECS');
   
   const [viewingImageIndex, setViewingImageIndex] = useState(seed.primaryImageIndex || 0);
@@ -234,7 +234,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
 
   const handleDeleteJournalEntry = async (entryId: string) => {
     if (!confirm("Are you sure you want to delete this master journal entry?")) return;
-    
     const updatedJournal = localSeedJournal.filter(j => j.id !== entryId);
     setLocalSeedJournal(updatedJournal);
     await supabase.from('seed_inventory').update({ journal: updatedJournal }).eq('id', seed.id);
@@ -266,6 +265,7 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
     try {
       const startDate = calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days);
       const payload = {
+        id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
         season_id: planForm.seasonId,
         seed_id: seed.id,
         target_plant_date: planForm.targetDate,
@@ -300,8 +300,16 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
 
   const onBack = () => { seed?.returnTo ? navigateTo(seed.returnTo, seed.returnPayload) : handleGoBack('vault'); };
   const onEdit = () => { navigateTo('seed_edit', { ...seed, returnTo: seed?.returnTo, returnPayload: seed?.returnPayload }); };
-  const handleDuplicateSeed = () => { navigateTo('seed_edit', { ...seed, id: '', variety_name: `${seed.variety_name} (Copy)`, images: [], thumbnail: '', out_of_stock: false }); };
-  const handleBreedSeed = () => { navigateTo('seed_edit', { ...seed, id: '', variety_name: `${seed.variety_name} (Saved)`, vendor: 'Homegrown', images: [], primaryImageIndex: 0, thumbnail: '', parent_id_female: seed.id, generation: 'Gen 2', out_of_stock: false }); };
+  
+  // FIX: Cast seed to any so TS ignores the missing created_at property while we strip it out
+  const handleDuplicateSeed = () => { 
+    const { id, created_at, ...seedCopy } = seed as any;
+    navigateTo('seed_edit', { ...seedCopy, id: '', variety_name: `${seed.variety_name} (Copy)`, images: [], thumbnail: '', out_of_stock: false }); 
+  };
+  const handleBreedSeed = () => { 
+    const { id, created_at, ...seedCopy } = seed as any;
+    navigateTo('seed_edit', { ...seedCopy, id: '', variety_name: `${seed.variety_name} (Saved)`, vendor: 'Homegrown', images: [], primaryImageIndex: 0, thumbnail: '', parent_id_female: seed.id, generation: 'Gen 2', out_of_stock: false }); 
+  };
 
   const rawImgPath = (seed.images && seed.images.length > 0) ? seed.images[viewingImageIndex] : null;
   const displayImg = rawImgPath ? (rawImgPath.startsWith('http') || rawImgPath.startsWith('data:') ? rawImgPath : signedUrls[rawImgPath]) : null;
@@ -414,31 +422,31 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
         );
       })()}
 
-      <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button onClick={onBack} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Go Back">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+      <header className="bg-emerald-700 text-white px-3 py-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900 gap-2 overflow-hidden">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0">
+          <button onClick={onBack} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform shrink-0" title="Go Back">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Dashboard">
+          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform shrink-0" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
         </div>
-        <h1 className="text-lg font-bold truncate px-2 text-center flex-1"></h1>
-        <div className="flex gap-2 min-w-[80px] justify-end">
-           <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform flex items-center" title="Quick Photo">
-             {isUploading ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+        
+        <div className="flex items-center justify-end gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-1 shrink-0 max-w-[65%] sm:max-w-none">
+           <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform flex items-center" title="Quick Photo">
+             {isUploading ? <svg className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
            </button>
-           <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Schedule in Planner">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+           <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Schedule in Planner">
+             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
            </button>
-           <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Duplicate Seed">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+           <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Duplicate Seed">
+             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
            </button>
-           <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Record Next Gen / Cross">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+           <button onClick={handleBreedSeed} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Record Next Gen / Cross">
+             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
            </button>
-           <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full active:scale-90 transition-transform" title="Edit Seed">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+           <button onClick={onEdit} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Edit Seed">
+             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
            </button>
         </div>
       </header>
@@ -466,22 +474,16 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
           <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-stone-900 via-stone-900/40 to-transparent text-white">
             <div className="flex items-center gap-2 mb-1">
               <span className="bg-emerald-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm">{seed.id}</span>
-              {seed.out_of_stock ? (
-                <span onClick={toggleOutOfStock} className="text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors cursor-pointer bg-red-500 hover:bg-red-600">
-                  OUT OF STOCK (Click to Fix)
-                </span>
-              ) : (
-                <span onClick={toggleOutOfStock} className="cursor-pointer bg-stone-600/50 hover:bg-red-500 text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors">
-                  MARK OUT OF STOCK
-                </span>
-              )}
+              <span onClick={toggleOutOfStock} className={`text-[10px] font-black px-2 py-0.5 rounded shadow-sm transition-colors cursor-pointer ${seed.out_of_stock ? 'bg-red-500 hover:bg-red-600' : 'bg-stone-600/50 hover:bg-red-500'}`}>
+                {seed.out_of_stock ? 'OUT OF STOCK (Click to Fix)' : 'MARK OUT OF STOCK'}
+              </span>
             </div>
             <h2 className="text-2xl font-black tracking-tight leading-tight">{seed.variety_name}</h2>
             <p className="text-emerald-300 text-xs font-bold uppercase tracking-widest opacity-90">{seed.category} <span className="text-white/60 font-medium italic lowercase">({seed.species})</span></p>
           </div>
         </div>
 
-        <div className="p-3 bg-stone-50 border-b border-stone-200 sticky top-[72px] z-10">
+        <div className="p-3 bg-stone-50 border-b border-stone-200 sticky top-[60px] sm:top-[72px] z-10">
            <div className="flex bg-white rounded-xl shadow-sm border border-stone-200 p-1">
               {['SPECS', 'PERFORMANCE', 'JOURNAL'].map(tab => (
                  <button 
@@ -675,28 +677,27 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                         if (entry.type === 'PHOTO') colorClass = "bg-indigo-100 text-indigo-800";
 
                         return (
-                          <div key={entry.id || idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                             <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-stone-50 bg-stone-200 text-stone-500 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10 text-lg">
+                          <div key={entry.id || idx} className="relative flex items-start gap-3 w-full group">
+                             <div className="flex items-center justify-center w-10 h-10 rounded-full border border-stone-200 bg-stone-100 text-stone-500 shrink-0 shadow-sm z-10 text-lg mt-1">
                                 {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
                              </div>
-                             <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative group/card">
+                             <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
                                 
-                                {/* NEW: Delete Entry Button (Only for Master Seed Notes) */}
                                 {entry.source === 'SEED' && (
                                   <button 
                                     onClick={() => handleDeleteJournalEntry(entry.id)}
-                                    className="absolute top-3 right-3 p-1.5 bg-stone-50 text-stone-300 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover/card:opacity-100"
+                                    className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                                     title="Delete Entry"
                                   >
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                   </button>
                                 )}
 
-                                <div className="flex items-center justify-between mb-2 pr-8">
-                                   <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm ${colorClass}`}>{entry.source} • {entry.type}</span>
-                                   <span className="text-[10px] font-bold text-stone-400">{entry.date}</span>
+                                <div className="flex items-center justify-between mb-2 pr-8 w-full">
+                                   <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm shrink-0 mr-2 ${colorClass}`}>{entry.source} • {entry.type}</span>
+                                   <span className="text-[10px] font-bold text-stone-400 shrink-0">{entry.date}</span>
                                 </div>
-                                <p className="text-sm font-medium text-stone-700 leading-relaxed">{entry.note}</p>
+                                <p className="text-sm font-medium text-stone-700 leading-relaxed break-words whitespace-pre-wrap">{entry.note}</p>
                                 
                                 {entry.image_path && signedUrls[entry.image_path] && (
                                    <div 

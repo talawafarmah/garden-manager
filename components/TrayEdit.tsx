@@ -51,13 +51,12 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
-    // Check if this is a fully formed existing tray vs a partial payload from the Planner
     if (tray && tray.id) {
       setTrayFormData(tray);
     } else {
       setTrayFormData({
         id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
-        name: tray?.name || `Tray ${Math.floor(Math.random() * 10000)}`,
+        name: tray?.name || '', // Starts empty to allow auto-naming
         sown_date: localToday,
         cell_count: 72,
         contents: tray?.contents || [],
@@ -68,7 +67,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         potting_mix: '',
         location: '',
         season_id: tray?.season_id || '',
-        returnTo: tray?.returnTo // Preserve returnTo instruction
+        returnTo: tray?.returnTo 
       } as any);
     }
 
@@ -144,6 +143,20 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
     try {
       const isNewRecord = !trays.some((t: SeedlingTray) => t.id === tray?.id);
       const folderName = trayFormData.id; 
+
+      // FIX 5: Tray Auto-Naming Logic
+      let finalName = trayFormData.name;
+      if (!finalName || finalName.trim() === '') {
+         const hasContents = trayFormData.contents && trayFormData.contents.length > 0;
+         if (hasContents && trayFormData.contents.length === 1) {
+             const matchedSeed = inventory.find((s: any) => s.id === trayFormData.contents[0].seed_id);
+             finalName = matchedSeed ? `${matchedSeed.variety_name} Tray` : 'Nursery Tray';
+         } else if (hasContents && trayFormData.contents.length > 1) {
+             finalName = `Mixed Tray (${trayFormData.contents.length} Varieties)`;
+         } else {
+             finalName = `Tray ${Math.floor(Math.random() * 1000)}`;
+         }
+      }
       
       const uploadPromises = (trayFormData.images || []).map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
@@ -172,6 +185,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
 
       const payloadToSave: any = { 
         ...trayFormData, 
+        name: finalName, // Pass the calculated name
         contents: cleanedContents,
         images: uploadedImagePaths,
         season_id: trayFormData.season_id || null,
@@ -180,7 +194,6 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         first_planted_date: trayFormData.first_planted_date ? trayFormData.first_planted_date : null,
       };
 
-      // Ensure 'returnTo' is NOT passed to Supabase (causes DB rejection)
       delete payloadToSave.returnTo;
 
       let finalSavedRecord = payloadToSave;
@@ -329,16 +342,14 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Tray Setup</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="col-span-2">
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Tray Name</label>
-              <input type="text" value={trayFormData.name || ''} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} placeholder="e.g., Spring Tomatoes" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-sm" />
+              <input type="text" value={trayFormData.name || ''} onChange={(e) => setTrayFormData({ ...trayFormData, name: e.target.value })} placeholder="(Leave blank to auto-name)" className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Global Sown Date</label>
               <input type="date" value={trayFormData.sown_date || ''} onChange={(e) => setTrayFormData({ ...trayFormData, sown_date: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm" />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Cell Count</label>
               <div className="relative">
@@ -347,7 +358,7 @@ export default function TrayEdit({ tray, trays = [], setTrays, inventory, naviga
                 <span className="absolute right-4 top-3.5 text-sm font-bold text-stone-400 pointer-events-none">Cells</span>
               </div>
             </div>
-            <div>
+            <div className="col-span-2">
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Season</label>
               <select value={trayFormData.season_id || ''} onChange={(e) => setTrayFormData({ ...trayFormData, season_id: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 shadow-sm appearance-none">
                 <option value="">-- None --</option>
