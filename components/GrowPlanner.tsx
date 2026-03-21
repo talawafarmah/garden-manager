@@ -129,7 +129,18 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const savePlan = async () => {
     if (!editingSeed || !activeSeasonId) return;
     const startDate = calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days);
-    const payload = { season_id: activeSeasonId, seed_id: editingSeed.id, target_plant_date: formTargetDate, planned_qty: formQty, sown_qty: 0, indoor_start_date: startDate, stratification_started: false };
+    
+    // FIX: ADDED MANUAL UUID GENERATION SO DB DOES NOT REJECT THE INSERT
+    const payload = { 
+      id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
+      season_id: activeSeasonId, 
+      seed_id: editingSeed.id, 
+      target_plant_date: formTargetDate, 
+      planned_qty: formQty, 
+      sown_qty: 0, 
+      indoor_start_date: startDate, 
+      stratification_started: false 
+    };
     
     const { data, error } = await supabase.from('grow_plan').insert([payload]).select('*, seed:seed_inventory(*)').single();
     if (!error && data) {
@@ -279,7 +290,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
         <div className="flex items-center gap-3">
           <button onClick={() => handleGoBack('admin_hub')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold">Grow Planner</h1>
         </div>
@@ -337,7 +348,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                 <div className="flex justify-between items-center mb-4">
                    <button onClick={() => setCalendarViewDate(new Date(year, month - 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
                    <h3 className="font-black text-stone-800 tracking-tight">{monthNames[month]} {year}</h3>
-                   <button onClick={() => setCalendarViewDate(new Date(year, month + 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
+                   <button onClick={() => setCalendarViewDate(new Date(year, month + 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7-7" /></svg></button>
                 </div>
                 <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
@@ -451,7 +462,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                           </div>
                         </div>
 
-                        {/* FIX: Converted to flex-col layout to avoid button squishing on mobile */}
                         <div className="mt-1 pt-3 border-t border-stone-100 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
                            
                            {/* TOP ROW: Progress Bar & Goal/Sown Stats */}
