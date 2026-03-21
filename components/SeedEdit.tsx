@@ -14,11 +14,47 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   return new Blob([ab], { type: mimeType });
 };
 
-const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
+// --- NEW: ROBUST PROXY DOWNLOADER ---
+// Downloads the raw image data to bypass Canvas CORS blocks completely.
+const fetchImageAsDataURL = async (url: string): Promise<string> => {
+  if (url.startsWith('data:')) return url;
+  
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  ];
+
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy);
+      if (res.ok) {
+        const blob = await res.blob();
+        return await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (e) {
+       console.warn("Proxy failed, falling back to next...");
+    }
+  }
+  console.error(`Failed to securely download image from ${url}`);
+  return "";
+};
+
+const resizeImage = async (source: string, maxSize: number, quality: number): Promise<string> => {
+  let safeSource = source;
+  // If it's an external URL, download the raw bytes first so the Canvas doesn't get tainted!
+  if (source.startsWith('http') && !source.includes('supabase.co')) {
+     safeSource = await fetchImageAsDataURL(source);
+     if (!safeSource) return ""; // Fail gracefully if download completely blocked
+  }
+
   return new Promise((resolve) => {
-    if (!source) return resolve("");
     const img = new Image();
-    if (source.startsWith('http')) img.crossOrigin = "anonymous"; 
+    if (safeSource.startsWith('http')) img.crossOrigin = "anonymous"; 
+    
     img.onload = () => {
       const canvas = document.createElement('canvas');
       let width = img.width;
@@ -35,28 +71,28 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
       
-      try { resolve(canvas.toDataURL('image/jpeg', quality)); } 
-      catch (e) { resolve(""); }
+      try { 
+        resolve(canvas.toDataURL('image/jpeg', quality)); 
+      } catch (e) { 
+        resolve(""); 
+      }
     };
     img.onerror = () => resolve("");
-    
-    let finalSrc = source;
-    if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('corsproxy')) {
-       finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`;
-    }
-    img.src = finalSrc;
+    img.src = safeSource;
   });
 };
 
-// --- SIMPLIFIED GENETICS COLLAGE GENERATOR ---
 const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
+  // Just in case the user has old legacy HTTP links in their DB, download them safely first.
+  const safeMotherSrc = motherSrc.startsWith('http') ? await fetchImageAsDataURL(motherSrc) : motherSrc;
+  const safeFatherSrc = fatherSrc.startsWith('http') ? await fetchImageAsDataURL(fatherSrc) : fatherSrc;
+
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     canvas.width = 800; canvas.height = 800;
     const ctx = canvas.getContext('2d');
     if (!ctx) return resolve("");
 
-    // Draw Background
     ctx.fillStyle = '#e7e5e4'; 
     ctx.fillRect(0, 0, 800, 800);
 
@@ -64,8 +100,6 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
       return new Promise<void>((res) => {
         if (!src) return res();
         const img = new Image();
-        if (src.startsWith('http')) img.crossOrigin = "anonymous";
-        
         img.onload = () => {
           const scale = Math.max(400 / img.width, 800 / img.height);
           const w = img.width * scale;
@@ -81,42 +115,31 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
           ctx.restore();
           res();
         };
-        img.onerror = () => {
-          console.log("Failed to load parent thumbnail for collage.");
-          res();
-        };
-        
-        let finalSrc = src;
-        if (src.startsWith('http') && !src.includes('supabase.co') && !src.includes('corsproxy')) {
-           finalSrc = `https://corsproxy.io/?${encodeURIComponent(src)}`;
-        }
-        img.src = finalSrc;
+        img.onerror = () => res();
+        img.src = src;
       });
     };
 
-    Promise.all([drawSide(motherSrc, true), drawSide(fatherSrc, false)]).then(() => {
-      // Divider
+    Promise.all([drawSide(safeMotherSrc, true), drawSide(safeFatherSrc, false)]).then(() => {
       ctx.fillStyle = '#1c1917'; 
       ctx.fillRect(396, 0, 8, 800);
 
-      // Text Labels
       ctx.font = '900 24px sans-serif';
       
-      if (motherSrc) {
+      if (safeMotherSrc) {
         ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; 
         ctx.fillRect(20, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♀ Mother', 35, 48);
       }
 
-      if (fatherSrc) {
+      if (safeFatherSrc) {
         ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; 
         ctx.fillRect(420, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♂ Father', 435, 48);
       }
 
-      // Center X
       ctx.beginPath();
       ctx.arc(400, 400, 40, 0, 2 * Math.PI);
       ctx.fillStyle = '#1c1917';
@@ -307,7 +330,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const folderName = btoa(finalId).replace(/=/g, ''); 
       let imagesToUpload = [...(editFormData.images || [])];
 
-      // Use raw Base64 thumbnails directly from local state!
       if (imagesToUpload.length === 0 && (editFormData.parent_id_female || editFormData.parent_id_male)) {
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
@@ -323,6 +345,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       
       const uploadPromises = imagesToUpload.map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
+          // This will safely download external HTTP links as blobs, resize them, and give us base64 to upload!
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           if (optimizedBase64) {
              const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
@@ -357,13 +380,10 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
 
         if (sourceToResize) {
+           // Guaranteed to be pure Base64 here. We are completely independent of external sites!
            const generatedThumb = await resizeImage(sourceToResize, 150, 0.6);
            if (generatedThumb) {
                newThumbnail = generatedThumb;
-           } else if (sourceToResize.startsWith('http') && !sourceToResize.includes('supabase.co')) {
-               newThumbnail = sourceToResize; 
-           } else if (sourceToResize.startsWith('data:')) {
-               newThumbnail = sourceToResize;
            }
         }
       }
@@ -373,7 +393,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         id: finalId,
         category: finalCatName,
         images: uploadedImagePaths, 
-        thumbnail: newThumbnail,
+        thumbnail: newThumbnail, // Fully Base64!
         days_to_maturity: editFormData.days_to_maturity === "" ? null : Number(editFormData.days_to_maturity),
         stratification_days: editFormData.stratification_days === "" ? null : Number(editFormData.stratification_days),
         scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
@@ -508,7 +528,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
