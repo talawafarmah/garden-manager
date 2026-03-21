@@ -53,7 +53,6 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
   });
 };
 
-// --- NEW: GENETICS COLLAGE GENERATOR ---
 const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
@@ -61,8 +60,7 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
     const ctx = canvas.getContext('2d');
     if (!ctx) return resolve("");
 
-    // Background
-    ctx.fillStyle = '#e7e5e4'; // stone-200
+    ctx.fillStyle = '#e7e5e4'; 
     ctx.fillRect(0, 0, 800, 800);
 
     const drawSide = (src: string, isLeft: boolean) => {
@@ -71,7 +69,6 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          // Object-cover logic for half the canvas (400x800)
           const scale = Math.max(400 / img.width, 800 / img.height);
           const w = img.width * scale;
           const h = img.height * scale;
@@ -80,6 +77,7 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
           
           ctx.save();
           ctx.beginPath();
+          // FIX: Added the missing 0 for the Y coordinate (x, y, w, h)
           ctx.rect(isLeft ? 0 : 400, 0, 400, 800);
           ctx.clip();
           ctx.drawImage(img, x, y, w, h);
@@ -99,28 +97,25 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
     };
 
     Promise.all([drawSide(motherSrc, true), drawSide(fatherSrc, false)]).then(() => {
-      // Draw center divider
-      ctx.fillStyle = '#1c1917'; // stone-900
+      ctx.fillStyle = '#1c1917'; 
       ctx.fillRect(396, 0, 8, 800);
 
-      // Draw Top Labels
       ctx.font = '900 24px sans-serif';
       
       if (motherSrc) {
-        ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; // rose-500
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; 
         ctx.fillRect(20, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♀ Mother', 35, 48);
       }
 
       if (fatherSrc) {
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; // blue-500
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; 
         ctx.fillRect(420, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♂ Father', 435, 48);
       }
 
-      // Draw 'X' circle in middle
       ctx.beginPath();
       ctx.arc(400, 400, 40, 0, 2 * Math.PI);
       ctx.fillStyle = '#1c1917';
@@ -149,6 +144,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImageSearchOpen, setIsImageSearchOpen] = useState(false);
+  
+  const [parentSearchType, setParentSearchType] = useState<'mother' | 'father' | null>(null);
+  const [parentSearchQuery, setParentSearchQuery] = useState("");
   
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -308,7 +306,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const folderName = btoa(finalId).replace(/=/g, ''); 
       let imagesToUpload = [...(editFormData.images || [])];
 
-      // --- NEW: AUTO GENERATE GENETICS COLLAGE IF NO IMAGES EXIST ---
       if (imagesToUpload.length === 0 && (editFormData.parent_id_female || editFormData.parent_id_male)) {
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
@@ -316,7 +313,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          let mSrc = mother?.thumbnail || '';
          let fSrc = father?.thumbnail || '';
 
-         // Securely sign the parent URLs if they are inside Supabase
          const pathsToSign = [];
          if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
          if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
@@ -356,7 +352,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       let newThumbnail = editFormData.thumbnail || "";
       const primaryIdx = editFormData.primaryImageIndex || 0;
       
-      // Use imagesToUpload array here so it properly captures the newly generated base64 collage!
       const currentPrimaryImgSource = imagesToUpload?.[primaryIdx]; 
       const originalPrimaryImgSource = seed.images?.[seed.primaryImageIndex || 0];
 
@@ -458,6 +453,62 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           }}
           onClose={() => setIsImageSearchOpen(false)}
         />
+      )}
+
+      {parentSearchType && (
+        <div className="fixed inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-purple-200 flex gap-3 items-center bg-purple-50 rounded-t-3xl shrink-0">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  autoFocus 
+                  placeholder={`Search for ${parentSearchType === 'mother' ? 'Mother' : 'Father'} seed...`} 
+                  value={parentSearchQuery} 
+                  onChange={e => setParentSearchQuery(e.target.value)} 
+                  className="w-full bg-white border border-purple-200 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-purple-500 shadow-inner text-sm font-bold" 
+                />
+                <svg className="w-5 h-5 text-purple-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <button onClick={() => { setParentSearchType(null); setParentSearchQuery(""); }} className="p-2 bg-purple-200 hover:bg-purple-300 rounded-full text-purple-700 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <button 
+                onClick={() => { 
+                  setEditFormData({...editFormData, [parentSearchType === 'mother' ? 'parent_id_female' : 'parent_id_male']: null}); 
+                  setParentSearchType(null); 
+                  setParentSearchQuery(""); 
+                }} 
+                className="w-full text-left p-3 rounded-xl hover:bg-stone-50 text-stone-500 font-bold text-sm italic"
+              >
+                -- Clear / Unknown {parentSearchType === 'mother' ? 'Mother' : 'Father'} --
+              </button>
+
+              {inventory
+                .filter((s: InventorySeed) => s.id !== seed.id && (s.variety_name.toLowerCase().includes(parentSearchQuery.toLowerCase()) || s.id.toLowerCase().includes(parentSearchQuery.toLowerCase())))
+                .map((s: InventorySeed) => (
+                <button key={s.id} onClick={() => {
+                   setEditFormData({...editFormData, [parentSearchType === 'mother' ? 'parent_id_female' : 'parent_id_male']: s.id});
+                   setParentSearchType(null); 
+                   setParentSearchQuery("");
+                }} className="w-full text-left p-3 rounded-xl hover:bg-purple-50 transition-colors flex items-center gap-3 group border border-transparent hover:border-purple-100">
+                  <div className="w-10 h-10 rounded-lg bg-stone-100 overflow-hidden flex-shrink-0 border border-stone-200">
+                    {s.thumbnail ? <img src={s.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-300">🌱</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-stone-800 text-sm truncate group-hover:text-purple-700">{s.variety_name}</h4>
+                    <p className="text-[10px] font-mono text-stone-500 bg-stone-100 px-1 py-0.5 rounded border border-stone-200 inline-block mt-0.5">{s.id}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
       
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between border-b border-stone-200">
@@ -636,32 +687,37 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-purple-500" 
             />
           </div>
+          
           <div className="grid grid-cols-1 gap-4 mt-2">
              <div>
                 <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Seed Parent (Mother ♀)</label>
-                <select 
-                  value={editFormData.parent_id_female || ''} 
-                  onChange={(e) => setEditFormData({ ...editFormData, parent_id_female: e.target.value })} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-purple-500 appearance-none font-medium"
+                <button 
+                  type="button" 
+                  onClick={() => setParentSearchType('mother')} 
+                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium"
                 >
-                  <option value="">-- None / Unknown --</option>
-                  {inventory.filter((s: InventorySeed) => s.id !== seed.id).map((s: InventorySeed) => (
-                    <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>
-                  ))}
-                </select>
+                  <span className={editFormData.parent_id_female ? "text-stone-800" : "text-stone-400"}>
+                    {editFormData.parent_id_female 
+                      ? `${inventory.find((s:any) => s.id === editFormData.parent_id_female)?.variety_name} (${editFormData.parent_id_female})` 
+                      : "-- None / Unknown --"}
+                  </span>
+                  <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
              </div>
              <div>
                 <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Pollen Parent (Father ♂)</label>
-                <select 
-                  value={editFormData.parent_id_male || ''} 
-                  onChange={(e) => setEditFormData({ ...editFormData, parent_id_male: e.target.value })} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-purple-500 appearance-none font-medium text-stone-600"
+                <button 
+                  type="button" 
+                  onClick={() => setParentSearchType('father')} 
+                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium"
                 >
-                  <option value="">-- Self-Pollinated / Unknown --</option>
-                  {inventory.filter((s: InventorySeed) => s.id !== seed.id).map((s: InventorySeed) => (
-                    <option key={s.id} value={s.id}>{s.id} - {s.variety_name}</option>
-                  ))}
-                </select>
+                  <span className={editFormData.parent_id_male ? "text-stone-800" : "text-stone-400"}>
+                    {editFormData.parent_id_male 
+                      ? `${inventory.find((s:any) => s.id === editFormData.parent_id_male)?.variety_name} (${editFormData.parent_id_male})` 
+                      : "-- Self-Pollinated / Unknown --"}
+                  </span>
+                  <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
              </div>
           </div>
         </section>
