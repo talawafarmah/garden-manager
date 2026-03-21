@@ -14,7 +14,7 @@ import TrayList from '../components/TrayList';
 import TrayDetail from '../components/TrayDetail';
 import TrayEdit from '../components/TrayEdit';
 import SeedlingsList from '../components/SeedlingsList';
-import CollageTester from '../components/CollageTester';
+import TempImageMigration from '../components/TempImageMigration';
 
 
 // AMENDMENT MODULE COMPONENTS
@@ -194,8 +194,8 @@ export default function App() {
   }, []);
 
   switch (activeView) {
-    case 'dashboard': return <CollageTester handleGoBack={handleGoBack} />;
-    //case 'dashboard': return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
+   // case 'dashboard': return <CollageTester handleGoBack={handleGoBack} />;
+    case 'dashboard': return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'scanner':
     case 'importer': return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault': return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;

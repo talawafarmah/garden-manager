@@ -14,41 +14,37 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   return new Blob([ab], { type: mimeType });
 };
 
-// --- NEW: ROBUST PROXY DOWNLOADER ---
-// Downloads the raw image data to bypass Canvas CORS blocks completely.
+// --- NEW: ROBUST LOCAL PROXY DOWNLOADER ---
+// Uses our custom Next.js API to fetch images and bypass strict CORS rules
 const fetchImageAsDataURL = async (url: string): Promise<string> => {
+  if (!url) return "";
   if (url.startsWith('data:')) return url;
   
-  const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-  ];
+  const localProxy = `/api/proxy-image?url=${encodeURIComponent(url)}`;
 
-  for (const proxy of proxies) {
-    try {
-      const res = await fetch(proxy);
-      if (res.ok) {
-        const blob = await res.blob();
-        return await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-      }
-    } catch (e) {
-       console.warn("Proxy failed, falling back to next...");
+  try {
+    const res = await fetch(localProxy);
+    if (res.ok) {
+      const blob = await res.blob();
+      if (!blob.type.includes('image')) return "";
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
     }
+  } catch (e: any) {
+     console.warn(`Local Proxy Fetch failed: ${e.message}`);
   }
-  console.error(`Failed to securely download image from ${url}`);
   return "";
 };
 
 const resizeImage = async (source: string, maxSize: number, quality: number): Promise<string> => {
   let safeSource = source;
-  // If it's an external URL, download the raw bytes first so the Canvas doesn't get tainted!
+  // If it's an external URL, safely download the raw bytes first so the Canvas doesn't get tainted!
   if (source.startsWith('http') && !source.includes('supabase.co')) {
      safeSource = await fetchImageAsDataURL(source);
-     if (!safeSource) return ""; // Fail gracefully if download completely blocked
+     if (!safeSource) return ""; // Fail gracefully
   }
 
   return new Promise((resolve) => {
@@ -83,7 +79,6 @@ const resizeImage = async (source: string, maxSize: number, quality: number): Pr
 };
 
 const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
-  // Just in case the user has old legacy HTTP links in their DB, download them safely first.
   const safeMotherSrc = motherSrc.startsWith('http') ? await fetchImageAsDataURL(motherSrc) : motherSrc;
   const safeFatherSrc = fatherSrc.startsWith('http') ? await fetchImageAsDataURL(fatherSrc) : fatherSrc;
 
@@ -334,8 +329,23 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
          
-         const mSrc = mother?.thumbnail || '';
-         const fSrc = father?.thumbnail || '';
+         let mSrc = mother?.thumbnail || '';
+         let fSrc = father?.thumbnail || '';
+
+         // Securely sign the URLs if they are inside Supabase before sending them to the proxy/canvas
+         const pathsToSign = [];
+         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
+         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
+
+         if (pathsToSign.length > 0) {
+           const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
+           if (data) {
+             data.forEach((item: any) => {
+               if (item.path === mSrc) mSrc = item.signedUrl;
+               if (item.path === fSrc) fSrc = item.signedUrl;
+             });
+           }
+         }
 
          if (mSrc || fSrc) {
             const collageBase64 = await generateGeneticsCollage(mSrc, fSrc);
@@ -345,7 +355,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       
       const uploadPromises = imagesToUpload.map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
-          // This will safely download external HTTP links as blobs, resize them, and give us base64 to upload!
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           if (optimizedBase64) {
              const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
@@ -380,7 +389,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
 
         if (sourceToResize) {
-           // Guaranteed to be pure Base64 here. We are completely independent of external sites!
            const generatedThumb = await resizeImage(sourceToResize, 150, 0.6);
            if (generatedThumb) {
                newThumbnail = generatedThumb;
@@ -393,7 +401,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         id: finalId,
         category: finalCatName,
         images: uploadedImagePaths, 
-        thumbnail: newThumbnail, // Fully Base64!
+        thumbnail: newThumbnail,
         days_to_maturity: editFormData.days_to_maturity === "" ? null : Number(editFormData.days_to_maturity),
         stratification_days: editFormData.stratification_days === "" ? null : Number(editFormData.stratification_days),
         scoville_rating: editFormData.scoville_rating === "" ? null : Number(editFormData.scoville_rating),
@@ -528,7 +536,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">
