@@ -14,8 +14,7 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   return new Blob([ab], { type: mimeType });
 };
 
-// --- NEW: ROBUST LOCAL PROXY DOWNLOADER ---
-// Uses our custom Next.js API to fetch images and bypass strict CORS rules
+// --- ROBUST LOCAL PROXY DOWNLOADER ---
 const fetchImageAsDataURL = async (url: string): Promise<string> => {
   if (!url) return "";
   if (url.startsWith('data:')) return url;
@@ -41,10 +40,10 @@ const fetchImageAsDataURL = async (url: string): Promise<string> => {
 
 const resizeImage = async (source: string, maxSize: number, quality: number): Promise<string> => {
   let safeSource = source;
-  // If it's an external URL, safely download the raw bytes first so the Canvas doesn't get tainted!
+  // If it's an external URL, safely download the raw bytes first so the Canvas doesn't get tainted
   if (source.startsWith('http') && !source.includes('supabase.co')) {
      safeSource = await fetchImageAsDataURL(source);
-     if (!safeSource) return ""; // Fail gracefully
+     if (!safeSource) return ""; // Fail gracefully so the caller knows it didn't work
   }
 
   return new Promise((resolve) => {
@@ -329,23 +328,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
          
-         let mSrc = mother?.thumbnail || '';
-         let fSrc = father?.thumbnail || '';
-
-         // Securely sign the URLs if they are inside Supabase before sending them to the proxy/canvas
-         const pathsToSign = [];
-         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
-         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
-
-         if (pathsToSign.length > 0) {
-           const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
-           if (data) {
-             data.forEach((item: any) => {
-               if (item.path === mSrc) mSrc = item.signedUrl;
-               if (item.path === fSrc) fSrc = item.signedUrl;
-             });
-           }
-         }
+         const mSrc = mother?.thumbnail || '';
+         const fSrc = father?.thumbnail || '';
 
          if (mSrc || fSrc) {
             const collageBase64 = await generateGeneticsCollage(mSrc, fSrc);
@@ -353,17 +337,27 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          }
       }
       
+      // --- THE STRICT GATEKEEPER ---
       const uploadPromises = imagesToUpload.map(async (img: string) => {
-        if (img.startsWith('data:') || img.startsWith('http')) {
+        // 1. If it's already securely in the DB (relative path), leave it.
+        if (!img.startsWith('data:') && !img.startsWith('http')) return img;
+        
+        // 2. If it's an external URL (from Image Search) or a Base64 string, process it.
+        if (img.startsWith('data:') || (img.startsWith('http') && !img.includes('supabase.co'))) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
+          
           if (optimizedBase64) {
              const blob = base64ToBlob(optimizedBase64, 'image/jpeg');
              const fileName = `${crypto.randomUUID()}.jpg`;
              const filePath = `${folderName}/${fileName}`;
              await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
              return filePath;
+          } else {
+             // If resizeImage failed (proxy blocked, dead link, etc.), reject the entire save!
+             throw new Error("One of the images could not be securely downloaded. Please delete the broken image and try selecting a different one.");
           }
         }
+        
         return img; 
       });
 
@@ -392,8 +386,15 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
            const generatedThumb = await resizeImage(sourceToResize, 150, 0.6);
            if (generatedThumb) {
                newThumbnail = generatedThumb;
+           } else {
+               throw new Error("Failed to generate a secure thumbnail. Please select a different image.");
            }
         }
+      }
+
+      // Final sanity check before saving to DB
+      if (newThumbnail && newThumbnail.startsWith('http') && !newThumbnail.includes('supabase.co')) {
+          throw new Error("Security Block: Attempted to save an external thumbnail.");
       }
       
       const payloadToSave: any = { 
@@ -536,7 +537,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1">

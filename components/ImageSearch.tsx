@@ -15,6 +15,13 @@ interface SearchResult {
   source: string;
 }
 
+// --- NEW: Helper to route preview images through our local proxy ---
+const getProxyUrl = (url: string) => {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url; // Don't proxy base64
+  return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+};
+
 export default function ImageSearch({ baseQuery = "", species = "", category = "", onSelect, onClose }: ImageSearchProps) {
   const [activeTab, setActiveTab] = useState<'search' | 'link'>('search');
   
@@ -74,6 +81,7 @@ export default function ImageSearch({ baseQuery = "", species = "", category = "
 
   const handleLinkSubmit = () => {
     if (urlInput && !previewError) {
+      // Pass the original raw URL back to SeedEdit.tsx (it has its own proxy logic for the final download)
       onSelect(urlInput);
     }
   };
@@ -171,9 +179,12 @@ export default function ImageSearch({ baseQuery = "", species = "", category = "
                       onClick={() => onSelect(img.url)}
                       className="group relative aspect-square rounded-xl overflow-hidden border-2 border-transparent hover:border-emerald-500 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 active:scale-95 bg-white"
                     >
-                      <img src={img.thumbnail || img.url} alt={img.title} className="w-full h-full object-cover" />
+                      <img 
+                        src={getProxyUrl(img.thumbnail || img.url)} 
+                        alt={img.title} 
+                        className="w-full h-full object-cover" 
+                      />
                       
-                      {/* UI FIX: Text is always visible at the bottom of the image for mobile users */}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2 pt-8 flex flex-col justify-end text-left pointer-events-none">
                         <p className="text-white text-[10px] font-bold line-clamp-2 leading-tight drop-shadow-md">{img.title}</p>
                         <p className="text-emerald-400 text-[9px] uppercase tracking-wider font-black mt-0.5 truncate drop-shadow-md">{img.source}</p>
@@ -215,7 +226,7 @@ export default function ImageSearch({ baseQuery = "", species = "", category = "
                  <div className="text-red-400 flex flex-col items-center gap-2 p-4 text-center">
                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                    <span className="text-xs font-bold text-red-600 mt-1">Failed to load image.</span>
-                   <span className="text-[10px] text-red-500/80 leading-tight">Link may be invalid, or the host server is blocking direct embeds (CORS).</span>
+                   <span className="text-[10px] text-red-500/80 leading-tight">Link may be invalid, or the host server is blocking direct embeds.</span>
                  </div>
               ) : (
                 <>
@@ -225,7 +236,7 @@ export default function ImageSearch({ baseQuery = "", species = "", category = "
                     </div>
                   )}
                   <img 
-                    src={urlInput} 
+                    src={getProxyUrl(urlInput)} 
                     alt="Preview" 
                     onLoad={() => { setPreviewError(false); setIsValidating(false); }}
                     onError={() => { setPreviewError(true); setIsValidating(false); }}
