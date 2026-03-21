@@ -18,7 +18,7 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
   return new Promise((resolve) => {
     if (!source) return resolve("");
     const img = new Image();
-    img.crossOrigin = "anonymous"; 
+    if (source.startsWith('http')) img.crossOrigin = "anonymous"; 
     img.onload = () => {
       const canvas = document.createElement('canvas');
       let width = img.width;
@@ -35,53 +35,28 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
       
-      try { 
-        resolve(canvas.toDataURL('image/jpeg', quality)); 
-      } catch (e) { 
-        resolve(""); 
-      }
+      try { resolve(canvas.toDataURL('image/jpeg', quality)); } 
+      catch (e) { resolve(""); }
     };
     img.onerror = () => resolve("");
     
     let finalSrc = source;
     if (source.startsWith('http') && !source.includes('supabase.co') && !source.includes('corsproxy')) {
        finalSrc = `https://corsproxy.io/?${encodeURIComponent(source)}`;
-    } else if (!source.startsWith('http') && !source.startsWith('data:')) {
-       finalSrc = `data:image/jpeg;base64,${source}`;
     }
     img.src = finalSrc;
   });
 };
 
-// --- FIX: FETCH URL AS BLOB TO PREVENT CANVAS TAINTING ---
-const fetchAsDataUrl = async (url: string): Promise<string> => {
-  if (!url) return "";
-  if (url.startsWith('data:')) return url;
-  try {
-    const proxyUrl = url.includes('supabase.co') ? url : `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
-    const blob = await response.blob();
-    return await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  } catch (e) {
-    return "";
-  }
-};
-
+// --- SIMPLIFIED GENETICS COLLAGE GENERATOR ---
 const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
-  // Pre-fetch images as Data URLs to bypass strict Canvas CORS rules
-  const mDataUrl = await fetchAsDataUrl(motherSrc);
-  const fDataUrl = await fetchAsDataUrl(fatherSrc);
-
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     canvas.width = 800; canvas.height = 800;
     const ctx = canvas.getContext('2d');
     if (!ctx) return resolve("");
 
+    // Draw Background
     ctx.fillStyle = '#e7e5e4'; 
     ctx.fillRect(0, 0, 800, 800);
 
@@ -89,6 +64,8 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
       return new Promise<void>((res) => {
         if (!src) return res();
         const img = new Image();
+        if (src.startsWith('http')) img.crossOrigin = "anonymous";
+        
         img.onload = () => {
           const scale = Math.max(400 / img.width, 800 / img.height);
           const w = img.width * scale;
@@ -104,31 +81,42 @@ const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Pr
           ctx.restore();
           res();
         };
-        img.onerror = () => res();
-        img.src = src; 
+        img.onerror = () => {
+          console.log("Failed to load parent thumbnail for collage.");
+          res();
+        };
+        
+        let finalSrc = src;
+        if (src.startsWith('http') && !src.includes('supabase.co') && !src.includes('corsproxy')) {
+           finalSrc = `https://corsproxy.io/?${encodeURIComponent(src)}`;
+        }
+        img.src = finalSrc;
       });
     };
 
-    Promise.all([drawSide(mDataUrl, true), drawSide(fDataUrl, false)]).then(() => {
+    Promise.all([drawSide(motherSrc, true), drawSide(fatherSrc, false)]).then(() => {
+      // Divider
       ctx.fillStyle = '#1c1917'; 
       ctx.fillRect(396, 0, 8, 800);
 
+      // Text Labels
       ctx.font = '900 24px sans-serif';
       
-      if (mDataUrl) {
+      if (motherSrc) {
         ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; 
         ctx.fillRect(20, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♀ Mother', 35, 48);
       }
 
-      if (fDataUrl) {
+      if (fatherSrc) {
         ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; 
         ctx.fillRect(420, 20, 140, 40);
         ctx.fillStyle = 'white';
         ctx.fillText('♂ Father', 435, 48);
       }
 
+      // Center X
       ctx.beginPath();
       ctx.arc(400, 400, 40, 0, 2 * Math.PI);
       ctx.fillStyle = '#1c1917';
@@ -319,22 +307,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       const folderName = btoa(finalId).replace(/=/g, ''); 
       let imagesToUpload = [...(editFormData.images || [])];
 
+      // Use raw Base64 thumbnails directly from local state!
       if (imagesToUpload.length === 0 && (editFormData.parent_id_female || editFormData.parent_id_male)) {
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
          
-         let mSrc = mother?.thumbnail || '';
-         let fSrc = father?.thumbnail || '';
-
-         // Explicitly sign urls one by one to ensure exact matching
-         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) {
-           const { data } = await supabase.storage.from('talawa_media').createSignedUrl(mSrc, 60);
-           if (data?.signedUrl) mSrc = data.signedUrl;
-         }
-         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) {
-           const { data } = await supabase.storage.from('talawa_media').createSignedUrl(fSrc, 60);
-           if (data?.signedUrl) fSrc = data.signedUrl;
-         }
+         const mSrc = mother?.thumbnail || '';
+         const fSrc = father?.thumbnail || '';
 
          if (mSrc || fSrc) {
             const collageBase64 = await generateGeneticsCollage(mSrc, fSrc);
