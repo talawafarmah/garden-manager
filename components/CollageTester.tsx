@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
-// Notice we now point to OUR OWN Next.js API route!
+// --- HELPERS ---
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+  const byteString = atob(base64.split(',')[1]);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+  return new Blob([ab], { type: mimeType });
+};
+
 const fetchImageAsDataURL = async (url: string, log: (msg: string) => void): Promise<string> => {
   if (!url) return "";
   if (url.startsWith('data:')) return url;
@@ -8,9 +17,7 @@ const fetchImageAsDataURL = async (url: string, log: (msg: string) => void): Pro
   const localProxy = `/api/proxy-image?url=${encodeURIComponent(url)}`;
 
   try {
-    log(`Trying local server proxy: /api/proxy-image...`);
     const res = await fetch(localProxy);
-    
     if (res.ok) {
       const blob = await res.blob();
       if (!blob.type.includes('image')) {
@@ -19,152 +26,185 @@ const fetchImageAsDataURL = async (url: string, log: (msg: string) => void): Pro
       }
       return await new Promise<string>((resolve) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          log(`✅ Success! Converted to Base64 (${(reader.result as string).length} bytes)`);
-          resolve(reader.result as string);
-        };
+        reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
     } else {
-      log(`❌ Local proxy returned status: ${res.status}`);
+      log(`❌ Proxy failed with status: ${res.status}`);
     }
   } catch (e: any) {
-     log(`❌ Local proxy fetch failed: ${e.message}`);
+     log(`❌ Fetch failed: ${e.message}`);
   }
   return "";
 };
 
+const resizeImage = (source: string, maxSize: number, quality: number): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!source) return resolve("");
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width, height = img.height;
+      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
+      else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      try { resolve(canvas.toDataURL('image/jpeg', quality)); } catch (e) { resolve(""); }
+    };
+    img.onerror = () => resolve("");
+    img.src = source;
+  });
+};
+
 export default function CollageTester({ handleGoBack }: any) {
-  const [motherUrl, setMotherUrl] = useState("https://www.johnnyseeds.com/dw/image/v2/BJjc_PRD/on/demandware.static/-/Sites-jss-master/default/dw151fb278/images/products/vegetables/03138g_01_sunpeach.jpg");
-  const [fatherUrl, setFatherUrl] = useState("https://www.johnnyseeds.com/dw/image/v2/BJjc_PRD/on/demandware.static/-/Sites-jss-master/default/dwec5f0ebc/images/products/vegetables/03128g_01_sungold.jpg");
-  
   const [logs, setLogs] = useState<string[]>([]);
-  const [motherBase64, setMotherBase64] = useState("");
-  const [fatherBase64, setFatherBase64] = useState("");
-  const [finalCollage, setFinalCollage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [stats, setStats] = useState({ total: 0, current: 0, updated: 0 });
 
   const addLog = (msg: string) => setLogs(prev => [...prev, msg]);
 
-  const runTest = async () => {
-    setIsProcessing(true);
-    setLogs([]);
-    setMotherBase64("");
-    setFatherBase64("");
-    setFinalCollage("");
-
-    addLog("--- STARTING MOTHER DOWNLOAD ---");
-    const mBase64 = await fetchImageAsDataURL(motherUrl, addLog);
-    setMotherBase64(mBase64);
-
-    addLog("--- STARTING FATHER DOWNLOAD ---");
-    const fBase64 = await fetchImageAsDataURL(fatherUrl, addLog);
-    setFatherBase64(fBase64);
-
-    if (!mBase64 && !fBase64) {
-        addLog("🚨 Both downloads failed. Cannot create collage.");
-        setIsProcessing(false);
-        return;
-    }
-
-    addLog("--- STARTING CANVAS RENDER ---");
-    const canvas = document.createElement('canvas');
-    canvas.width = 800; canvas.height = 800;
-    const ctx = canvas.getContext('2d');
+  const runMigration = async () => {
+    if (!confirm("Are you sure you want to run the database image migration? This may take a few minutes.")) return;
     
-    if (!ctx) {
-        addLog("🚨 Failed to get 2D Canvas context.");
-        setIsProcessing(false);
-        return;
+    setIsProcessing(true);
+    setLogs(["🚀 STARTING DATABASE MIGRATION..."]);
+
+    const { data: seeds, error } = await supabase.from('seed_inventory').select('*');
+    
+    if (error || !seeds) {
+       addLog(`🚨 Failed to fetch seeds: ${error?.message}`);
+       setIsProcessing(false);
+       return;
     }
 
-    ctx.fillStyle = '#e7e5e4'; 
-    ctx.fillRect(0, 0, 800, 800);
+    setStats({ total: seeds.length, current: 0, updated: 0 });
+    addLog(`Found ${seeds.length} total seeds in inventory.`);
 
-    const drawSide = (src: string, isLeft: boolean, parentName: string) => {
-      return new Promise<void>((res) => {
-        if (!src) {
-            addLog(`⚠️ Skipping ${parentName}, no valid source.`);
-            return res();
-        }
-        
-        const img = new Image();
-        img.onload = () => {
-          addLog(`✅ Canvas successfully loaded ${parentName} Image Object.`);
-          const scale = Math.max(400 / img.width, 800 / img.height);
-          const w = img.width * scale;
-          const h = img.height * scale;
-          const x = isLeft ? (400 - w) / 2 : 400 + (400 - w) / 2;
-          const y = (800 - h) / 2;
-          
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(isLeft ? 0 : 400, 0, 400, 800);
-          ctx.clip();
-          ctx.drawImage(img, x, y, w, h);
-          ctx.restore();
-          res();
-        };
-        img.onerror = () => {
-            addLog(`🚨 Canvas FAILED to load ${parentName} Image Object!`);
-            res();
-        };
-        img.src = src;
-      });
-    };
+    let updatedCount = 0;
 
-    await Promise.all([drawSide(mBase64, true, "Mother"), drawSide(fBase64, false, "Father")]);
+    for (let i = 0; i < seeds.length; i++) {
+      const seed = seeds[i];
+      setStats(s => ({ ...s, current: i + 1 }));
+      
+      let needsUpdate = false;
+      let newThumbnail = seed.thumbnail || "";
+      let newImages = [...(seed.images || [])];
 
-    ctx.fillStyle = '#1c1917'; ctx.fillRect(396, 0, 8, 800);
-    ctx.font = '900 24px sans-serif';
-    if (mBase64) { ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; ctx.fillRect(20, 20, 140, 40); ctx.fillStyle = 'white'; ctx.fillText('♀ Mother', 35, 48); }
-    if (fBase64) { ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; ctx.fillRect(420, 20, 140, 40); ctx.fillStyle = 'white'; ctx.fillText('♂ Father', 435, 48); }
-    ctx.beginPath(); ctx.arc(400, 400, 40, 0, 2 * Math.PI); ctx.fillStyle = '#1c1917'; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = '#f5f5f4'; ctx.stroke();
-    ctx.fillStyle = 'white'; ctx.font = '900 36px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('X', 400, 400);
+      addLog(`\n[${i+1}/${seeds.length}] Checking ${seed.variety_name} (${seed.id})...`);
 
-    try {
-        const finalImg = canvas.toDataURL('image/jpeg', 0.85);
-        addLog(`✅ Canvas successfully exported to Base64 JPEG (${finalImg.length} bytes).`);
-        setFinalCollage(finalImg);
-    } catch (e: any) {
-        addLog(`🚨 Canvas export failed (Likely CORS Taint): ${e.message}`);
+      // 1. Process Thumbnail
+      if (newThumbnail && newThumbnail.startsWith('http')) {
+         addLog(`  -> Downloading external thumbnail...`);
+         const base64 = await fetchImageAsDataURL(newThumbnail, addLog);
+         if (base64) {
+            const resized = await resizeImage(base64, 150, 0.6);
+            if (resized) {
+               newThumbnail = resized;
+               needsUpdate = true;
+               addLog(`  ✅ Thumbnail converted to Base64 encoding.`);
+            }
+         } else {
+            addLog(`  ❌ Failed to process thumbnail.`);
+         }
+      }
+
+      // 2. Process Full Images array
+      for (let j = 0; j < newImages.length; j++) {
+         const imgUrl = newImages[j];
+         if (imgUrl.startsWith('http') && !imgUrl.includes('supabase.co')) {
+            addLog(`  -> Downloading external gallery image [${j+1}]...`);
+            const base64 = await fetchImageAsDataURL(imgUrl, addLog);
+            if (base64) {
+               const resized = await resizeImage(base64, 1600, 0.8);
+               if (resized) {
+                  const blob = base64ToBlob(resized, 'image/jpeg');
+                  const folderName = btoa(seed.id).replace(/=/g, '');
+                  const fileName = `${folderName}/migrated_${crypto.randomUUID()}.jpg`;
+                  
+                  addLog(`  -> Uploading to Supabase bucket...`);
+                  const { error: uploadError } = await supabase.storage.from('talawa_media').upload(fileName, blob, { contentType: 'image/jpeg' });
+                  
+                  if (!uploadError) {
+                     newImages[j] = fileName; // Replace external URL with secure bucket path
+                     needsUpdate = true;
+                     addLog(`  ✅ Image safely uploaded to bucket.`);
+                  } else {
+                     addLog(`  ❌ Bucket upload failed: ${uploadError.message}`);
+                  }
+               }
+            }
+         }
+      }
+
+      // 3. Save Updates to Supabase Database
+      if (needsUpdate) {
+         addLog(`  -> Saving updates to database...`);
+         const { error: updateError } = await supabase.from('seed_inventory').update({ thumbnail: newThumbnail, images: newImages }).eq('id', seed.id);
+         if (updateError) {
+             addLog(`  ❌ Database update failed: ${updateError.message}`);
+         } else {
+             updatedCount++;
+             setStats(s => ({ ...s, updated: updatedCount }));
+             addLog(`  🎉 Database row updated successfully!`);
+         }
+      } else {
+         addLog(`  -> No external images found. Skipping.`);
+      }
     }
 
+    addLog(`\n✅ MIGRATION COMPLETE! Successfully localized ${updatedCount} seeds.`);
     setIsProcessing(false);
   };
 
+  // Auto-scroll logs to bottom
+  const logsEndRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
+
   return (
-    <div className="min-h-screen bg-stone-50 p-6 text-stone-900 font-sans max-w-2xl mx-auto space-y-6">
+    <div className="min-h-screen bg-stone-50 p-6 text-stone-900 font-sans max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4 border-b border-stone-200 pb-4">
-         <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-200 rounded-full">←</button>
-         <h1 className="text-2xl font-black">Collage Test Lab</h1>
+         <button onClick={() => handleGoBack('dashboard')} className="p-2 bg-stone-200 hover:bg-stone-300 rounded-full transition-colors">←</button>
+         <h1 className="text-2xl font-black">Data Migration Tool</h1>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <label className="text-xs font-bold text-stone-500 uppercase">Mother URL</label>
-          <input type="text" value={motherUrl} onChange={e => setMotherUrl(e.target.value)} className="w-full p-2 border rounded" />
+      <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
+        <h2 className="font-bold text-lg text-stone-800">Localize External Images</h2>
+        <p className="text-sm text-stone-500 leading-relaxed">
+          This script will scan your entire seed vault. Any thumbnails pointing to external websites will be downloaded and encoded as Base64. Any gallery images will be downloaded, compressed, and permanently uploaded to your secure Supabase storage bucket.
+        </p>
+        
+        <div className="flex gap-4 items-center bg-stone-50 p-4 rounded-xl border border-stone-100">
+           <div className="flex-1 text-center">
+             <span className="block text-[10px] font-black uppercase tracking-widest text-stone-400">Total Seeds</span>
+             <span className="text-2xl font-black text-stone-800">{stats.total}</span>
+           </div>
+           <div className="flex-1 text-center border-l border-r border-stone-200">
+             <span className="block text-[10px] font-black uppercase tracking-widest text-stone-400">Scanned</span>
+             <span className="text-2xl font-black text-blue-600">{stats.current}</span>
+           </div>
+           <div className="flex-1 text-center">
+             <span className="block text-[10px] font-black uppercase tracking-widest text-stone-400">Fixed</span>
+             <span className="text-2xl font-black text-emerald-600">{stats.updated}</span>
+           </div>
         </div>
-        <div>
-          <label className="text-xs font-bold text-stone-500 uppercase">Father URL</label>
-          <input type="text" value={fatherUrl} onChange={e => setFatherUrl(e.target.value)} className="w-full p-2 border rounded" />
-        </div>
-        <button onClick={runTest} disabled={isProcessing} className="w-full py-3 bg-blue-600 text-white font-bold rounded shadow disabled:opacity-50">
-           {isProcessing ? "Testing..." : "Run Collage Test"}
+
+        <button onClick={runMigration} disabled={isProcessing} className="w-full py-4 bg-emerald-600 text-white font-black uppercase tracking-widest rounded-xl shadow-md disabled:opacity-50 hover:bg-emerald-500 transition-colors">
+           {isProcessing ? "Migration in Progress..." : "Run Migration"}
         </button>
       </div>
 
-      <div className="bg-stone-900 text-green-400 p-4 rounded text-xs font-mono h-64 overflow-y-auto space-y-1">
-        {logs.map((log, i) => <div key={i}>{log}</div>)}
-        {logs.length === 0 && <div className="text-stone-600">Waiting for test to run...</div>}
+      <div className="bg-stone-900 text-emerald-400 p-4 rounded-2xl text-xs font-mono h-96 overflow-y-auto shadow-inner">
+        {logs.map((log, i) => (
+          <div key={i} className="whitespace-pre-wrap mb-1 leading-relaxed">
+             {log.includes('❌') ? <span className="text-red-400">{log}</span> : 
+              log.includes('✅') || log.includes('🎉') ? <span className="text-white font-bold">{log}</span> : 
+              log}
+          </div>
+        ))}
+        <div ref={logsEndRef} />
+        {logs.length === 0 && <div className="text-stone-600">Waiting to start...</div>}
       </div>
-
-      {finalCollage && (
-        <div className="border-4 border-emerald-500 rounded-xl overflow-hidden shadow-2xl mt-4">
-           <div className="bg-emerald-500 text-white text-center font-black py-1 text-xs">FINAL RENDER SUCCESS</div>
-           <img src={finalCollage} className="w-full h-auto" />
-        </div>
-      )}
     </div>
   );
 }
