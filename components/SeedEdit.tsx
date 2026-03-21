@@ -53,6 +53,93 @@ const resizeImage = (source: string, maxSize: number, quality: number): Promise<
   });
 };
 
+// --- NEW: GENETICS COLLAGE GENERATOR ---
+const generateGeneticsCollage = async (motherSrc: string, fatherSrc: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800; canvas.height = 800;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return resolve("");
+
+    // Background
+    ctx.fillStyle = '#e7e5e4'; // stone-200
+    ctx.fillRect(0, 0, 800, 800);
+
+    const drawSide = (src: string, isLeft: boolean) => {
+      return new Promise<void>((res) => {
+        if (!src) return res();
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          // Object-cover logic for half the canvas (400x800)
+          const scale = Math.max(400 / img.width, 800 / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const x = isLeft ? (400 - w) / 2 : 400 + (400 - w) / 2;
+          const y = (800 - h) / 2;
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(isLeft ? 0 : 400, 0, 400, 800);
+          ctx.clip();
+          ctx.drawImage(img, x, y, w, h);
+          ctx.restore();
+          res();
+        };
+        img.onerror = () => res();
+        
+        let finalSrc = src;
+        if (src.startsWith('http') && !src.includes('supabase.co') && !src.includes('corsproxy')) {
+           finalSrc = `https://corsproxy.io/?${encodeURIComponent(src)}`;
+        } else if (!src.startsWith('http') && !src.startsWith('data:')) {
+           finalSrc = `data:image/jpeg;base64,${src}`;
+        }
+        img.src = finalSrc;
+      });
+    };
+
+    Promise.all([drawSide(motherSrc, true), drawSide(fatherSrc, false)]).then(() => {
+      // Draw center divider
+      ctx.fillStyle = '#1c1917'; // stone-900
+      ctx.fillRect(396, 0, 8, 800);
+
+      // Draw Top Labels
+      ctx.font = '900 24px sans-serif';
+      
+      if (motherSrc) {
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.9)'; // rose-500
+        ctx.fillRect(20, 20, 140, 40);
+        ctx.fillStyle = 'white';
+        ctx.fillText('♀ Mother', 35, 48);
+      }
+
+      if (fatherSrc) {
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.9)'; // blue-500
+        ctx.fillRect(420, 20, 140, 40);
+        ctx.fillStyle = 'white';
+        ctx.fillText('♂ Father', 435, 48);
+      }
+
+      // Draw 'X' circle in middle
+      ctx.beginPath();
+      ctx.arc(400, 400, 40, 0, 2 * Math.PI);
+      ctx.fillStyle = '#1c1917';
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#f5f5f4';
+      ctx.stroke();
+
+      ctx.fillStyle = 'white';
+      ctx.font = '900 36px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('X', 400, 400);
+
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    });
+  });
+};
+
 export default function SeedEdit({ seed, inventory, setInventory, categories, setCategories, navigateTo, handleGoBack }: any) {
   const [editFormData, setEditFormData] = useState<any>(seed);
   const [showNewCatForm, setShowNewCatForm] = useState(seed.category === '__NEW__' || !!seed.newCatName);
@@ -204,7 +291,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         setCategories([...categories, { name: finalCatName, prefix: finalCatPrefix }].sort((a: any, b: any) => a.name.localeCompare(b.name)));
       }
 
-      // FIX: Auto-Generate an ID based on Category if it is left blank!
       let finalId = editFormData.id?.trim();
       if (!finalId) {
          let prefix = "SD";
@@ -219,10 +305,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          finalId = `${prefix}-${randomNum}`.replace(/[^A-Z0-9-]/g, '');
       }
 
-      // Secure the folder name using the guaranteed finalId
       const folderName = btoa(finalId).replace(/=/g, ''); 
+      let imagesToUpload = [...(editFormData.images || [])];
+
+      // --- NEW: AUTO GENERATE GENETICS COLLAGE IF NO IMAGES EXIST ---
+      if (imagesToUpload.length === 0 && (editFormData.parent_id_female || editFormData.parent_id_male)) {
+         const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
+         const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
+         
+         let mSrc = mother?.thumbnail || '';
+         let fSrc = father?.thumbnail || '';
+
+         // Securely sign the parent URLs if they are inside Supabase
+         const pathsToSign = [];
+         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
+         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
+
+         if (pathsToSign.length > 0) {
+           const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
+           if (data) {
+             data.forEach((item: any) => {
+               if (item.path === mSrc) mSrc = item.signedUrl;
+               if (item.path === fSrc) fSrc = item.signedUrl;
+             });
+           }
+         }
+
+         if (mSrc || fSrc) {
+            const collageBase64 = await generateGeneticsCollage(mSrc, fSrc);
+            if (collageBase64) imagesToUpload.push(collageBase64);
+         }
+      }
       
-      const uploadPromises = (editFormData.images || []).map(async (img: string) => {
+      const uploadPromises = imagesToUpload.map(async (img: string) => {
         if (img.startsWith('data:') || img.startsWith('http')) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           if (optimizedBase64) {
@@ -240,7 +355,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       
       let newThumbnail = editFormData.thumbnail || "";
       const primaryIdx = editFormData.primaryImageIndex || 0;
-      const currentPrimaryImgSource = editFormData.images?.[primaryIdx]; 
+      
+      // Use imagesToUpload array here so it properly captures the newly generated base64 collage!
+      const currentPrimaryImgSource = imagesToUpload?.[primaryIdx]; 
       const originalPrimaryImgSource = seed.images?.[seed.primaryImageIndex || 0];
 
       const needsNewThumbnail = !newThumbnail || currentPrimaryImgSource !== originalPrimaryImgSource;
@@ -270,7 +387,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       
       const payloadToSave: any = { 
         ...editFormData, 
-        id: finalId, // Inject the generated ID
+        id: finalId,
         category: finalCatName,
         images: uploadedImagePaths, 
         thumbnail: newThumbnail,

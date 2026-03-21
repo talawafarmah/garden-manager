@@ -301,7 +301,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
   const onBack = () => { seed?.returnTo ? navigateTo(seed.returnTo, seed.returnPayload) : handleGoBack('vault'); };
   const onEdit = () => { navigateTo('seed_edit', { ...seed, returnTo: seed?.returnTo, returnPayload: seed?.returnPayload }); };
   
-  // FIX: Cast seed to any so TS ignores the missing created_at property while we strip it out
   const handleDuplicateSeed = () => { 
     const { id, created_at, ...seedCopy } = seed as any;
     navigateTo('seed_edit', { ...seedCopy, id: '', variety_name: `${seed.variety_name} (Copy)`, images: [], thumbnail: '', out_of_stock: false }); 
@@ -320,10 +319,8 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
   return (
     <main onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} className="min-h-screen bg-stone-50 text-stone-900 pb-32 font-sans relative select-none">
       
-      {/* Hidden Quick Add Photo Input */}
       <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleQuickPhotoUpload} className="hidden" />
 
-      {/* FULLSCREEN CAROUSEL MODAL */}
       {carousel && (
         <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
           <div className="absolute top-4 right-4 z-50">
@@ -350,7 +347,6 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
         </div>
       )}
 
-      {/* SCHEDULE SEED MODAL */}
       {isPlanModalOpen && (() => {
         const stratDays = seed.cold_stratification ? (seed.stratification_days || 0) : 0;
         const sowDateStr = calculateStartDate(planForm.targetDate, planForm.weeks, seed.germination_days);
