@@ -54,6 +54,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   
   const [globalTargetDate, setGlobalTargetDate] = useState<string>(`${new Date().getFullYear()}-05-10`);
   const [plans, setPlans] = useState<GrowPlanRecord[]>([]);
+  const [sownSeedIds, setSownSeedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
@@ -103,14 +104,20 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
 
       const { data: trays } = await supabase.from('seedling_trays').select('contents').eq('season_id', activeSeasonId);
       const traySownMap: Record<string, number> = {};
+      const sowedIds = new Set<string>();
       
       if (trays) {
         trays.forEach(t => {
           (t.contents || []).forEach((c: any) => {
-            if (c.seed_id) { traySownMap[c.seed_id] = (traySownMap[c.seed_id] || 0) + (c.sown_count || 0); }
+            if (c.seed_id) { 
+              traySownMap[c.seed_id] = (traySownMap[c.seed_id] || 0) + (c.sown_count || 0); 
+              if (c.sown_count > 0) sowedIds.add(c.seed_id);
+            }
           });
         });
       }
+
+      setSownSeedIds(sowedIds);
 
       const plansWithTrayData = currentPlans.map(p => ({ ...p, tray_sown_qty: traySownMap[p.seed_id] || 0 }));
       setPlans(plansWithTrayData);
@@ -130,7 +137,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
     if (!editingSeed || !activeSeasonId) return;
     const startDate = calculateStartDate(formTargetDate, formWeeks, editingSeed.germination_days);
     
-    // FIX: ADDED MANUAL UUID GENERATION SO DB DOES NOT REJECT THE INSERT
     const payload = { 
       id: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2),
       season_id: activeSeasonId, 
@@ -151,9 +157,18 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
 
   const handleSwapSeed = async (newSeed: InventorySeed) => {
      if (!swapPlan) return;
-     const { data, error } = await supabase.from('grow_plan').update({ seed_id: newSeed.id }).eq('id', swapPlan.id).select('*, seed:seed_inventory(*)').single();
+
+     // Recalculate start date for the new seed's genetics
+     const weeks = resolveNurseryWeeks(newSeed, categories);
+     const newStartDate = calculateStartDate(swapPlan.target_plant_date, weeks, newSeed.germination_days);
+
+     const { data, error } = await supabase.from('grow_plan')
+       .update({ seed_id: newSeed.id, indoor_start_date: newStartDate })
+       .eq('id', swapPlan.id)
+       .select('*, seed:seed_inventory(*)').single();
+       
      if (!error && data) {
-        setPlans(plans.map(p => p.id === swapPlan.id ? { ...p, seed_id: newSeed.id, seed: data.seed } : p));
+        setPlans(plans.map(p => p.id === swapPlan.id ? { ...p, seed_id: newSeed.id, seed: data.seed, indoor_start_date: newStartDate } : p));
         setSwapPlan(null);
      } else {
         alert("Failed to swap seed: " + error?.message);
@@ -167,6 +182,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
     }
   };
 
+  // Kept for programmatic tracking if needed, though removed from UI
   const updateSownQty = async (id: string, delta: number) => {
     const plan = plans.find(p => p.id === id);
     if (!plan) return;
@@ -268,8 +284,8 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
   const manualSearchResults = useMemo(() => {
     if (!manualSearch) return [];
     const q = manualSearch.toLowerCase();
-    return inventory.filter(s => !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(q)).slice(0, 5);
-  }, [manualSearch, inventory, plannedSeedIds]);
+    return inventory.filter(s => !plannedSeedIds.has(s.id) && !sownSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(q)).slice(0, 5);
+  }, [manualSearch, inventory, plannedSeedIds, sownSeedIds]);
 
   const activeDates = useMemo(() => {
     const dates = new Set<string>();
@@ -348,7 +364,7 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                 <div className="flex justify-between items-center mb-4">
                    <button onClick={() => setCalendarViewDate(new Date(year, month - 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
                    <h3 className="font-black text-stone-800 tracking-tight">{monthNames[month]} {year}</h3>
-                   <button onClick={() => setCalendarViewDate(new Date(year, month + 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7-7" /></svg></button>
+                   <button onClick={() => setCalendarViewDate(new Date(year, month + 1, 1))} className="p-2 text-stone-400 hover:bg-stone-100 rounded-full transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
                 </div>
                 <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
@@ -490,10 +506,6 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                                    {plan.stratification_started ? '❄️ Stratifying ✓' : '❄️ Put in Fridge'}
                                  </button>
                                )}
-                               <div className="flex items-center gap-0.5 bg-stone-50 rounded-lg p-1 border border-stone-200 shadow-inner" title="Manual Sown Override (Direct Sow)">
-                                 <button onClick={() => updateSownQty(plan.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-red-500 font-black">-</button>
-                                 <button onClick={() => updateSownQty(plan.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white text-stone-500 rounded shadow-sm hover:text-emerald-500 font-black">+</button>
-                               </div>
                              </div>
                              
                              <div className="flex items-center">
@@ -546,14 +558,25 @@ export default function GrowPlanner({ categories, navigateTo, handleGoBack }: Pr
                   
                   <div className="space-y-2">
                      {inventory
-                        .filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase()))
-                        .map(s => (
-                           <button key={s.id} onClick={() => handleSwapSeed(s)} className="w-full text-left p-3 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors flex justify-between items-center">
-                              <span className="font-bold text-stone-800">{s.variety_name}</span>
-                              <span className="text-[10px] text-stone-400 font-mono">{s.id}</span>
-                           </button>
-                        ))}
-                     {inventory.filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase())).length === 0 && (
+                        .filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && !sownSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase()))
+                        .map(s => {
+                           const weeks = resolveNurseryWeeks(s, categories);
+                           const sowDate = calculateStartDate(swapPlan.target_plant_date, weeks, s.germination_days);
+                           const sowDateObj = new Date(sowDate + 'T12:00:00');
+
+                           return (
+                             <button key={s.id} onClick={() => handleSwapSeed(s)} className="w-full text-left p-3 rounded-xl border border-stone-200 hover:border-emerald-400 hover:bg-emerald-50 transition-colors flex justify-between items-center">
+                                <div>
+                                  <span className="font-bold text-stone-800 block">{s.variety_name} <span className="text-[10px] text-stone-400 font-mono ml-1 font-normal">{s.id}</span></span>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="text-sm font-black text-emerald-600 block">{sowDateObj.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}</span>
+                                  <span className="text-[9px] uppercase tracking-widest text-stone-400 font-bold block">Sow Date</span>
+                                </div>
+                             </button>
+                           );
+                        })}
+                     {inventory.filter(s => s.category === swapPlan.seed?.category && !s.out_of_stock && !plannedSeedIds.has(s.id) && !sownSeedIds.has(s.id) && s.variety_name.toLowerCase().includes(swapSearch.toLowerCase())).length === 0 && (
                         <p className="text-center text-stone-400 text-xs py-4">No available seeds to swap with.</p>
                      )}
                   </div>
