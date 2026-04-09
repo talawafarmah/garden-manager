@@ -643,7 +643,7 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                  <div className="space-y-2">
                     {ledgerHistory.length === 0 ? <p className="text-xs text-stone-400 italic">No ledger history recorded.</p> : 
                       ledgerHistory.map(l => (
-                         <div key={l.id} onClick={() => navigateTo('nursery')} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors">
+                         <div key={l.id} onClick={() => navigateTo('seedlings')} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors">
                             <div>
                                <p className="text-sm font-bold text-stone-800">{l.season?.name || 'Unknown Season'}</p>
                                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">Sown: {l.sown_date || 'Unknown'}</p>
