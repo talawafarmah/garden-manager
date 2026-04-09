@@ -39,7 +39,7 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
+export default function SeedlingsList({ navigateTo, handleGoBack, payload }: any) {
   const [ledgers, setLedgers] = useState<SeasonSeedling[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [inventory, setInventory] = useState<InventorySeed[]>([]);
@@ -77,7 +77,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
   const targetLedgerRef = useRef<SeasonSeedling | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
+  // FIX: Pre-fill the search query if passed from the SeedDetail payload!
+  const [searchQuery, setSearchQuery] = useState(payload?.search || "");
   const [categoryFilter, setCategoryFilter] = useState("All");
 
   useEffect(() => { fetchBaseData(); }, []);
@@ -100,7 +101,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
       setSeasons(seasonData as Season[]);
       const active = seasonData.find((s: any) => s.status === 'Active');
       const defaultSeasonId = active ? active.id : seasonData[0].id;
-      const currentSeason = activeSeason || defaultSeasonId;
+      
+      // FIX: If passed from Seed Detail, prioritize the specific season they clicked on!
+      const currentSeason = payload?.seasonId || activeSeason || defaultSeasonId;
+      
       setActiveSeason(currentSeason);
       fetchLedgers(currentSeason);
     } else {
@@ -329,7 +333,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
     finally { setIsSubmittingDirectAdd(false); }
   };
 
-  // FIX: DYNAMICALLY GENERATE CATEGORIES ONLY FROM ACTIVE LEDGERS IN THIS SEASON
   const categories = Array.from(new Set(ledgers.map(l => l.seed?.category).filter(Boolean))).sort();
 
   const filteredLedgers = ledgers.filter(l => {
@@ -702,7 +705,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                           className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Entry"
                         >
-                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.14A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         </button>
 
                         <div className="flex items-center justify-between mb-2 pr-8 w-full">

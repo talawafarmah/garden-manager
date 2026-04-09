@@ -433,7 +433,7 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
              {isUploading ? <svg className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
            </button>
            <button onClick={openPlanModal} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Schedule in Planner">
-             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
            </button>
            <button onClick={handleDuplicateSeed} className="p-2 bg-emerald-800 rounded-full shrink-0 active:scale-90 transition-transform" title="Duplicate Seed">
              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -638,12 +638,13 @@ export default function SeedDetail({ seed, inventory, trays, categories, navigat
                  </div>
               </section>
 
+              {/* FIX: Using 'seedlings' routing key and payload for direct filtering */}
               <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
                  <h3 className="text-[10px] font-black text-stone-800 uppercase tracking-[0.2em] mb-3 border-b border-stone-100 pb-2">Season Ledgers ({ledgerHistory.length})</h3>
                  <div className="space-y-2">
                     {ledgerHistory.length === 0 ? <p className="text-xs text-stone-400 italic">No ledger history recorded.</p> : 
                       ledgerHistory.map(l => (
-                         <div key={l.id} onClick={() => navigateTo('seedlings')} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors">
+                         <div key={l.id} onClick={() => navigateTo('seedlings', { seasonId: l.season_id, search: seed.variety_name })} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100 hover:border-emerald-300 cursor-pointer transition-colors">
                             <div>
                                <p className="text-sm font-bold text-stone-800">{l.season?.name || 'Unknown Season'}</p>
                                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">Sown: {l.sown_date || 'Unknown'}</p>
