@@ -40,10 +40,9 @@ const fetchImageAsDataURL = async (url: string): Promise<string> => {
 
 const resizeImage = async (source: string, maxSize: number, quality: number): Promise<string> => {
   let safeSource = source;
-  // If it's an external URL, safely download the raw bytes first so the Canvas doesn't get tainted
   if (source.startsWith('http') && !source.includes('supabase.co')) {
      safeSource = await fetchImageAsDataURL(source);
-     if (!safeSource) return ""; // Fail gracefully so the caller knows it didn't work
+     if (!safeSource) return ""; 
   }
 
   return new Promise((resolve) => {
@@ -308,6 +307,8 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       }
 
       let finalId = editFormData.id?.trim();
+      
+      // --- NEW SEQUENTIAL ID GENERATOR (NO HYPHEN) ---
       if (!finalId) {
          let prefix = "SD";
          if (editFormData.category === '__NEW__' && finalCatPrefix) {
@@ -317,8 +318,31 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             if (cat && cat.prefix) prefix = cat.prefix;
             else prefix = editFormData.category.substring(0, 3).toUpperCase();
          }
-         const randomNum = Math.floor(1000 + Math.random() * 9000);
-         finalId = `${prefix}-${randomNum}`.replace(/[^A-Z0-9-]/g, '');
+
+         // Scan existing inventory to find the highest number for this prefix
+         const existingIds = inventory
+            .map((s: InventorySeed) => s.id)
+            .filter((id: string) => id.startsWith(prefix));
+            
+         let maxNum = 0;
+         for (const existingId of existingIds) {
+            // Strip the prefix off the start of the ID
+            const remainder = existingId.substring(prefix.length);
+            // Extract the leading numbers from the remainder (ignoring -COPY etc)
+            const match = remainder.match(/^(\d+)/);
+            if (match) {
+               const num = parseInt(match[1], 10);
+               if (num > maxNum) {
+                  maxNum = num;
+               }
+            }
+         }
+         
+         // Start at 1000, or increment by 1
+         const nextNum = maxNum === 0 ? 1000 : maxNum + 1;
+         
+         // Combine prefix and number with NO HYPHEN
+         finalId = `${prefix}${nextNum}`.replace(/[^A-Z0-9]/g, '');
       }
 
       const folderName = btoa(finalId).replace(/=/g, ''); 
@@ -328,8 +352,22 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          const mother = inventory.find((s: any) => s.id === editFormData.parent_id_female);
          const father = inventory.find((s: any) => s.id === editFormData.parent_id_male);
          
-         const mSrc = mother?.thumbnail || '';
-         const fSrc = father?.thumbnail || '';
+         let mSrc = mother?.thumbnail || '';
+         let fSrc = father?.thumbnail || '';
+
+         const pathsToSign = [];
+         if (mSrc && !mSrc.startsWith('http') && !mSrc.startsWith('data:')) pathsToSign.push(mSrc);
+         if (fSrc && !fSrc.startsWith('http') && !fSrc.startsWith('data:')) pathsToSign.push(fSrc);
+
+         if (pathsToSign.length > 0) {
+           const { data } = await supabase.storage.from('talawa_media').createSignedUrls(pathsToSign, 3600);
+           if (data) {
+             data.forEach((item: any) => {
+               if (item.path === mSrc) mSrc = item.signedUrl;
+               if (item.path === fSrc) fSrc = item.signedUrl;
+             });
+           }
+         }
 
          if (mSrc || fSrc) {
             const collageBase64 = await generateGeneticsCollage(mSrc, fSrc);
@@ -337,12 +375,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
          }
       }
       
-      // --- THE STRICT GATEKEEPER ---
       const uploadPromises = imagesToUpload.map(async (img: string) => {
-        // 1. If it's already securely in the DB (relative path), leave it.
         if (!img.startsWith('data:') && !img.startsWith('http')) return img;
         
-        // 2. If it's an external URL (from Image Search) or a Base64 string, process it.
         if (img.startsWith('data:') || (img.startsWith('http') && !img.includes('supabase.co'))) {
           const optimizedBase64 = await resizeImage(img, 1600, 0.8);
           
@@ -353,7 +388,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
              await supabase.storage.from('talawa_media').upload(filePath, blob, { contentType: 'image/jpeg' });
              return filePath;
           } else {
-             // If resizeImage failed (proxy blocked, dead link, etc.), reject the entire save!
              throw new Error("One of the images could not be securely downloaded. Please delete the broken image and try selecting a different one.");
           }
         }
@@ -392,7 +426,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         }
       }
 
-      // Final sanity check before saving to DB
       if (newThumbnail && newThumbnail.startsWith('http') && !newThumbnail.includes('supabase.co')) {
           throw new Error("Security Block: Attempted to save an external thumbnail.");
       }
@@ -555,10 +588,10 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       <div className="max-w-md mx-auto p-4 space-y-5">
         <div className="grid grid-cols-2 gap-3">
-           <button onClick={() => setIsImageSearchOpen(true)} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all">
+           <button type="button" onClick={() => setIsImageSearchOpen(true)} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all">
              🌐 Internet Search
            </button>
-           <button onClick={handleAutoFill} disabled={isAutoFilling} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
+           <button type="button" onClick={handleAutoFill} disabled={isAutoFilling} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
              ✨ Magic AutoFill
            </button>
         </div>
@@ -566,7 +599,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-black text-stone-800 uppercase text-[10px] tracking-[0.2em]">Photos</h3>
-            <button onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-xs font-black uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm active:scale-95 transition-transform">
+            <button type="button" onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-xs font-black uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm active:scale-95 transition-transform">
               Add Photo
             </button>
             <input type="file" accept="image/*" capture="environment" ref={editPhotoInputRef} className="hidden" onChange={handleEditPhotoCapture} />
@@ -588,10 +621,10 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                     </div>
                   )}
                   <div className="absolute top-1 right-1 flex flex-col gap-1">
-                     <button onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'}`}>
+                     <button type="button" onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'}`}>
                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
                      </button>
-                     <button onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm">
+                     <button type="button" onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm">
                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                      </button>
                   </div>

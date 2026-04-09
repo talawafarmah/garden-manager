@@ -75,6 +75,10 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
+  // --- NEW SEARCH & FILTER STATE ---
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+
   useEffect(() => { fetchBaseData(); }, []);
   useEffect(() => { 
      const todayObj = new Date();
@@ -309,6 +313,24 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
     finally { setIsSubmittingDirectAdd(false); }
   };
 
+  // --- NEW: FILTER LOGIC ---
+  const categories = Array.from(new Set(inventory.map(s => s.category).filter(Boolean)));
+
+  const filteredLedgers = ledgers.filter(l => {
+    const seed = l.seed;
+    if (!seed) return false;
+    
+    if (categoryFilter !== 'All' && seed.category !== categoryFilter) return false;
+
+    if (searchQuery.trim() !== "") {
+       const q = searchQuery.toLowerCase();
+       return seed.variety_name.toLowerCase().includes(q) || 
+              seed.id.toLowerCase().includes(q) || 
+              seed.category.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
       
@@ -424,7 +446,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         </div>
       )}
 
-      {/* FIX: HEADER WIDTH OPTIMIZATION FOR MOBILE */}
       <header className="bg-emerald-800 text-white px-3 py-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900 gap-2 overflow-hidden">
         <div className="flex items-center gap-1 sm:gap-2 min-w-0">
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors shrink-0" title="Dashboard">
@@ -447,19 +468,35 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-4">
+        
+        {/* --- NEW SEARCH UI --- */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <input type="text" placeholder="Search by Seed Name or ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 outline-none transition-colors" />
+            <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          <div className="relative w-full sm:w-48 shrink-0">
+            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-medium appearance-none">
+              <option value="All">All Categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <svg className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </div>
+        </div>
+
         {isLoading ? (
            <div className="flex justify-center py-20 text-emerald-600">
              <svg className="w-10 h-10 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
            </div>
-        ) : ledgers.length === 0 ? (
+        ) : filteredLedgers.length === 0 ? (
            <div className="text-center py-20 bg-white rounded-3xl border border-stone-200 shadow-sm">
              <svg className="w-16 h-16 mx-auto text-stone-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
              <h2 className="text-lg font-black text-stone-800">No Seedlings Found</h2>
-             <p className="text-stone-500 text-sm mt-1">Pot up some seeds from your trays to start a ledger.</p>
+             <p className="text-stone-500 text-sm mt-1">Pot up some seeds from your trays or adjust your filters.</p>
            </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {ledgers.map(ledger => {
+            {filteredLedgers.map(ledger => {
               const seed = ledger.seed;
               const available = availableCalc(ledger);
               return (
@@ -473,7 +510,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
                         
-                        {/* FIX: MAKE SOWN BADGE DIRECTLY CLICKABLE */}
                         {ledger.sown_date ? (
                            <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap cursor-pointer hover:border-emerald-300">
                              Sown: {ledger.sown_date}
@@ -613,7 +649,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         </div>
       )}
 
-      {/* FIX: MOBILE OPTIMIZED JOURNAL MODAL WIDTH */}
       {activeModal === 'JOURNAL' && selectedLedger && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-full sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 overflow-hidden mx-auto">
@@ -647,7 +682,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                         {entry.type === 'PHOTO' ? '📸' : entry.source === 'TRAY' ? '🌱' : entry.source?.startsWith('LEDGER') ? '🪴' : entry.type === 'TASTING' ? '👅' : entry.type === 'HARVEST' ? '🧺' : '📝'}
                      </div>
                      <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
-                        {/* FIX: TRASH CAN ALWAYS VISIBLE */}
                         <button 
                           onClick={() => deleteJournalEntry(entry.id)}
                           className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"

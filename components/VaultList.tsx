@@ -240,7 +240,7 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
           </button>
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors" title="Dashboard">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </button>
         </div>
@@ -249,19 +249,18 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
           <h1 className="text-xl font-bold truncate pr-2">Seed Vault</h1>
         </div>
         
-        {userRole === 'admin' && (
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => navigateTo('scanner')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Scan Packet">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            </button>
-            <button onClick={() => navigateTo('importer')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Import Link">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-            </button>
-            <button onClick={handleManualNew} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Manual Entry">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            </button>
-          </div>
-        )}
+        {/* FIX: Removed userRole block to ensure header buttons always show on mobile */}
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => navigateTo('scanner')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Scan Packet">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+          <button onClick={() => navigateTo('importer')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Import Link">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+          </button>
+          <button onClick={handleManualNew} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm" title="Manual Entry">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          </button>
+        </div>
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
@@ -313,7 +312,6 @@ export default function VaultList({ inventory, setInventory, categories, isLoadi
           </div>
         </div>
 
-        {/* REPLACED PILLS WITH DROPDOWNS */}
         <div className="flex gap-2">
           <div className="relative flex-1">
             <select value={activeFilter} onChange={(e) => handleSetActiveFilter(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-2 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-medium appearance-none">
