@@ -72,10 +72,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
   const [newNote, setNewNote] = useState('');
   const [noteType, setNoteType] = useState<'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE'>('NOTE');
   const [journalFilter, setJournalFilter] = useState<'ALL' | 'NOTE' | 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'ALLOCATE' | 'PHOTO'>('ALL');
+  
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const targetLedgerRef = useRef<SeasonSeedling | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // --- NEW SEARCH & FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
 
@@ -109,7 +110,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
   const fetchLedgers = async (seasonId: string) => {
     setIsLoading(true);
-    const { data } = await supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', seasonId);
+    const { data } = await supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', seasonId).order('created_at', { ascending: false });
     if (data) {
        setLedgers(data);
        
@@ -130,31 +131,43 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
+  // --- QUICK PHOTO LOGIC ---
+  const handleQuickPhotoClick = (ledger: SeasonSeedling, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    targetLedgerRef.current = ledger;
+    photoInputRef.current?.click();
+  };
+
   const handleCapturePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedLedger) return;
+    const ledgerToUpdate = targetLedgerRef.current || selectedLedger;
+    
+    if (!file || !ledgerToUpdate) return;
     
     setIsUploadingPhoto(true);
+    targetLedgerRef.current = null; // Clear ref immediately
+    
     try {
       const today = new Date();
       const dateStr = today.toLocaleDateString();
       let daysStr = "Unknown Age";
       
-      if (selectedLedger.sown_date) {
-         const sowDate = new Date(selectedLedger.sown_date + 'T12:00:00');
+      if (ledgerToUpdate.sown_date) {
+         const sowDate = new Date(ledgerToUpdate.sown_date + 'T12:00:00');
          const diffDays = Math.floor((today.getTime() - sowDate.getTime()) / (1000 * 60 * 60 * 24));
          daysStr = `${diffDays} days old`;
-      } else if (selectedLedger.created_at) {
-         const createdAt = new Date(selectedLedger.created_at);
+      } else if (ledgerToUpdate.created_at) {
+         const createdAt = new Date(ledgerToUpdate.created_at);
          const diffDays = Math.floor((today.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
          daysStr = `Potted ${diffDays}d ago`;
       }
-      const watermarkText = `${dateStr} : ${selectedLedger.seed?.variety_name || 'Unknown'} : ${daysStr}`;
+      const watermarkText = `${dateStr} : ${ledgerToUpdate.seed?.variety_name || 'Unknown'} : ${daysStr}`;
 
       const watermarkedBlob = await processImageWithWatermark(file, watermarkText);
 
       const fileName = `seedling_${crypto.randomUUID()}.jpg`;
-      const filePath = `seedlings/${selectedLedger.id}/${fileName}`;
+      const filePath = `seedlings/${ledgerToUpdate.id}/${fileName}`;
       await supabase.storage.from('talawa_media').upload(filePath, watermarkedBlob, { contentType: 'image/jpeg' });
       
       const { data: urlData } = await supabase.storage.from('talawa_media').createSignedUrl(filePath, 3600);
@@ -162,7 +175,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
          setSignedUrls(prev => ({...prev, [filePath]: urlData.signedUrl}));
       }
 
-      const newImages = [...(selectedLedger.images || []), filePath];
+      const newImages = [...(ledgerToUpdate.images || []), filePath];
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
       
@@ -174,11 +187,17 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         image_path: filePath
       };
       
-      const updatedJournal = [newEntry, ...(selectedLedger.journal || [])];
+      const updatedJournal = [newEntry, ...(ledgerToUpdate.journal || [])];
 
-      setLedgers(ledgers.map(l => l.id === selectedLedger.id ? { ...l, images: newImages, journal: updatedJournal } : l));
-      setSelectedLedger({ ...selectedLedger, images: newImages, journal: updatedJournal });
-      await supabase.from('season_seedlings').update({ images: newImages, journal: updatedJournal }).eq('id', selectedLedger.id);
+      // Update state
+      setLedgers(prev => prev.map(l => l.id === ledgerToUpdate.id ? { ...l, images: newImages, journal: updatedJournal } : l));
+      
+      // Update modal state if open
+      if (selectedLedger && selectedLedger.id === ledgerToUpdate.id) {
+         setSelectedLedger({ ...ledgerToUpdate, images: newImages, journal: updatedJournal });
+      }
+
+      await supabase.from('season_seedlings').update({ images: newImages, journal: updatedJournal }).eq('id', ledgerToUpdate.id);
       
     } catch (err: any) { alert("Upload failed: " + err.message); } 
     finally { setIsUploadingPhoto(false); }
@@ -313,15 +332,12 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
     finally { setIsSubmittingDirectAdd(false); }
   };
 
-  // --- NEW: FILTER LOGIC ---
   const categories = Array.from(new Set(inventory.map(s => s.category).filter(Boolean)));
 
   const filteredLedgers = ledgers.filter(l => {
     const seed = l.seed;
     if (!seed) return false;
-    
     if (categoryFilter !== 'All' && seed.category !== categoryFilter) return false;
-
     if (searchQuery.trim() !== "") {
        const q = searchQuery.toLowerCase();
        return seed.variety_name.toLowerCase().includes(q) || 
@@ -334,7 +350,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-24 font-sans relative">
       
-      {/* CAROUSEL MODAL */}
+      <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handleCapturePhoto} />
+
       {carousel && (
         <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
           <div className="absolute top-4 right-4 z-50">
@@ -361,7 +378,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
         </div>
       )}
 
-      {/* DIRECT ADD MODAL */}
       {isDirectAddOpen && (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           {showSeedSearch ? (
@@ -468,8 +484,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-4">
-        
-        {/* --- NEW SEARCH UI --- */}
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <input type="text" placeholder="Search by Seed Name or ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 outline-none transition-colors" />
@@ -500,56 +514,63 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
               const seed = ledger.seed;
               const available = availableCalc(ledger);
               return (
-                <div key={ledger.id} className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden flex flex-col">
-                  <div className="p-4 border-b border-stone-100 flex items-center gap-4 bg-stone-50">
-                    <div className="w-16 h-16 bg-stone-200 rounded-xl overflow-hidden shadow-inner flex-shrink-0 cursor-pointer hover:border-emerald-500 border border-transparent transition-colors" onClick={() => navigateTo('seed_detail', seed)}>
-                      {seed?.thumbnail ? <img src={seed.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-400">🌱</div>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-black text-lg text-stone-900 truncate hover:text-emerald-600 cursor-pointer" onClick={() => navigateTo('seed_detail', seed)}>{seed?.variety_name || 'Unknown Seed'}</h3>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded-md leading-none border border-emerald-200">{seed?.category || 'Plant'}</p>
-                        
-                        {ledger.sown_date ? (
-                           <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap cursor-pointer hover:border-emerald-300">
-                             Sown: {ledger.sown_date}
-                           </button>
-                        ) : (
-                           <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap cursor-pointer hover:bg-amber-100">
-                             Sown: Not Set (Fix)
-                           </button>
-                        )}
+                <div key={ledger.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden">
+                  
+                  {/* --- CONDENSED HEADER --- */}
+                  <div className="p-3 border-b border-stone-100 flex items-center justify-between bg-stone-50 gap-2">
+                    <div 
+                       className="flex items-center gap-3 min-w-0 cursor-pointer group" 
+                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (seed) navigateTo('seed_detail', seed); }}
+                    >
+                      <div className="w-12 h-12 bg-stone-200 rounded-lg overflow-hidden flex-shrink-0 group-hover:ring-2 ring-emerald-500 transition-all border border-stone-300">
+                        {seed?.thumbnail ? <img src={seed.thumbnail} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-stone-400 text-xl">🌱</div>}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-base text-stone-900 truncate group-hover:text-emerald-600 transition-colors">{seed?.variety_name || 'Unknown Seed'}</h3>
+                        <div className="flex items-center gap-2 mt-0.5">
+                           <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200">{seed?.category || 'Plant'}</span>
+                           {ledger.sown_date ? (
+                              <span className="text-[9px] font-bold text-stone-500">Sown: {ledger.sown_date}</span>
+                           ) : (
+                              <span className="text-[9px] font-bold text-amber-600">Sown: Not Set</span>
+                           )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="px-4 pt-3 flex justify-between items-end">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-stone-400">Inventory Status</span>
-                    <button onClick={() => openAdjustModal(ledger)} className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md active:scale-95 transition-all hover:bg-amber-100 flex items-center gap-1 shadow-sm">
-                      ⚖️ Adjust
+                    {/* --- QUICK PHOTO BUTTON --- */}
+                    <button 
+                       onClick={(e) => handleQuickPhotoClick(ledger, e)} 
+                       className="w-10 h-10 shrink-0 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center border border-blue-200 shadow-sm active:scale-95 transition-all" 
+                       title="Quick Photo"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     </button>
                   </div>
 
-                  <div className="px-4 pb-4 pt-2 grid grid-cols-4 gap-2 text-center relative">
-                    <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100"><div className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Growing</div><div className="text-2xl font-black text-emerald-600">{ledger.qty_growing}</div></div>
-                    <div className="bg-stone-50 rounded-xl p-2 border border-stone-200"><div className="text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Keep</div><div className="text-xl font-black text-stone-800">{ledger.allocate_keep}</div></div>
-                    <div className="bg-purple-50 rounded-xl p-2 border border-purple-100"><div className="text-[10px] font-black text-purple-800 uppercase tracking-widest mb-1">Reserve</div><div className="text-xl font-black text-purple-600">{ledger.allocate_reserve}</div></div>
-                    <div className="bg-blue-50 rounded-xl p-2 border border-blue-100 shadow-inner"><div className="text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Avail</div><div className="text-2xl font-black text-blue-600">{available}</div></div>
+                  {/* --- CONDENSED MAIN STATS GRID --- */}
+                  <div className="px-3 py-2 grid grid-cols-4 gap-1.5 text-center">
+                     <div className="bg-emerald-50 rounded-lg p-1.5 border border-emerald-100"><div className="text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-0.5">Growing</div><div className="text-xl font-black text-emerald-600 leading-none">{ledger.qty_growing}</div></div>
+                     <div className="bg-stone-50 rounded-lg p-1.5 border border-stone-200"><div className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-0.5">Keep</div><div className="text-lg font-black text-stone-800 leading-none">{ledger.allocate_keep}</div></div>
+                     <div className="bg-purple-50 rounded-lg p-1.5 border border-purple-100"><div className="text-[9px] font-black text-purple-800 uppercase tracking-widest mb-0.5">Reserve</div><div className="text-lg font-black text-purple-600 leading-none">{ledger.allocate_reserve}</div></div>
+                     <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-100 shadow-inner"><div className="text-[9px] font-black text-blue-800 uppercase tracking-widest mb-0.5">Avail</div><div className="text-xl font-black text-blue-600 leading-none">{available}</div></div>
                   </div>
 
-                  <div className="p-3 bg-stone-50 border-t border-b border-stone-100 flex gap-2 overflow-x-auto scrollbar-hide">
-                    <button onClick={() => openEventModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center shadow-sm">Log Event</button>
-                    <button onClick={() => openAllocateModal(ledger)} className="flex-1 min-w-[90px] py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-purple-100">Allocate</button>
-                    <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="flex-1 min-w-[90px] py-2 bg-white text-stone-600 border border-stone-200 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center hover:bg-stone-100 gap-1.5">
-                       Journal {(ledger.images && ledger.images.length > 0) && <span className="w-2 h-2 bg-blue-500 rounded-full" />}
-                    </button>
+                  {/* --- CONDENSED HISTORY STATS --- */}
+                  <div className="px-4 pb-2 flex justify-between text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                    <span className="text-stone-500">Planted: <span className="text-stone-800 font-black">{ledger.qty_planted}</span></span>
+                    <span className="text-stone-500">Gifted: <span className="text-stone-800 font-black">{ledger.qty_gifted}</span></span>
+                    <span className="text-stone-500">Sold: <span className="text-stone-800 font-black">{ledger.qty_sold}</span></span>
+                    <span className="text-red-400">Dead: <span className="text-red-600 font-black">{ledger.qty_dead}</span></span>
                   </div>
 
-                  <div className="p-3 bg-white grid grid-cols-4 gap-2 text-center text-xs font-bold text-stone-500">
-                    <div>Planted <span className="block text-stone-800 font-black text-lg">{ledger.qty_planted}</span></div>
-                    <div>Gifted <span className="block text-stone-800 font-black text-lg">{ledger.qty_gifted}</span></div>
-                    <div>Sold <span className="block text-stone-800 font-black text-lg">{ledger.qty_sold}</span></div>
-                    <div>Dead <span className="block text-red-600 font-black text-lg">{ledger.qty_dead}</span></div>
+                  {/* --- ACTION BUTTONS --- */}
+                  <div className="p-2 bg-stone-50 border-t border-stone-100 grid grid-cols-4 gap-1.5">
+                     <button onClick={() => openEventModal(ledger)} className="py-2 bg-stone-800 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-stone-700 transition-colors">Event</button>
+                     <button onClick={() => openAllocateModal(ledger)} className="py-2 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-purple-50 transition-colors">Alloc</button>
+                     <button onClick={() => openAdjustModal(ledger)} className="py-2 bg-white text-amber-700 border border-amber-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-amber-50 transition-colors">Adjust</button>
+                     <button onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="py-2 bg-white text-stone-600 border border-stone-200 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-stone-100 transition-colors">
+                        Notes {(ledger.images && ledger.images.length > 0) && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                     </button>
                   </div>
                 </div>
               );
@@ -684,7 +705,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                      <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
                         <button 
                           onClick={() => deleteJournalEntry(entry.id)}
-                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
+                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Entry"
                         >
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -724,10 +745,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
             <div className="p-4 bg-white border-t border-stone-200 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.03)] w-full box-border">
               <div className="flex gap-2 mb-3">
-                <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50 shrink-0">
+                <button onClick={() => { targetLedgerRef.current = selectedLedger; photoInputRef.current?.click(); }} disabled={isUploadingPhoto} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 active:scale-95 transition-all border border-blue-200 shadow-sm disabled:opacity-50 shrink-0">
                   {isUploadingPhoto ? '⏳' : '📸'} Photo
                 </button>
-                <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handleCapturePhoto} />
                 
                 {['NOTE', 'UPPOT', 'FERTILIZE'].map(t => (
                   <button key={t} onClick={() => setNoteType(t as any)} className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-colors shadow-sm ${noteType === t ? 'bg-stone-800 text-white border-stone-800' : 'bg-stone-50 text-stone-500 border-stone-200'}`}>{t}</button>
