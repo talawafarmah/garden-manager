@@ -41,6 +41,7 @@ const VALID_VIEWS = [
 
 export default function App() {
   const [activeView, setActiveView] = useState<AppView | any>('dashboard');
+  const [currentPayload, setCurrentPayload] = useState<any>(null);
   const [selectedSeed, setSelectedSeed] = useState<any>(null); 
   const [selectedTray, setSelectedTray] = useState<SeedlingTray | null>(null);
   const [selectedAmendment, setSelectedAmendment] = useState<any>(null);
@@ -133,6 +134,7 @@ export default function App() {
 
   const applyRoute = (view: AppView | any, payload: any = null) => {
     setActiveView(view);
+    setCurrentPayload(payload);
     if (typeof window !== 'undefined') window.scrollTo(0, 0);
 
     // FIXED: Added 'amendment_new' to the safe list so it doesn't clear the payload when editing!
@@ -194,14 +196,15 @@ export default function App() {
   }, []);
 
   switch (activeView) {
-   // case 'dashboard': return <CollageTester handleGoBack={handleGoBack} />;
     case 'dashboard': return <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'scanner':
     case 'importer': return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault': return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;
     case 'seed_edit': return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'trays': return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
-    case 'seedlings': return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
+    
+    // FIX: Passing the currentPayload into the SeedlingsList so it can extract the search data!
+    case 'seedlings': return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} payload={currentPayload} />;
     
     case 'seed_detail': return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} inventory={inventory} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
     case 'tray_edit': return <TrayEdit key={selectedTray?.id || 'new_tray'} tray={selectedTray} trays={trays} setTrays={setTrays} inventory={inventory} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
