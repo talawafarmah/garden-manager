@@ -329,7 +329,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
     finally { setIsSubmittingDirectAdd(false); }
   };
 
-  const categories = Array.from(new Set(inventory.map(s => s.category).filter(Boolean)));
+  // FIX: DYNAMICALLY GENERATE CATEGORIES ONLY FROM ACTIVE LEDGERS IN THIS SEASON
+  const categories = Array.from(new Set(ledgers.map(l => l.seed?.category).filter(Boolean))).sort();
 
   const filteredLedgers = ledgers.filter(l => {
     const seed = l.seed;
@@ -698,7 +699,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                      <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
                         <button 
                           onClick={() => deleteJournalEntry(entry.id)}
-                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
+                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Entry"
                         >
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
