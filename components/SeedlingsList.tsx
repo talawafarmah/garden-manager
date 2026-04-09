@@ -131,7 +131,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
 
-  // --- QUICK PHOTO LOGIC ---
   const handleQuickPhotoClick = (ledger: SeasonSeedling, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -146,7 +145,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
     if (!file || !ledgerToUpdate) return;
     
     setIsUploadingPhoto(true);
-    targetLedgerRef.current = null; // Clear ref immediately
+    targetLedgerRef.current = null; 
     
     try {
       const today = new Date();
@@ -189,10 +188,8 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
       
       const updatedJournal = [newEntry, ...(ledgerToUpdate.journal || [])];
 
-      // Update state
       setLedgers(prev => prev.map(l => l.id === ledgerToUpdate.id ? { ...l, images: newImages, journal: updatedJournal } : l));
       
-      // Update modal state if open
       if (selectedLedger && selectedLedger.id === ledgerToUpdate.id) {
          setSelectedLedger({ ...ledgerToUpdate, images: newImages, journal: updatedJournal });
       }
@@ -516,7 +513,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
               return (
                 <div key={ledger.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden">
                   
-                  {/* --- CONDENSED HEADER --- */}
                   <div className="p-3 border-b border-stone-100 flex items-center justify-between bg-stone-50 gap-2">
                     <div 
                        className="flex items-center gap-3 min-w-0 cursor-pointer group" 
@@ -537,7 +533,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                         </div>
                       </div>
                     </div>
-                    {/* --- QUICK PHOTO BUTTON --- */}
+                    
                     <button 
                        onClick={(e) => handleQuickPhotoClick(ledger, e)} 
                        className="w-10 h-10 shrink-0 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center border border-blue-200 shadow-sm active:scale-95 transition-all" 
@@ -547,7 +543,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                     </button>
                   </div>
 
-                  {/* --- CONDENSED MAIN STATS GRID --- */}
                   <div className="px-3 py-2 grid grid-cols-4 gap-1.5 text-center">
                      <div className="bg-emerald-50 rounded-lg p-1.5 border border-emerald-100"><div className="text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-0.5">Growing</div><div className="text-xl font-black text-emerald-600 leading-none">{ledger.qty_growing}</div></div>
                      <div className="bg-stone-50 rounded-lg p-1.5 border border-stone-200"><div className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-0.5">Keep</div><div className="text-lg font-black text-stone-800 leading-none">{ledger.allocate_keep}</div></div>
@@ -555,7 +550,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                      <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-100 shadow-inner"><div className="text-[9px] font-black text-blue-800 uppercase tracking-widest mb-0.5">Avail</div><div className="text-xl font-black text-blue-600 leading-none">{available}</div></div>
                   </div>
 
-                  {/* --- CONDENSED HISTORY STATS --- */}
                   <div className="px-4 pb-2 flex justify-between text-[10px] font-bold text-stone-400 uppercase tracking-widest">
                     <span className="text-stone-500">Planted: <span className="text-stone-800 font-black">{ledger.qty_planted}</span></span>
                     <span className="text-stone-500">Gifted: <span className="text-stone-800 font-black">{ledger.qty_gifted}</span></span>
@@ -563,7 +557,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                     <span className="text-red-400">Dead: <span className="text-red-600 font-black">{ledger.qty_dead}</span></span>
                   </div>
 
-                  {/* --- ACTION BUTTONS --- */}
                   <div className="p-2 bg-stone-50 border-t border-stone-100 grid grid-cols-4 gap-1.5">
                      <button onClick={() => openEventModal(ledger)} className="py-2 bg-stone-800 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-stone-700 transition-colors">Event</button>
                      <button onClick={() => openAllocateModal(ledger)} className="py-2 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-purple-50 transition-colors">Alloc</button>
@@ -705,7 +698,7 @@ export default function SeedlingsList({ navigateTo, handleGoBack }: any) {
                      <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0">
                         <button 
                           onClick={() => deleteJournalEntry(entry.id)}
-                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          className="absolute top-3 right-3 p-1.5 text-stone-300 hover:text-red-500 active:bg-red-50 active:text-red-500 rounded-lg transition-colors"
                           title="Delete Entry"
                         >
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
