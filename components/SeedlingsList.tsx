@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSeedling, Season, AppView, SeedlingJournalEntry, InventorySeed } from '../types';
 
@@ -40,8 +40,6 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
 };
 
 export default function SeedlingsList({ navigateTo, handleGoBack, payload, search, seasonId }: any) {
-  // --- PAYLOAD INTERCEPTOR ---
-  // Catches data from SeedDetail.tsx whether passed as a payload object or spread props
   const incomingSearch = payload?.search || search || "";
   const incomingSeasonId = payload?.seasonId || seasonId || "";
 
@@ -52,8 +50,15 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
   const [isLoading, setIsLoading] = useState(true);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
+  // --- NEW: EARMARKED / DEMAND MAP ---
+  const [demandMap, setDemandMap] = useState<Record<string, number>>({});
+
   const [activeModal, setActiveModal] = useState<'LOG_EVENT' | 'ALLOCATE' | 'JOURNAL' | 'ADJUST' | null>(null);
   const [selectedLedger, setSelectedLedger] = useState<SeasonSeedling | null>(null);
+
+  // --- NEW: SEASON JOURNAL STATE ---
+  const [isSeasonJournalOpen, setIsSeasonJournalOpen] = useState(false);
+  const [seasonJournalTab, setSeasonJournalTab] = useState<'TIMELINE' | 'GALLERY'>('TIMELINE');
 
   const [carousel, setCarousel] = useState<{ images: string[], currentIndex: number } | null>(null);
 
@@ -82,7 +87,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
   const targetLedgerRef = useRef<SeasonSeedling | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // Instantly default the search box if a payload was sent
   const [searchQuery, setSearchQuery] = useState(incomingSearch);
   const [categoryFilter, setCategoryFilter] = useState("All");
 
@@ -107,7 +111,6 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
       const active = seasonData.find((s: any) => s.status === 'Active');
       const defaultSeasonId = active ? active.id : seasonData[0].id;
       
-      // Prioritize the hidden payload season if it exists
       const currentSeason = incomingSeasonId || activeSeason || defaultSeasonId;
       
       setActiveSeason(currentSeason);
@@ -117,8 +120,29 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
     }
   };
 
+  const loadDemand = async (seasonId: string) => {
+    // Dynamically checks your database for common wishlist/demand table names
+    const tablesToTry = ['demand_planner', 'demand', 'wishlist', 'wishlists'];
+    for (const table of tablesToTry) {
+        const { data, error } = await supabase.from(table).select('*').eq('season_id', seasonId);
+        if (!error && data) {
+            const dMap: Record<string, number> = {};
+            data.forEach((row: any) => {
+                const qty = row.quantity || row.qty || row.count || row.requested_qty || 1;
+                dMap[row.seed_id] = (dMap[row.seed_id] || 0) + qty;
+            });
+            setDemandMap(dMap);
+            return; 
+        }
+    }
+  };
+
   const fetchLedgers = async (seasonId: string) => {
     setIsLoading(true);
+    
+    // Fetch Demand map in parallel
+    loadDemand(seasonId);
+
     const { data } = await supabase.from('season_seedlings').select('*, seed:seed_inventory(*)').eq('season_id', seasonId).order('created_at', { ascending: false });
     if (data) {
        setLedgers(data);
@@ -139,6 +163,28 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
   };
 
   const availableCalc = (l: SeasonSeedling) => Math.max(0, l.qty_growing - l.allocate_keep - l.allocate_reserve);
+
+  // --- AGGREGATE DATA FOR SEASON JOURNAL ---
+  const seasonJournalEntries = useMemo(() => {
+    const entries: any[] = [];
+    ledgers.forEach(l => {
+        (l.journal || []).forEach((j: any) => {
+            entries.push({ ...j, seed: l.seed, ledgerId: l.id });
+        });
+    });
+    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [ledgers]);
+
+  const seasonGallery = useMemo(() => {
+    const photos: {src: string, ledgerId: string, seedName: string, date: string}[] = [];
+    ledgers.forEach(l => {
+        (l.journal || []).forEach((j: any) => {
+            if (j.image_path) photos.push({ src: j.image_path, ledgerId: l.id, seedName: l.seed?.variety_name || 'Seedling', date: j.date });
+        });
+    });
+    return photos.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [ledgers]);
+
 
   const handleQuickPhotoClick = (ledger: SeasonSeedling, e: React.MouseEvent) => {
     e.preventDefault();
@@ -358,8 +404,81 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
       
       <input type="file" accept="image/*" capture="environment" ref={photoInputRef} className="hidden" onChange={handleCapturePhoto} />
 
+      {/* GLOBAL SEASON JOURNAL MODAL */}
+      {isSeasonJournalOpen && (
+        <div className="fixed inset-0 z-[150] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 overflow-hidden">
+          <div className="bg-white rounded-none sm:rounded-3xl w-full max-w-2xl h-full sm:h-[85vh] shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden mx-auto">
+            <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="font-black text-stone-800 tracking-tight flex items-center gap-2">📖 Season Journal</h2>
+                <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mt-0.5">{seasons.find(s => s.id === activeSeason)?.name}</p>
+              </div>
+              <button onClick={() => setIsSeasonJournalOpen(false)} className="p-2 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            
+            <div className="flex bg-white border-b border-stone-200 p-2 shrink-0">
+               <button onClick={() => setSeasonJournalTab('TIMELINE')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${seasonJournalTab === 'TIMELINE' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-100'}`}>Timeline ({seasonJournalEntries.length})</button>
+               <button onClick={() => setSeasonJournalTab('GALLERY')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${seasonJournalTab === 'GALLERY' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:bg-stone-100'}`}>Gallery ({seasonGallery.length})</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 bg-stone-100 relative">
+               {seasonJournalTab === 'TIMELINE' ? (
+                 <div className="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-stone-300 before:to-transparent">
+                   {seasonJournalEntries.length === 0 ? <p className="text-center text-stone-400 py-10 italic relative z-10">No journal activity recorded this season.</p> : 
+                      seasonJournalEntries.map((entry, idx) => (
+                        <div key={entry.id || idx} className="relative flex items-start gap-3 w-full group">
+                             <div className="flex items-center justify-center w-10 h-10 rounded-full border border-stone-200 bg-white text-stone-500 shrink-0 shadow-sm z-10 text-lg mt-1">
+                                {entry.type === 'PHOTO' ? '📸' : entry.type === 'UPPOT' ? '🪴' : entry.type === 'FERTILIZE' ? '💧' : '📝'}
+                             </div>
+                             <div className="flex-1 p-4 rounded-2xl bg-white border border-stone-200 shadow-sm relative min-w-0 hover:border-emerald-300 transition-colors cursor-pointer" onClick={() => {
+                                const l = ledgers.find(x => x.id === entry.ledgerId);
+                                if (l) { setSelectedLedger(l); setJournalFilter('ALL'); setActiveModal('JOURNAL'); setIsSeasonJournalOpen(false); }
+                             }}>
+                                <div className="flex flex-wrap items-center justify-between mb-2 w-full gap-2">
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded shadow-sm shrink-0 bg-stone-800 text-white">{entry.type}</span>
+                                     <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest truncate max-w-[150px]">{entry.seed?.variety_name}</span>
+                                   </div>
+                                   <span className="text-[10px] font-bold text-stone-400 shrink-0">{entry.date}</span>
+                                </div>
+                                <p className="text-sm font-medium text-stone-700 leading-relaxed break-words whitespace-pre-wrap">{entry.note}</p>
+                                
+                                {entry.image_path && signedUrls[entry.image_path] && (
+                                   <div className="mt-3 w-full h-48 rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+                                       <img src={signedUrls[entry.image_path]} className="w-full h-full object-cover" />
+                                   </div>
+                                )}
+                             </div>
+                        </div>
+                      ))
+                   }
+                 </div>
+               ) : (
+                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                   {seasonGallery.length === 0 ? <p className="col-span-full text-center text-stone-400 py-10 italic">No photos recorded this season.</p> : 
+                      seasonGallery.map((photo, idx) => {
+                         const src = signedUrls[photo.src] || photo.src;
+                         return src && (
+                           <div key={idx} className="aspect-square rounded-xl overflow-hidden relative group cursor-zoom-in shadow-sm border border-stone-200" onClick={() => setCarousel({ images: seasonGallery.map(p => signedUrls[p.src] || p.src), currentIndex: idx })}>
+                              <img src={src} className="w-full h-full object-cover" />
+                              <div className="absolute bottom-0 left-0 right-0 bg-stone-900/70 backdrop-blur-sm p-1.5 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <p className="text-[9px] text-white font-black uppercase tracking-widest text-center truncate">{photo.seedName}</p>
+                                 <p className="text-[8px] text-stone-300 font-bold text-center mt-0.5">{photo.date}</p>
+                              </div>
+                           </div>
+                         )
+                      })
+                   }
+                 </div>
+               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CAROUSEL MODAL */}
       {carousel && (
-        <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+        <div className="fixed inset-0 z-[300] bg-black flex flex-col items-center justify-center">
           <div className="absolute top-4 right-4 z-50">
              <button onClick={() => setCarousel(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-sm transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -384,8 +503,9 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
         </div>
       )}
 
+      {/* DIRECT ADD MODAL */}
       {isDirectAddOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           {showSeedSearch ? (
             <div className="bg-white rounded-3xl w-full max-w-md h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
               <div className="p-4 border-b border-stone-200 flex gap-3 items-center bg-stone-50 rounded-t-3xl shrink-0">
@@ -476,6 +596,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
           <h1 className="text-lg sm:text-xl font-bold truncate">Nursery</h1>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+            {/* NEW SEASON JOURNAL BUTTON */}
+            <button onClick={() => setIsSeasonJournalOpen(true)} className="px-2 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-[10px] font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50">
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+               <span className="hidden sm:inline">Journal</span>
+            </button>
             <button onClick={() => setIsDirectAddOpen(true)} className="px-2 py-1.5 bg-emerald-900 text-emerald-100 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm text-[10px] font-black uppercase tracking-widest flex items-center gap-1 border border-emerald-700/50">
                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> <span className="hidden sm:inline">Add</span>
             </button>
@@ -519,6 +644,11 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
             {filteredLedgers.map(ledger => {
               const seed = ledger.seed;
               const available = availableCalc(ledger);
+              
+              // NEW: Get the demand/wishlist number for this specific seed
+              const demand = seed ? (demandMap[seed.id] || 0) : 0;
+              const isReserveShort = ledger.allocate_reserve < demand;
+
               return (
                 <div key={ledger.id} className="bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col overflow-hidden">
                   
@@ -533,11 +663,12 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
                       <div className="min-w-0">
                         <h3 className="font-bold text-base text-stone-900 truncate group-hover:text-emerald-600 transition-colors">{seed?.variety_name || 'Unknown Seed'}</h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                           <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200">{seed?.category || 'Plant'}</span>
+                           <span className="text-[9px] font-mono font-bold text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200 shadow-inner leading-none">{seed?.id}</span>
+                           <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 leading-none">{seed?.category || 'Plant'}</span>
                            {ledger.sown_date ? (
-                              <span className="text-[9px] font-bold text-stone-500">Sown: {ledger.sown_date}</span>
+                              <span className="text-[9px] font-bold text-stone-500 leading-none">Sown: {ledger.sown_date}</span>
                            ) : (
-                              <span className="text-[9px] font-bold text-amber-600">Sown: Not Set</span>
+                              <span className="text-[9px] font-bold text-amber-600 leading-none">Sown: Not Set</span>
                            )}
                         </div>
                       </div>
@@ -555,7 +686,15 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
                   <div className="px-3 py-2 grid grid-cols-4 gap-1.5 text-center">
                      <div className="bg-emerald-50 rounded-lg p-1.5 border border-emerald-100"><div className="text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-0.5">Growing</div><div className="text-xl font-black text-emerald-600 leading-none">{ledger.qty_growing}</div></div>
                      <div className="bg-stone-50 rounded-lg p-1.5 border border-stone-200"><div className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-0.5">Keep</div><div className="text-lg font-black text-stone-800 leading-none">{ledger.allocate_keep}</div></div>
-                     <div className="bg-purple-50 rounded-lg p-1.5 border border-purple-100"><div className="text-[9px] font-black text-purple-800 uppercase tracking-widest mb-0.5">Reserve</div><div className="text-lg font-black text-purple-600 leading-none">{ledger.allocate_reserve}</div></div>
+                     
+                     {/* MODIFIED RESERVE BOX WITH DEMAND LOGIC */}
+                     <div className="bg-purple-50 rounded-lg p-1.5 border border-purple-100 flex flex-col justify-center">
+                        <div className={`text-[8.5px] font-black uppercase tracking-widest mb-0.5 leading-tight ${demand > 0 ? 'text-purple-800' : 'text-purple-800'}`}>
+                           Reserve {demand > 0 ? <span className="text-amber-600">(Need {demand})</span> : ''}
+                        </div>
+                        <div className={`text-lg font-black leading-none ${isReserveShort && demand > 0 ? 'text-amber-500' : 'text-purple-600'}`}>{ledger.allocate_reserve}</div>
+                     </div>
+
                      <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-100 shadow-inner"><div className="text-[9px] font-black text-blue-800 uppercase tracking-widest mb-0.5">Avail</div><div className="text-xl font-black text-blue-600 leading-none">{available}</div></div>
                   </div>
 
@@ -649,31 +788,46 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
         </div>
       )}
 
-      {activeModal === 'ALLOCATE' && selectedLedger && (
+      {activeModal === 'ALLOCATE' && selectedLedger && (() => {
+        const demand = selectedLedger ? (demandMap[selectedLedger.seed_id] || 0) : 0;
+        
+        return (
         <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-purple-50 p-4 border-b border-purple-100 flex justify-between items-center">
               <h2 className="font-black text-purple-900 tracking-tight flex items-center gap-2">🧮 Update Allocations</h2>
               <button onClick={() => setActiveModal(null)} className="p-1 rounded-full text-purple-400 hover:bg-purple-200 hover:text-purple-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            <div className="p-5 space-y-5">
+            <div className="p-5 space-y-4">
+              
+              {demand > 0 && (
+                 <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-2">
+                    <span className="text-lg leading-none">🎁</span> 
+                    <span>Friends & Family have requested <strong>{demand}</strong> of these plants this season.</span>
+                 </div>
+              )}
+
               <div className="text-center bg-stone-100 p-3 rounded-xl border border-stone-200 mb-4"><span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Total Growing</span><div className="text-3xl font-black text-stone-800">{selectedLedger.qty_growing}</div></div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">My Keep</span><input type="number" min="0" value={editKeep === 0 ? '' : editKeep} onChange={(e) => setEditKeep(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" /></div>
-                <div className="flex items-center justify-between"><span className="text-sm font-bold text-stone-700 w-24">Reserved</span><input type="number" min="0" value={editReserve === 0 ? '' : editReserve} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" /></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-stone-700 w-24">Reserved</span>
+                  <input type="number" min="0" value={editReserve === 0 ? '' : editReserve} onChange={(e) => setEditReserve(Number(e.target.value))} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-purple-500 outline-none font-black text-lg" placeholder="0" />
+                </div>
               </div>
               <div className="mt-4 pt-4 border-t border-stone-200 flex justify-between items-center">
                 <span className="text-xs font-black uppercase tracking-widest text-blue-600">Calculated Available</span><span className={`text-2xl font-black ${selectedLedger.qty_growing - editKeep - editReserve < 0 ? 'text-red-500' : 'text-blue-600'}`}>{selectedLedger.qty_growing - editKeep - editReserve}</span>
               </div>
-              {selectedLedger.qty_growing - editKeep - editReserve < 0 && <p className="text-[10px] text-red-500 font-bold text-center">You have over-allocated your growing plants!</p>}
-              <button onClick={submitAllocation} className="w-full py-4 bg-purple-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-2">Save Allocations</button>
+              {selectedLedger.qty_growing - editKeep - editReserve < 0 && <p className="text-[10px] text-red-500 font-bold text-center mt-2">You have over-allocated your growing plants!</p>}
+              <button onClick={submitAllocation} className="w-full py-4 bg-purple-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl shadow-purple-900/20 active:scale-95 transition-all mt-4">Save Allocations</button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {activeModal === 'JOURNAL' && selectedLedger && (
-        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
+        <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-hidden">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-full sm:max-w-md h-[85vh] sm:h-[700px] shadow-2xl flex flex-col animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 overflow-hidden mx-auto">
             <div className="bg-stone-50 p-4 border-b border-stone-200 flex justify-between items-center shrink-0 w-full">
               <div className="min-w-0 pr-4">
