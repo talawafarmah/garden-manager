@@ -168,6 +168,10 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
+  // --- NEW HELP MODE STATE ---
+  const [isHelpMode, setIsHelpMode] = useState(false);
+  const [activeHelpInfo, setActiveHelpInfo] = useState<{title: string, text: string} | null>(null);
+
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
   useEffect(() => {
@@ -308,7 +312,6 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
       let finalId = editFormData.id?.trim();
       
-      // --- NEW SEQUENTIAL ID GENERATOR (NO HYPHEN) ---
       if (!finalId) {
          let prefix = "SD";
          if (editFormData.category === '__NEW__' && finalCatPrefix) {
@@ -319,16 +322,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             else prefix = editFormData.category.substring(0, 3).toUpperCase();
          }
 
-         // Scan existing inventory to find the highest number for this prefix
          const existingIds = inventory
             .map((s: InventorySeed) => s.id)
             .filter((id: string) => id.startsWith(prefix));
             
          let maxNum = 0;
          for (const existingId of existingIds) {
-            // Strip the prefix off the start of the ID
             const remainder = existingId.substring(prefix.length);
-            // Extract the leading numbers from the remainder (ignoring -COPY etc)
             const match = remainder.match(/^(\d+)/);
             if (match) {
                const num = parseInt(match[1], 10);
@@ -338,10 +338,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             }
          }
          
-         // Start at 1000, or increment by 1
          const nextNum = maxNum === 0 ? 1000 : maxNum + 1;
-         
-         // Combine prefix and number with NO HYPHEN
          finalId = `${prefix}${nextNum}`.replace(/[^A-Z0-9]/g, '');
       }
 
@@ -490,8 +487,52 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
   const isTomato = editFormData.category?.toLowerCase().includes('tomato') || newCatName.toLowerCase().includes('tomato');
 
+  // --- NEW HELP WRAPPER COMPONENT ---
+  const HelpWrapper = ({ children, title, text }: { children: React.ReactNode, title: string, text: string }) => {
+    if (!isHelpMode) return <>{children}</>;
+    
+    return (
+      <div 
+         className="relative group cursor-help rounded-xl ring-2 ring-blue-400 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50"
+      >
+         {/* Transparent interceptor shield */}
+         <div 
+            className="absolute inset-0 z-50" 
+            onClick={(e) => { 
+               e.preventDefault(); 
+               e.stopPropagation(); 
+               setActiveHelpInfo({ title, text }); 
+            }} 
+         />
+         <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30">
+            {children}
+         </div>
+      </div>
+    );
+  };
+
   return (
-    <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
+    <main className={`min-h-screen pb-20 font-sans transition-colors duration-300 ${isHelpMode ? 'bg-stone-200' : 'bg-stone-50 text-stone-900'}`}>
+      
+      {/* HELP INFO MODAL */}
+      {activeHelpInfo && (
+         <div className="fixed inset-0 z-[200] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setActiveHelpInfo(null)}>
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+               <div className="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
+                  <h2 className="font-black text-blue-900 tracking-tight flex items-center gap-2">
+                     <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                     {activeHelpInfo.title}
+                  </h2>
+                  <button onClick={() => setActiveHelpInfo(null)} className="p-1 rounded-full text-blue-400 hover:bg-blue-200 hover:text-blue-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+               </div>
+               <div className="p-5">
+                  <p className="text-sm text-stone-600 leading-relaxed">{activeHelpInfo.text}</p>
+                  <button onClick={() => setActiveHelpInfo(null)} className="w-full mt-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 transition-colors">Got it</button>
+               </div>
+            </div>
+         </div>
+      )}
+
       {isImageSearchOpen && (
         <ImageSearch 
           baseQuery={`${editFormData.vendor || ''} ${editFormData.variety_name || ''}`.trim()}
@@ -568,30 +609,39 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          </button>
-          <h1 className="text-xl font-bold text-stone-800 ml-1">
+          <h1 className="text-xl font-bold text-stone-800 ml-1 truncate max-w-[150px] sm:max-w-none">
             {inventory.some((s: InventorySeed) => s.id === seed.id) ? 'Edit Seed' : 'New Seed'}
           </h1>
         </div>
-        <button 
-          onClick={handleSaveEdit} 
-          disabled={isSaving} 
-          className="px-5 py-2 bg-emerald-600 text-white font-black rounded-xl shadow-sm disabled:opacity-50 transition-colors hover:bg-emerald-700 tracking-wide"
-        >
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsHelpMode(!isHelpMode)} 
+            className={`p-2 rounded-full font-bold text-sm transition-all flex items-center gap-1 border ${isHelpMode ? 'bg-blue-100 text-blue-700 border-blue-300 shadow-inner' : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200'}`}
+          >
+            {isHelpMode ? 'Close Help' : '❓ Help'}
+          </button>
+          <button 
+            onClick={handleSaveEdit} 
+            disabled={isSaving || isHelpMode} 
+            className="px-5 py-2 bg-emerald-600 text-white font-black rounded-xl shadow-sm disabled:opacity-50 transition-colors hover:bg-emerald-700 tracking-wide"
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
       </header>
+
+      {isHelpMode && (
+         <div className="bg-blue-600 text-white p-3 text-center text-xs font-bold uppercase tracking-widest sticky top-[72px] z-10 shadow-md">
+            Help Mode Active: Tap any highlighted box to learn more.
+         </div>
+      )}
 
       <div className="max-w-md mx-auto p-4 space-y-5">
         <div className="grid grid-cols-2 gap-3">
-           <button type="button" onClick={() => setIsImageSearchOpen(true)} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all">
+           <button type="button" onClick={() => setIsImageSearchOpen(true)} disabled={isHelpMode} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
              🌐 Internet Search
            </button>
-           <button type="button" onClick={handleAutoFill} disabled={isAutoFilling} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
+           <button type="button" onClick={handleAutoFill} disabled={isAutoFilling || isHelpMode} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
              ✨ Magic AutoFill
            </button>
         </div>
@@ -599,7 +649,7 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-black text-stone-800 uppercase text-[10px] tracking-[0.2em]">Photos</h3>
-            <button type="button" onClick={() => editPhotoInputRef.current?.click()} className="text-emerald-600 text-xs font-black uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm active:scale-95 transition-transform">
+            <button type="button" onClick={() => editPhotoInputRef.current?.click()} disabled={isHelpMode} className="text-emerald-600 text-xs font-black uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm active:scale-95 transition-transform disabled:opacity-50">
               Add Photo
             </button>
             <input type="file" accept="image/*" capture="environment" ref={editPhotoInputRef} className="hidden" onChange={handleEditPhotoCapture} />
@@ -621,10 +671,10 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                     </div>
                   )}
                   <div className="absolute top-1 right-1 flex flex-col gap-1">
-                     <button type="button" onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'}`}>
+                     <button type="button" disabled={isHelpMode} onClick={() => setEditFormData({...editFormData, primaryImageIndex: idx})} className={`p-1.5 rounded-full backdrop-blur-sm ${idx === (editFormData.primaryImageIndex || 0) ? 'bg-emerald-500 text-white shadow-md' : 'bg-stone-900/40 text-white shadow-sm'} disabled:opacity-50`}>
                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
                      </button>
-                     <button type="button" onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm">
+                     <button type="button" disabled={isHelpMode} onClick={() => setEditFormData({ ...editFormData, images: (editFormData.images || []).filter((_: string, i: number) => i !== idx) })} className="p-1.5 rounded-full bg-red-500/80 backdrop-blur-sm text-white shadow-sm disabled:opacity-50">
                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                      </button>
                   </div>
@@ -637,19 +687,24 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
           <h3 className="font-black text-stone-800 border-b border-stone-100 pb-2 uppercase text-[10px] tracking-[0.2em] text-stone-400">Basic Info</h3>
           
-          <div>
-            <div className="flex justify-between items-end mb-1.5 ml-1">
-              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest">Shortcode ID</label>
-              <span className="text-[9px] text-stone-400 font-bold italic">Leave blank to auto-generate</span>
-            </div>
-            <input 
-              type="text" 
-              value={editFormData.id || ''} 
-              onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} 
-              placeholder="e.g. TOM-01" 
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-mono uppercase font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" 
-            />
-          </div>
+          <HelpWrapper 
+             title="Shortcode ID" 
+             text="This is the unique identifier for this seed. It's printed on labels and used in the search bar. If you leave it blank, the system will automatically generate the next sequential number based on the Category you select (e.g., TOM1004)."
+          >
+             <div>
+               <div className="flex justify-between items-end mb-1.5 ml-1">
+                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest">Shortcode ID</label>
+                 <span className="text-[9px] text-stone-400 font-bold italic">Leave blank to auto-generate</span>
+               </div>
+               <input 
+                 type="text" 
+                 value={editFormData.id || ''} 
+                 onChange={(e) => setEditFormData({ ...editFormData, id: e.target.value.toUpperCase() })} 
+                 placeholder="e.g. TOM-01" 
+                 className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-mono uppercase font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm" 
+               />
+             </div>
+          </HelpWrapper>
           
           <div className="grid grid-cols-2 gap-4">
              <div className="col-span-2">
@@ -666,22 +721,27 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
              </div>
           </div>
           
-          <div>
-            <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Category</label>
-            <select 
-              value={editFormData.category} 
-              onChange={(e) => { 
-                const val = e.target.value; 
-                setShowNewCatForm(val === '__NEW__'); 
-                setEditFormData({ ...editFormData, category: val }); 
-              }} 
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm appearance-none"
-            >
-              <option value="" disabled>Select...</option>
-              {categories.map((c: any) => <option key={c.name} value={c.name}>{c.name}</option>)}
-              <option value="__NEW__" className="text-emerald-600 font-bold">+ New Category</option>
-            </select>
-          </div>
+          <HelpWrapper 
+             title="Category" 
+             text="Categories organize your vault and dictate the default rules in the Grow Planner (like how many weeks a plant needs to stay in the nursery). If you select '+ New Category', you can define a custom prefix for its auto-generated IDs."
+          >
+             <div>
+               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Category</label>
+               <select 
+                 value={editFormData.category} 
+                 onChange={(e) => { 
+                   const val = e.target.value; 
+                   setShowNewCatForm(val === '__NEW__'); 
+                   setEditFormData({ ...editFormData, category: val }); 
+                 }} 
+                 className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold outline-none focus:border-emerald-500 transition-colors shadow-sm appearance-none"
+               >
+                 <option value="" disabled>Select...</option>
+                 {categories.map((c: any) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                 <option value="__NEW__" className="text-emerald-600 font-bold">+ New Category</option>
+               </select>
+             </div>
+          </HelpWrapper>
 
           {showNewCatForm && (
             <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2">
@@ -696,10 +756,15 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
           )}
 
           {isPepper && (
-             <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center justify-between shadow-sm mt-3 animate-in fade-in zoom-in-95">
-                <span className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</span>
-                <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" placeholder="SHU" />
-             </div>
+             <HelpWrapper 
+                title="Scoville Rating" 
+                text="The Scoville scale is a measurement of the pungency (spiciness or 'heat') of chili peppers. This number is used to color-code your seed cards in the vault from green (mild) to dark red (superhot)."
+             >
+                <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center justify-between shadow-sm mt-3 animate-in fade-in zoom-in-95">
+                   <span className="text-[10px] font-black text-red-800 uppercase tracking-widest">Scoville Rating</span>
+                   <input type="number" value={editFormData.scoville_rating || ''} onChange={(e) => setEditFormData({ ...editFormData, scoville_rating: e.target.value })} className="w-24 bg-white border border-red-200 rounded-lg p-2 text-sm font-black text-red-600 text-right outline-none" placeholder="SHU" />
+                </div>
+             </HelpWrapper>
           )}
 
           {isTomato && (
@@ -743,8 +808,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                 <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Seed Parent (Mother ♀)</label>
                 <button 
                   type="button" 
+                  disabled={isHelpMode}
                   onClick={() => setParentSearchType('mother')} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium"
+                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
                 >
                   <span className={editFormData.parent_id_female ? "text-stone-800" : "text-stone-400"}>
                     {editFormData.parent_id_female 
@@ -758,8 +824,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
                 <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Pollen Parent (Father ♂)</label>
                 <button 
                   type="button" 
+                  disabled={isHelpMode}
                   onClick={() => setParentSearchType('father')} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium"
+                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
                 >
                   <span className={editFormData.parent_id_male ? "text-stone-800" : "text-stone-400"}>
                     {editFormData.parent_id_male 
@@ -811,14 +878,16 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
           <div className="flex flex-wrap gap-2 pt-2">
             <button 
+              disabled={isHelpMode}
               onClick={() => setEditFormData({...editFormData, light_required: !editFormData.light_required})}
-              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${editFormData.light_required ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
+              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-50 ${editFormData.light_required ? 'bg-amber-100 border-amber-300 text-amber-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
             >
               Light Required
             </button>
             <button 
+              disabled={isHelpMode}
               onClick={() => setEditFormData({...editFormData, cold_stratification: !editFormData.cold_stratification})}
-              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${editFormData.cold_stratification ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
+              className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-50 ${editFormData.cold_stratification ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' : 'bg-stone-100 border-stone-200 text-stone-400'}`}
             >
               Cold Strat
             </button>
@@ -873,8 +942,9 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
 
         {inventory.some((s: InventorySeed) => s.id === seed.id) && (
           <button 
+            disabled={isHelpMode}
             onClick={handleDeleteSeed} 
-            className="w-full py-4 mt-2 bg-red-50 text-red-600 font-bold rounded-2xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
+            className="w-full py-4 mt-2 bg-red-50 text-red-600 font-bold rounded-2xl border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
