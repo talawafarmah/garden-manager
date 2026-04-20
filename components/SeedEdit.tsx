@@ -488,12 +488,12 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const isPepper = editFormData.category?.toLowerCase().includes('pepper') || newCatName.toLowerCase().includes('pepper');
   const isTomato = editFormData.category?.toLowerCase().includes('tomato') || newCatName.toLowerCase().includes('tomato');
 
-  // --- NEW HELP WRAPPER COMPONENT ---
   const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
-    if (!isHelpMode) return <>{children}</>;
-    
+    if (!isHelpMode) {
+       return wrapperClass ? <div className={wrapperClass}>{children}</div> : <>{children}</>;
+    }
     return (
-      <div className={`relative group cursor-help rounded-xl ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass}`}>
+      <div className={`relative group cursor-help ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass || 'rounded-xl'}`}>
          <div className="absolute inset-0 z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveHelpInfo({ title, text }); }} />
          <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30 h-full w-full">
             {children}
@@ -795,16 +795,22 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             </svg>
             Lineage & Genetics
           </h3>
-          <div>
-            <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Generation / Strain Info</label>
-            <input 
-              type="text" 
-              placeholder="e.g., F1, F2, F3, Gen 4..." 
-              value={editFormData.generation || ''} 
-              onChange={(e) => setEditFormData({ ...editFormData, generation: e.target.value })} 
-              className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-purple-500" 
-            />
-          </div>
+          
+          <HelpWrapper 
+             title="Generation / Strain Info" 
+             text="Tracks the genetic lineage or specific generation of your seeds (e.g., F1, F2, Heirloom, Gen 4). This is especially useful for seed savers and breeding projects to monitor trait stability across seasons."
+          >
+             <div>
+               <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Generation / Strain Info</label>
+               <input 
+                 type="text" 
+                 placeholder="e.g., F1, F2, F3, Gen 4..." 
+                 value={editFormData.generation || ''} 
+                 onChange={(e) => setEditFormData({ ...editFormData, generation: e.target.value })} 
+                 className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-purple-500" 
+               />
+             </div>
+          </HelpWrapper>
           
           <HelpWrapper 
              title="Parent Selection" 
@@ -864,10 +870,15 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Sunlight</label>
               <input type="text" value={editFormData.sunlight || ''} onChange={(e) => setEditFormData({ ...editFormData, sunlight: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
             </div>
-            <div>
-              <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Germination Days</label>
-              <input type="text" value={editFormData.germination_days || ''} onChange={(e) => setEditFormData({ ...editFormData, germination_days: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
-            </div>
+            <HelpWrapper 
+               title="Germination Days" 
+               text="The expected range of days it takes for this seed to sprout (e.g., '7-14'). The system uses this exact range to automatically calculate the Sprout Window and trigger the 'Overdue' warnings on your nursery trays."
+            >
+               <div>
+                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Germination Days</label>
+                 <input type="text" value={editFormData.germination_days || ''} onChange={(e) => setEditFormData({ ...editFormData, germination_days: e.target.value })} className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm shadow-sm outline-none focus:border-emerald-500" />
+               </div>
+            </HelpWrapper>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
@@ -909,18 +920,23 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             </div>
           )}
 
-          <div className="mt-4 p-4 bg-stone-100 rounded-2xl border border-stone-200">
-            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Nursery Weeks Override</label>
-            <p className="text-[10px] text-stone-400 mb-2 leading-tight">Leave blank to use the default time for this seed's category.</p>
-            <input 
-              type="number" 
-              min="0"
-              value={editFormData.custom_nursery_weeks ?? ''} 
-              onChange={(e) => setEditFormData({ ...editFormData, custom_nursery_weeks: e.target.value })} 
-              className="w-full bg-white border border-stone-300 rounded-xl p-3 text-sm font-bold shadow-inner outline-none focus:border-emerald-500" 
-              placeholder={`e.g., 9 (Default: ${editFormData.category || 'Unknown'})`} 
-            />
-          </div>
+          <HelpWrapper 
+             title="Nursery Weeks Override" 
+             text="By default, the Grow Planner uses the standard nursery time defined by the seed's Category. Enter a number here to override that default. The planner uses this to precisely back-calculate your indoor sow dates from your target outdoor planting dates."
+          >
+             <div className="mt-4 p-4 bg-stone-100 rounded-2xl border border-stone-200">
+               <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1">Nursery Weeks Override</label>
+               <p className="text-[10px] text-stone-400 mb-2 leading-tight">Leave blank to use the default time for this seed's category.</p>
+               <input 
+                 type="number" 
+                 min="0"
+                 value={editFormData.custom_nursery_weeks ?? ''} 
+                 onChange={(e) => setEditFormData({ ...editFormData, custom_nursery_weeks: e.target.value })} 
+                 className="w-full bg-white border border-stone-300 rounded-xl p-3 text-sm font-bold shadow-inner outline-none focus:border-emerald-500" 
+                 placeholder={`e.g., 9 (Default: ${editFormData.category || 'Unknown'})`} 
+               />
+             </div>
+          </HelpWrapper>
         </section>
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">

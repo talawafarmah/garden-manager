@@ -398,12 +398,14 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
     return true;
   });
 
-  // --- NEW HELP WRAPPER COMPONENT ---
+  // --- FIXED HELP WRAPPER COMPONENT ---
   const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
-    if (!isHelpMode) return <>{children}</>;
+    if (!isHelpMode) {
+       return wrapperClass ? <div className={wrapperClass}>{children}</div> : <>{children}</>;
+    }
     
     return (
-      <div className={`relative group cursor-help rounded-xl ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass}`}>
+      <div className={`relative group cursor-help ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass || 'rounded-xl'}`}>
          <div className="absolute inset-0 z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveHelpInfo({ title, text }); }} />
          <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30 h-full w-full">
             {children}
@@ -771,12 +773,23 @@ export default function SeedlingsList({ navigateTo, handleGoBack, payload, searc
                   </div>
 
                   <div className="p-2 bg-stone-50 border-t border-stone-100 grid grid-cols-4 gap-1.5">
-                     <button disabled={isHelpMode} onClick={() => openEventModal(ledger)} className="py-2 bg-stone-800 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-stone-700 transition-colors disabled:opacity-50">Event</button>
-                     <button disabled={isHelpMode} onClick={() => openAllocateModal(ledger)} className="py-2 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-purple-50 transition-colors disabled:opacity-50">Alloc</button>
-                     <button disabled={isHelpMode} onClick={() => openAdjustModal(ledger)} className="py-2 bg-white text-amber-700 border border-amber-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-amber-50 transition-colors disabled:opacity-50">Adjust</button>
-                     <button disabled={isHelpMode} onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="py-2 bg-white text-stone-600 border border-stone-200 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-stone-100 transition-colors disabled:opacity-50">
-                        Notes {(ledger.images && ledger.images.length > 0) && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
-                     </button>
+                     <HelpWrapper title="Log Event" text="Log a real-world event (like planting out, gifting, selling, or a plant dying). This action permanently deducts the quantity from your growing totals and logs a timestamped receipt in the journal." wrapperClass="w-full h-full">
+                        <button disabled={isHelpMode} onClick={() => openEventModal(ledger)} className="w-full py-2 bg-stone-800 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-stone-700 transition-colors disabled:opacity-50">Event</button>
+                     </HelpWrapper>
+
+                     <HelpWrapper title="Update Allocations" text="Update your internal buckets. Move plants between 'Keep' (for your own garden) and 'Reserve' (for wishlists, friends, or customers) so you always know exactly how many 'Available' extras you have left." wrapperClass="w-full h-full">
+                        <button disabled={isHelpMode} onClick={() => openAllocateModal(ledger)} className="w-full py-2 bg-white text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-purple-50 transition-colors disabled:opacity-50">Alloc</button>
+                     </HelpWrapper>
+
+                     <HelpWrapper title="Inventory Adjust" text="Perform a quiet inventory audit. Use this to quickly fix a counting error or correct the original sow date without negatively logging the missing plants as 'Dead'." wrapperClass="w-full h-full">
+                        <button disabled={isHelpMode} onClick={() => openAdjustModal(ledger)} className="w-full py-2 bg-white text-amber-700 border border-amber-200 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-amber-50 transition-colors disabled:opacity-50">Adjust</button>
+                     </HelpWrapper>
+
+                     <HelpWrapper title="Seedling Journal" text="Open the seedling's master journal. This is where you can log pot ups, feedings, general observations, and attach progression photos to build a visual history of the crop." wrapperClass="w-full h-full">
+                        <button disabled={isHelpMode} onClick={() => { setSelectedLedger(ledger); setJournalFilter('ALL'); setActiveModal('JOURNAL'); }} className="w-full h-full py-2 bg-white text-stone-600 border border-stone-200 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-stone-100 transition-colors disabled:opacity-50">
+                           Notes {(ledger.images && ledger.images.length > 0) && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                        </button>
+                     </HelpWrapper>
                   </div>
                 </div>
               );

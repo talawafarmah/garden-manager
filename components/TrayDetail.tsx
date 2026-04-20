@@ -287,7 +287,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
 
   // --- FIXED HELP WRAPPER COMPONENT ---
   const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
-    // FIX: When help mode is off, we still MUST render the wrapperClass if one is provided to preserve CSS layout!
     if (!isHelpMode) {
        return wrapperClass ? <div className={wrapperClass}>{children}</div> : <>{children}</>;
     }
@@ -628,8 +627,8 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    </div>
                  </div>
                  
-                 <div className="grid grid-cols-3 text-xs pt-1 mt-1" onClick={e => e.stopPropagation()}>
-                   <div className="flex flex-col items-center border-r border-stone-100">
+                 <div className="flex text-xs pt-1 mt-1 justify-between gap-2" onClick={e => e.stopPropagation()}>
+                   <div className="flex-1 flex flex-col items-center border-r border-stone-100 pr-2">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
                      <div className="flex items-center gap-1.5">
                        <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
@@ -638,21 +637,25 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                      </div>
                    </div>
                    
-                   <div className="flex flex-col items-center border-r border-stone-100">
-                     <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
-                     <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
-                       
-                       <div className="flex flex-col items-center">
-                          {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
-                          <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                   <HelpWrapper 
+                      title="Germination Tracking" 
+                      text="Logging exactly when and how many seeds sprout powers your historical Seed Performance metrics. The system uses this data to calculate average germination times and success rates for future plantings." 
+                      wrapperClass="flex-1 border-r border-stone-100 pr-2 h-full flex flex-col items-center"
+                   >
+                       <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
+                       <div className="flex items-center gap-1.5">
+                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
+                         
+                         <div className="flex flex-col items-center">
+                            {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
+                            <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                         </div>
+
+                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
                        </div>
+                   </HelpWrapper>
 
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
-                     </div>
-                   </div>
-
-                   <div className="flex flex-col items-center">
+                   <div className="flex-1 flex flex-col items-center">
                      <span className="text-[9px] uppercase tracking-widest text-blue-600 mb-1.5">Potted</span>
                      <div className="flex items-center h-6">
                        <span className="font-black text-blue-600 text-lg">{seedRecord.planted_count || 0}</span>
@@ -660,16 +663,22 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    </div>
                  </div>
 
-                 <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
-                    <div>
+                 <div className="flex text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
+                    <div className="flex-1">
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
                        <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
-                    <div>
+                    
+                    <HelpWrapper 
+                      title="Germination Tracking" 
+                      text="Logging exactly when and how many seeds sprout powers your historical Seed Performance metrics. The system uses this data to calculate average germination times and success rates for future plantings." 
+                      wrapperClass="flex-1"
+                    >
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
                        <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
-                    </div>
-                    <div>
+                    </HelpWrapper>
+                    
+                    <div className="flex-1">
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
                        <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
