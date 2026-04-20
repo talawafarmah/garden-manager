@@ -18,7 +18,6 @@ const parseDateString = (dateStr: string) => {
   return new Date(dateStr + 'T12:00:00');
 };
 
-// --- NEW: HTML5 CANVAS WATERMARK & RESIZE ENGINE ---
 const processImageWithWatermark = (file: File, watermarkText: string, maxSize: number = 1600): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -56,9 +55,12 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole, trayState = { searchQuery: '', statusFilter: 'Active' }, setTrayState }: TrayListProps) {
+export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole, trayState = { searchQuery: '', statusFilter: 'Active', sortBy: 'urgent' }, setTrayState }: TrayListProps) {
+  
   const searchQuery = trayState.searchQuery || "";
   const statusFilter = trayState.statusFilter || "Active";
+  const sortBy = trayState.sortBy || "urgent";
+
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeason, setActiveSeason] = useState<string>('');
@@ -123,31 +125,6 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
     if (trays.length > 0) loadThumbnailUrls();
     return () => { isMounted = false; };
   }, [trays, inventory]);
-
-  const filteredTrays = trays.filter(tray => {
-    if (activeSeason && tray.season_id && tray.season_id !== activeSeason) return false;
-    
-    const status = tray.status || 'Active';
-    if (statusFilter !== 'All' && status !== statusFilter) return false;
-
-    const q = searchQuery.toLowerCase();
-    const seedIds = (tray.contents || []).map(c => c.seed_id).filter(Boolean);
-    const seedNames = seedIds.map(id => inventory.find((s: InventorySeed) => s.id === id)?.variety_name?.toLowerCase() || "");
-    
-    return (
-      tray.id.toLowerCase().includes(q) || 
-      (tray.name && tray.name.toLowerCase().includes(q)) ||
-      (tray.location && tray.location.toLowerCase().includes(q)) ||
-      seedNames.some(name => name.includes(q)) ||
-      seedIds.some(id => id.toLowerCase().includes(q))
-    );
-  });
-
-  const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
-    if (!seedSearchQuery.trim()) return true;
-    const q = seedSearchQuery.toLowerCase();
-    return s.variety_name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
-  });
 
   const handleDirectAddSubmit = async () => {
     if (!directAddForm.seedId || !directAddForm.seasonId || directAddForm.count < 1) return;
@@ -244,6 +221,127 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       setUploadTargetId(null);
     }
   };
+
+  // --- FILTER, ENRICH, AND SCORE TRAYS ---
+  const filteredTrays = trays.filter(tray => {
+    if (activeSeason && tray.season_id && tray.season_id !== activeSeason) return false;
+    
+    const status = tray.status || 'Active';
+    if (statusFilter !== 'All' && status !== statusFilter) return false;
+
+    const q = searchQuery.toLowerCase();
+    const seedIds = (tray.contents || []).map(c => c.seed_id).filter(Boolean);
+    const seedNames = seedIds.map(id => inventory.find((s: InventorySeed) => s.id === id)?.variety_name?.toLowerCase() || "");
+    
+    return (
+      tray.id.toLowerCase().includes(q) || 
+      (tray.name && tray.name.toLowerCase().includes(q)) ||
+      (tray.location && tray.location.toLowerCase().includes(q)) ||
+      seedNames.some(name => name.includes(q)) ||
+      seedIds.some(id => id.toLowerCase().includes(q))
+    );
+  });
+
+  const enrichedTrays = filteredTrays.map(tray => {
+      const totalSown = tray.contents?.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0) || 0;
+      const totalGerm = tray.contents?.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0) || 0;
+      const germPercent = totalSown > 0 ? Math.round((totalGerm / totalSown) * 100) : 0;
+      const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
+
+      const today = new Date(); today.setHours(12, 0, 0, 0);
+
+      let maxDaysOverdue = 0;
+      let minDaysLeftInWindow = Infinity;
+      let minDaysUntilWindow = Infinity;
+      let hasUnsprouted = false;
+
+      (tray.contents || []).forEach(c => {
+          if (!c.sown_count) return;
+          const isFullyGerm = (c.germinated_count || 0) >= c.sown_count;
+          if (!isFullyGerm) {
+              hasUnsprouted = true;
+              const s = inventory.find(i => i.id === c.seed_id);
+              if (s && s.germination_days) {
+                  const nums = s.germination_days.match(/\d+/g);
+                  if (nums && nums.length > 0) {
+                       const parsed = nums.map((n: string) => parseInt(n, 10)).filter(n => n > 0);
+                       if (parsed.length > 0) {
+                           const seedMin = Math.min(...parsed);
+                           const seedMax = Math.max(...parsed);
+
+                           const sownDate = parseDateString(c.sown_date || tray.sown_date);
+                           const minTargetDate = new Date(sownDate); minTargetDate.setDate(minTargetDate.getDate() + seedMin);
+                           const diffDaysToMin = Math.round((minTargetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                           const maxTargetDate = new Date(sownDate); maxTargetDate.setDate(maxTargetDate.getDate() + seedMax);
+                           const diffDaysToMax = Math.round((maxTargetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                           if (diffDaysToMax < 0) {
+                               maxDaysOverdue = Math.max(maxDaysOverdue, Math.abs(diffDaysToMax));
+                           } else if (diffDaysToMin <= 0 && diffDaysToMax >= 0) {
+                               minDaysLeftInWindow = Math.min(minDaysLeftInWindow, diffDaysToMax);
+                           } else {
+                               minDaysUntilWindow = Math.min(minDaysUntilWindow, diffDaysToMin);
+                           }
+                       }
+                  }
+              }
+          }
+      });
+
+      let urgencyScore = 0;
+      let statusText = "";
+      let statusColor = "text-stone-500 bg-stone-100 border-stone-200";
+      let showSproutIcon = false;
+
+      const trayStatus = tray.status || 'Active';
+
+      if (trayStatus === 'Emptied') {
+          statusText = "Emptied"; statusColor = "text-stone-500 bg-stone-100 border-stone-300 opacity-80";
+          urgencyScore = -2000;
+      } else if (trayStatus === 'Abandoned') {
+          statusText = "Abandoned"; statusColor = "text-red-600 bg-red-50 border-red-200 opacity-80";
+          urgencyScore = -3000;
+      } else if (!hasUnsprouted && (tray.contents || []).length > 0) {
+          statusText = "100% Sprouted!"; statusColor = "text-emerald-700 bg-emerald-50 border-emerald-300"; showSproutIcon = true;
+          urgencyScore = -1000;
+      } else if (maxDaysOverdue > 0) {
+          statusText = `⚠️ Overdue (${maxDaysOverdue}d)`; statusColor = "text-red-700 bg-red-50 border-red-300";
+          urgencyScore = 10000 + maxDaysOverdue;
+      } else if (minDaysLeftInWindow !== Infinity) {
+          statusText = `Sprout Window (${minDaysLeftInWindow}d left)`; statusColor = "text-amber-700 bg-amber-50 border-amber-300";
+          urgencyScore = 5000 - minDaysLeftInWindow;
+      } else if (minDaysUntilWindow !== Infinity) {
+          statusText = `Sprouts in ~${minDaysUntilWindow}d`; statusColor = "text-blue-700 bg-blue-50 border-blue-200";
+          urgencyScore = 1000 - minDaysUntilWindow;
+      } else if (tray.first_germination_date) {
+          statusText = "Partially Sprouted"; statusColor = "text-emerald-700 bg-emerald-50 border-emerald-300"; showSproutIcon = true;
+          urgencyScore = 500;
+      } else {
+          statusText = "Sown (No Data)";
+          urgencyScore = 100;
+      }
+
+      return { ...tray, germPercent, uniqueSeedIds, urgencyScore, statusText, statusColor, showSproutIcon };
+  });
+
+  // --- SORT ENRICHED TRAYS ---
+  enrichedTrays.sort((a, b) => {
+      if (sortBy === 'urgent') {
+          if (b.urgencyScore !== a.urgencyScore) return b.urgencyScore - a.urgencyScore;
+          return new Date(b.sown_date).getTime() - new Date(a.sown_date).getTime();
+      }
+      if (sortBy === 'lowest_germ') return a.germPercent - b.germPercent;
+      if (sortBy === 'oldest') return new Date(a.sown_date).getTime() - new Date(b.sown_date).getTime();
+      
+      // Default: Newest Sown
+      return new Date(b.sown_date).getTime() - new Date(a.sown_date).getTime();
+  });
+
+  const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
+    if (!seedSearchQuery.trim()) return true;
+    const q = seedSearchQuery.toLowerCase();
+    return s.variety_name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+  });
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans">
@@ -362,6 +460,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
+        
+        {/* --- DUAL DROPDOWN ROW FOR SEARCH & FILTERS --- */}
         <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
               <input 
@@ -374,31 +474,45 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             </div>
             
-            <div className="relative w-full sm:w-40 shrink-0">
-               <select 
-                 value={statusFilter} 
-                 onChange={e => updateState({ statusFilter: e.target.value })} 
-                 className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-bold appearance-none cursor-pointer"
-               >
-                 <option value="Active">Active Trays</option>
-                 <option value="Emptied">Emptied</option>
-                 <option value="Abandoned">Abandoned</option>
-                 <option value="All">Show All</option>
-               </select>
-               <svg className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                <div className="relative flex-1 sm:w-36">
+                   <select 
+                     value={sortBy} 
+                     onChange={e => updateState({ sortBy: e.target.value })} 
+                     className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-[11px] font-black uppercase tracking-widest text-stone-600 appearance-none cursor-pointer"
+                   >
+                     <option value="urgent">Urgent First</option>
+                     <option value="newest">Newest Sown</option>
+                     <option value="oldest">Oldest Sown</option>
+                     <option value="lowest_germ">Lowest Germ %</option>
+                   </select>
+                   <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+                <div className="relative flex-1 sm:w-32">
+                   <select 
+                     value={statusFilter} 
+                     onChange={e => updateState({ statusFilter: e.target.value })} 
+                     className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-[11px] font-black uppercase tracking-widest text-stone-600 appearance-none cursor-pointer"
+                   >
+                     <option value="Active">Active</option>
+                     <option value="Emptied">Emptied</option>
+                     <option value="Abandoned">Abandoned</option>
+                     <option value="All">Show All</option>
+                   </select>
+                   <svg className="w-4 h-4 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </div>
             </div>
         </div>
 
         <div className="space-y-3">
           {isLoadingDB ? (
             <div className="flex justify-center items-center py-10 text-emerald-600"><svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
-          ) : filteredTrays.length > 0 ? (
-            filteredTrays.map((tray) => {
+          ) : enrichedTrays.length > 0 ? (
+            enrichedTrays.map((tray) => {
               const firstImage = (tray.images || [])[0];
               const displayImg = firstImage ? (firstImage.startsWith('http') || firstImage.startsWith('data:') ? firstImage : signedUrls[firstImage]) : null;
 
-              const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
-              const seedNames = uniqueSeedIds.map(id => {
+              const seedNames = tray.uniqueSeedIds.map((id: string) => {
                  const seed = inventory.find((s: InventorySeed) => s.id === id);
                  return seed ? seed.variety_name : id;
               });
@@ -413,8 +527,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
 
               let thumbnailContent = null;
               const topSeeds = [...(tray.contents || [])]
-                .sort((a, b) => (b.sown_count || 0) - (a.sown_count || 0))
-                .map(c => inventory.find((s: InventorySeed) => s.id === c.seed_id))
+                .sort((a: any, b: any) => (b.sown_count || 0) - (a.sown_count || 0))
+                .map((c: any) => inventory.find((s: InventorySeed) => s.id === c.seed_id))
                 .filter(s => s && s.thumbnail)
                 .slice(0, 4);
 
@@ -430,56 +544,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               }
               if (!thumbnailContent) thumbnailContent = <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>;
 
-              const today = new Date(); today.setHours(12, 0, 0, 0);
-              let statusText = "Est. Sprout: Unknown"; let statusColor = "text-stone-500 bg-stone-100 border-stone-200"; let showSproutIcon = false;
-
-              const trayStatus = tray.status || 'Active';
-
-              if (trayStatus === 'Emptied') {
-                  statusText = "Emptied"; statusColor = "text-stone-500 bg-stone-100 border-stone-300 opacity-80"; showSproutIcon = false;
-              } else if (trayStatus === 'Abandoned') {
-                  statusText = "Abandoned"; statusColor = "text-red-600 bg-red-50 border-red-200 opacity-80"; showSproutIcon = false;
-              } else if (tray.first_germination_date) {
-                const germDate = parseDateString(tray.first_germination_date);
-                const diffDays = Math.round((today.getTime() - germDate.getTime()) / (1000 * 60 * 60 * 24));
-                if (diffDays === 0) statusText = "Sprouted Today!"; else if (diffDays === 1) statusText = "Sprouted Yesterday"; else statusText = `Sprouted ${diffDays} days ago`;
-                statusColor = "text-emerald-700 bg-emerald-50 border-emerald-300"; showSproutIcon = true;
-              } else if (tray.sown_date) {
-                let overallMin = Infinity; let firstOverdueMax = Infinity;
-                uniqueSeedIds.forEach(id => {
-                   const s = inventory.find((i: InventorySeed) => i.id === id);
-                   if (s && s.germination_days) {
-                      const nums = s.germination_days.match(/\d+/g);
-                      if (nums && nums.length > 0) {
-                         const parsed = nums.map((n: string) => parseInt(n, 10)).filter((n: number) => n > 0);
-                         if (parsed.length > 0) {
-                            if (Math.min(...parsed) < overallMin) overallMin = Math.min(...parsed);
-                            if (Math.max(...parsed) < firstOverdueMax) firstOverdueMax = Math.max(...parsed);
-                         }
-                      }
-                   }
-                });
-                if (overallMin !== Infinity && firstOverdueMax !== Infinity) {
-                  const sownDate = parseDateString(tray.sown_date);
-                  const minTargetDate = new Date(sownDate); minTargetDate.setDate(minTargetDate.getDate() + overallMin);
-                  const diffDaysToMin = Math.round((minTargetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  const maxTargetDate = new Date(sownDate); maxTargetDate.setDate(maxTargetDate.getDate() + firstOverdueMax);
-                  const diffDaysToMax = Math.round((maxTargetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  
-                  if (diffDaysToMin > 1) { statusText = `Sprouts start in ~${diffDaysToMin}d`; statusColor = "text-blue-700 bg-blue-50 border-blue-200"; } 
-                  else if (diffDaysToMin === 1) { statusText = `Window opens tomorrow`; statusColor = "text-blue-700 bg-blue-50 border-blue-200"; } 
-                  else if (diffDaysToMax >= 0) {
-                    if (overallMin === firstOverdueMax && diffDaysToMin === 0) { statusText = `Expected Today!`; statusColor = "text-amber-700 bg-amber-50 border-amber-300"; } 
-                    else if (diffDaysToMax === 0) { statusText = `Window ends today!`; statusColor = "text-orange-700 bg-orange-50 border-orange-300"; } 
-                    else { statusText = `Sprout Window (${diffDaysToMax}d left)`; statusColor = "text-amber-700 bg-amber-50 border-amber-300"; }
-                  } else {
-                    statusText = `Overdue by ${Math.abs(diffDaysToMax)}d`; statusColor = "text-red-700 bg-red-50 border-red-300";
-                  }
-                }
-              }
-
               return (
-                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className={`bg-white p-3 rounded-xl border shadow-sm flex gap-4 cursor-pointer relative overflow-hidden group ${trayStatus !== 'Active' ? 'border-stone-200 opacity-80' : 'border-stone-200 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95'}`}>
+                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className={`bg-white p-3 rounded-xl border shadow-sm flex gap-4 cursor-pointer relative overflow-hidden group ${tray.status !== 'Active' ? 'border-stone-200 opacity-80' : tray.urgencyScore > 5000 ? 'border-red-300 shadow-md ring-1 ring-red-500/20' : 'border-stone-200 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95'}`}>
                   <button onClick={(e) => triggerPhotoUpload(e, tray.id)} className="absolute top-2 right-2 p-2 bg-stone-100/80 backdrop-blur border border-stone-200 rounded-full text-stone-500 hover:bg-emerald-100 hover:text-emerald-700 hover:border-emerald-300 transition-colors shadow-sm z-10">
                      {isUploading === tray.id ? <svg className="w-4 h-4 animate-spin text-emerald-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                   </button>
@@ -501,11 +567,11 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                       <p className="text-[10px] text-stone-500 truncate">{tray.location || 'Location Not Set'}</p>
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-stone-100">
-                      <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 px-2 py-0.5 rounded border shadow-sm ${statusColor}`}>
-                        {showSproutIcon ? <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-                        {statusText}
+                      <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 px-2 py-0.5 rounded border shadow-sm ${tray.statusColor}`}>
+                        {tray.showSproutIcon ? <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                        {tray.statusText}
                       </span>
-                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{uniqueSeedIds.length} Var{uniqueSeedIds.length === 1 ? '' : 's'}</span>
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{tray.uniqueSeedIds.length} Var{tray.uniqueSeedIds.length === 1 ? '' : 's'}</span>
                     </div>
                   </div>
                 </div>

@@ -53,7 +53,8 @@ export default function App() {
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
-  const [trayState, setTrayState] = useState({ searchQuery: "", statusFilter: "Active" });
+  // --- UPDATED TRAY STATE PRESERVER WITH SORTING ---
+  const [trayState, setTrayState] = useState({ searchQuery: "", statusFilter: "Active", sortBy: "urgent" });
   const [userRole, setUserRole] = useState<'admin' | 'viewer'>('viewer');
 
   // --- GLOBAL SCREEN WAKE LOCK ---
@@ -139,7 +140,6 @@ export default function App() {
     setCurrentPayload(payload);
     if (typeof window !== 'undefined') window.scrollTo(0, 0);
 
-    // FIXED: Added 'amendment_new' to the safe list so it doesn't clear the payload when editing!
     if (!['seed_detail', 'seed_edit', 'tray_detail', 'tray_edit', 'amendment_detail', 'amendment_new'].includes(view)) {
         setSelectedSeed(null); 
         setSelectedTray(null);
@@ -148,8 +148,6 @@ export default function App() {
     
     if (view === 'seed_detail' || view === 'seed_edit') setSelectedSeed(payload);
     if (view === 'tray_detail' || view === 'tray_edit') setSelectedTray(payload);
-    
-    // FIXED: Assign the payload if we are viewing OR editing an amendment
     if (view === 'amendment_detail' || view === 'amendment_new') setSelectedAmendment(payload);
     
     // Refresh lists when navigating to them
@@ -203,9 +201,10 @@ export default function App() {
     case 'importer': return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault': return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;
     case 'seed_edit': return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
+    
+    // --- CONNECTED TRAY STATE ---
     case 'trays': return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} trayState={trayState} setTrayState={setTrayState} />;
     
-    // FIX: Passing the currentPayload into the SeedlingsList so it can extract the search data!
     case 'seedlings': return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} payload={currentPayload} />;
     
     case 'seed_detail': return selectedSeed ? <SeedDetail key={selectedSeed.id} seed={selectedSeed} inventory={inventory} trays={trays} categories={categories} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
@@ -214,10 +213,7 @@ export default function App() {
 
     // AMENDMENT VIEWS
     case 'amendments': return <AmendmentList initialAmendments={amendments} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
-    
-    // FIXED: Passed initialData here!
     case 'amendment_new': return <NewAmendmentForm navigateTo={navigateTo} handleGoBack={handleGoBack} initialData={selectedAmendment} />;
-    
     case 'amendment_detail': return <AmendmentDetailPage params={{ id: selectedAmendment?.id }} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     
     // ADMIN HUB & PLANNERS
