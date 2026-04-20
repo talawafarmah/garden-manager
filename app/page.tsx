@@ -53,6 +53,7 @@ export default function App() {
   const [isLoadingDB, setIsLoadingDB] = useState(false);
 
   const [vaultState, setVaultState] = useState({ searchQuery: "", activeFilter: "All", page: 0, scrollY: 0 });
+  const [trayState, setTrayState] = useState({ searchQuery: "", statusFilter: "Active" });
   const [userRole, setUserRole] = useState<'admin' | 'viewer'>('viewer');
 
   // --- GLOBAL SCREEN WAKE LOCK ---
@@ -115,7 +116,8 @@ export default function App() {
        setTrays(data.map(t => ({ 
          ...t, contents: t.contents || [], images: t.images || [], humidity_dome: t.humidity_dome || false, 
          grow_light: t.grow_light || false, first_germination_date: t.first_germination_date || '', 
-         first_planted_date: t.first_planted_date || '', potting_mix: t.potting_mix || '', location: t.location || '' 
+         first_planted_date: t.first_planted_date || '', potting_mix: t.potting_mix || '', location: t.location || '',
+         status: t.status || 'Active'
        })));
     }
   };
@@ -201,7 +203,7 @@ export default function App() {
     case 'importer': return <ScannerImporter isScanMode={activeView === 'scanner'} categories={categories} setCategories={setCategories} inventory={inventory} setInventory={setInventory} navigateTo={navigateTo} handleGoBack={handleGoBack} />;
     case 'vault': return <VaultList inventory={inventory} setInventory={setInventory} categories={categories} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} vaultState={vaultState} setVaultState={setVaultState} userRole={userRole} />;
     case 'seed_edit': return selectedSeed ? <SeedEdit key={selectedSeed.id} seed={selectedSeed} inventory={inventory} setInventory={setInventory} categories={categories} setCategories={setCategories} navigateTo={navigateTo} handleGoBack={handleGoBack} /> : <Dashboard navigateTo={navigateTo} userRole={userRole} />;
-    case 'trays': return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} />;
+    case 'trays': return <TrayList trays={trays} inventory={inventory} isLoadingDB={isLoadingDB} navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} trayState={trayState} setTrayState={setTrayState} />;
     
     // FIX: Passing the currentPayload into the SeedlingsList so it can extract the search data!
     case 'seedlings': return <SeedlingsList navigateTo={navigateTo} handleGoBack={handleGoBack} userRole={userRole} payload={currentPayload} />;

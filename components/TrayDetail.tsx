@@ -48,7 +48,8 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [isDuplicating, setIsDuplicating] = useState(false);
-  const [localTray, setLocalTray] = useState<SeedlingTray>(tray);
+  const [localTray, setLocalTray] = useState<SeedlingTray>({ ...tray, status: tray.status || 'Active' });
+  const [isSaving, setIsSaving] = useState(false);
 
   const [potUpState, setPotUpState] = useState<{isOpen: boolean, seedId: string, varietyName: string, count: number, note: string, maxAvailable: number} | null>(null);
   const [isPottingUp, setIsPottingUp] = useState(false);
@@ -58,7 +59,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setLocalTray(tray); }, [tray]);
+  useEffect(() => { setLocalTray({ ...tray, status: tray.status || 'Active' }); }, [tray]);
 
   useEffect(() => {
     const loadUrls = async () => {
@@ -85,7 +86,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   }, [localTray, inventory]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if ((e.target as Element).closest('.cursor-pointer') || (e.target as Element).closest('input') || (e.target as Element).closest('button')) return;
+    if ((e.target as Element).closest('.cursor-pointer') || (e.target as Element).closest('input') || (e.target as Element).closest('button') || (e.target as Element).closest('select')) return;
     setTouchStart(e.targetTouches[0].clientX);
   };
   const handleTouchMove = (e: React.TouchEvent) => { if (touchStart) setTouchEnd(e.targetTouches[0].clientX); };
@@ -130,8 +131,21 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
     finally { setIsUploading(false); }
   };
 
-  const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
-  const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
+  const handleStatusChange = async (newStatus: string) => {
+      setIsSaving(true);
+      const newTrayData = { ...localTray, status: newStatus };
+      setLocalTray(newTrayData);
+      
+      const { error } = await supabase.from('seedling_trays').update({ status: newStatus }).eq('id', localTray.id);
+      if (error) {
+          alert("Failed to update status: " + error.message);
+          setLocalTray(localTray); 
+      }
+      setIsSaving(false);
+  };
+
+  const totalSown = localTray.contents?.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0) || 0;
+  const totalGerminated = localTray.contents?.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0) || 0;
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
@@ -162,7 +176,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     const duplicatedTray: SeedlingTray = {
-      ...localTray, id: crypto.randomUUID(), name: `${localTray.name || 'Tray'} (Copy)`, sown_date: localToday, first_germination_date: "", first_planted_date: "", images: [],
+      ...localTray, id: crypto.randomUUID(), name: `${localTray.name || 'Tray'} (Copy)`, sown_date: localToday, first_germination_date: "", first_planted_date: "", images: [], status: 'Active',
       contents: localTray.contents.map((item: any) => ({ ...item, sown_count: item.sown_count || 0, germinated_count: 0, planted_count: 0 }))
     };
     navigateTo('tray_edit', duplicatedTray);
@@ -198,7 +212,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       const todayObj = new Date();
       const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
       
-      // FIX: Grab the actual sown date for the new Ledger entry
       const actualSownDate = seedRecord?.sown_date || localTray.sown_date || localToday;
 
       const trayReference = localTray.name || 'a tray';
@@ -214,7 +227,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
             seed_id: potUpState.seedId, 
             season_id: sId, 
             qty_growing: potUpState.count, 
-            sown_date: actualSownDate, // Pass sown date!
+            sown_date: actualSownDate, 
             allocate_keep: 0, allocate_reserve: 0, qty_planted: 0, qty_gifted: 0, qty_sold: 0, qty_dead: 0, locations: {}, 
             journal: [journalEntry] 
         }]);
@@ -252,6 +265,10 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       collageHeader = (<div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-90"><div className="border-r border-b border-stone-200">{src1 && <img src={src1} className="w-full h-full object-cover" />}</div><div className="border-b border-stone-200">{src2 && <img src={src2} className="w-full h-full object-cover" />}</div><div className="border-r border-stone-200">{src3 && <img src={src3} className="w-full h-full object-cover" />}</div><div>{src4 && <img src={src4} className="w-full h-full object-cover" />}</div></div>);
   }
 
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const traySownDate = new Date((localTray.sown_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+
   return (
     <main onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans relative select-none">
       
@@ -287,71 +304,106 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         </div>
       )}
 
-      <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
-        <div className="flex items-center gap-2 mr-2">
-          <button onClick={() => navigateTo('trays', null, true)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Go Back"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-          <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg></button>
+      <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900">
+        <div className="flex items-center gap-3">
+          <button onClick={() => handleGoBack('trays')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <h1 className="text-xl font-bold truncate max-w-[150px] sm:max-w-xs">{localTray.name || 'Tray Details'}</h1>
         </div>
-        <h1 className="text-xl font-bold truncate flex-1 text-center pr-4">Tray Details</h1>
+        
         <div className="flex items-center gap-2">
-           <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center shadow-inner" title="Quick Photo">
-              {isUploading ? <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
-           </button>
-           <button onClick={handleDuplicateTray} disabled={isDuplicating} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 disabled:opacity-50 text-sm">Copy</button>
-           <button onClick={() => navigateTo('tray_edit', localTray)} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors flex items-center gap-1 px-3 text-sm">Edit</button>
+            <select 
+              value={localTray.status || 'Active'} 
+              onChange={(e) => handleStatusChange(e.target.value)}
+              disabled={isSaving}
+              className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl outline-none appearance-none cursor-pointer shadow-sm border
+                 ${localTray.status === 'Emptied' ? 'bg-stone-200 text-stone-600 border-stone-300' : 
+                   localTray.status === 'Abandoned' ? 'bg-red-100 text-red-700 border-red-200' : 
+                   'bg-emerald-800 text-emerald-100 border-emerald-600 hover:bg-emerald-600'}`}
+            >
+              <option value="Active">🟢 Active</option>
+              <option value="Emptied">📥 Emptied</option>
+              <option value="Abandoned">💀 Abandoned</option>
+            </select>
+            
+            <button onClick={() => navigateTo('tray_edit', localTray)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
         </div>
       </header>
 
-      <div className="max-w-md mx-auto p-4 space-y-5">
-         {collageHeader && (
-            <div className="w-full h-32 bg-stone-200 rounded-3xl overflow-hidden shadow-sm border border-stone-200">
-               {collageHeader}
+      <div className="max-w-2xl mx-auto p-4 space-y-6">
+        
+        {localTray.status === 'Abandoned' && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl flex items-center gap-3 shadow-sm animate-in fade-in">
+                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                <div>
+                    <h3 className="font-black text-sm">Tray Abandoned</h3>
+                    <p className="text-xs mt-0.5">This tray is no longer active and will be hidden from default lists.</p>
+                </div>
             </div>
-         )}
+        )}
 
-         <section className="bg-white p-5 rounded-2xl shadow-sm border border-stone-200">
-            <div className="flex justify-between items-start mb-3">
-               <h2 className="text-2xl font-bold text-stone-800 leading-tight">{(localTray as any).name || localTray.id}</h2>
-               <div className="flex gap-1.5 flex-shrink-0">
-                 {localTray.humidity_dome && <span className="bg-blue-100 text-blue-800 p-1.5 rounded-lg flex items-center justify-center" title="Humidity Dome Used"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15h18M5 15v4a2 2 0 002 2h10a2 2 0 002-2v-4M12 15V3m0 0l-4 4m4-4l4 4" /></svg></span>}
-                 {localTray.grow_light && <span className="bg-yellow-100 text-yellow-800 p-1.5 rounded-lg flex items-center justify-center" title="Grow Light Used"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></span>}
-               </div>
-            </div>
-            
-            <div className="flex flex-wrap gap-2 mb-4">
-              <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{localTray.location || 'Unknown Location'}</span>
-              <span className="bg-stone-100 text-stone-600 text-xs font-bold px-2 py-1 rounded border border-stone-200">{localTray.cell_count} Cell Tray</span>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-2 bg-stone-50 rounded-xl p-3 border border-stone-200 mb-4 text-center">
-               <div><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Global Sown</div><div className="text-sm font-bold text-stone-800">{localTray.sown_date || '--'}</div></div>
-               <div className="border-l border-stone-200"><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Sprout</div><div className="text-sm font-bold text-emerald-600">{localTray.first_germination_date || '--'}</div></div>
-               <div className="border-l border-stone-200"><div className="text-[10px] text-stone-500 font-bold uppercase mb-0.5">Potted</div><div className="text-sm font-bold text-blue-600">{localTray.first_planted_date || '--'}</div></div>
-            </div>
+        <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-col gap-4">
+           <div className="flex justify-between items-center border-b border-stone-100 pb-4">
+              <div>
+                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Tray ID</p>
+                 <p className="font-mono text-stone-800 font-bold">{localTray.id}</p>
+              </div>
+              <div className="text-right">
+                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Sown Date</p>
+                 <p className="font-bold text-emerald-700">{traySownDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+              </div>
+           </div>
 
-            <div className="grid grid-cols-3 gap-2 bg-emerald-50 rounded-xl p-3 border border-emerald-100 mb-4 text-center">
-               <div><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sown</div><div className="text-xl font-black text-emerald-900">{totalSown}</div></div>
-               <div className="border-l border-emerald-200"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Sprouted</div><div className="text-xl font-black text-emerald-900">{totalGerminated}</div></div>
-               <div className="border-l border-emerald-200"><div className="text-xs text-emerald-600 font-bold uppercase mb-0.5">Rate</div><div className="text-xl font-black text-emerald-900">{germRate}%</div></div>
-            </div>
+           <div className="grid grid-cols-2 gap-4 text-center">
+              <div className="bg-stone-50 rounded-2xl p-4 border border-stone-100">
+                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Total Sown</p>
+                 <p className="text-3xl font-black text-stone-800">{totalSown}</p>
+              </div>
+              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 shadow-inner">
+                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800 mb-1">Germinated</p>
+                 <p className="text-3xl font-black text-emerald-600">{totalGerminated}</p>
+                 <p className="text-[10px] font-bold text-emerald-700 mt-1">{germRate}% Success</p>
+              </div>
+           </div>
+        </div>
 
-            {localTray.potting_mix && <div className="mb-4"><div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">Potting Mix</div><div className="text-sm text-stone-800 font-medium">{localTray.potting_mix}</div></div>}
-            {localTray.notes && <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100">{localTray.notes}</p>}
-         </section>
-
-         <h3 className="font-bold text-stone-800 px-1">Tray Contents</h3>
-         <div className="space-y-3">
-           {(localTray.contents || []).map((seedRecord: any, idx: number) => {
+        <div className="space-y-3">
+          <h2 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-2 flex items-center justify-between">
+              <span>Tray Contents ({localTray.contents?.length || 0})</span>
+          </h2>
+          
+          {(localTray.contents || []).map((seedRecord: any, idx: number) => {
              const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedRecord.seed_id);
              const varietyName = fullSeed?.variety_name || seedRecord.seed_id;
              const isPottable = (seedRecord.germinated_count || 0) - (seedRecord.planted_count || 0) > 0;
+             const germCount = seedRecord.germinated_count || 0;
+             const isFullyGerminated = germCount >= (seedRecord.sown_count || 0);
 
-             const today = new Date();
-             today.setHours(12, 0, 0, 0);
              let seedStatusBadge = null;
-
              const rowSownDate = seedRecord.sown_date || localTray.sown_date;
              const rowGermDate = seedRecord.germination_date || seedRecord.germinated_count > 0;
+
+             let daysLate = 0;
+             let isLate = false;
+             if (fullSeed?.germination_days && !isFullyGerminated) {
+                 const nums = fullSeed.germination_days.match(/\d+/g);
+                 if (nums && nums.length > 0) {
+                     const parsed = nums.map((n: string) => parseInt(n, 10)).filter((n: number) => n > 0);
+                     if (parsed.length > 0) {
+                         const maxDays = Math.max(...parsed);
+                         const expectedDate = new Date(traySownDate);
+                         expectedDate.setDate(expectedDate.getDate() + maxDays);
+                         
+                         if (today > expectedDate) {
+                             isLate = true;
+                             daysLate = Math.floor((today.getTime() - expectedDate.getTime()) / (1000 * 60 * 60 * 24));
+                         }
+                     }
+                 }
+             }
 
              if (rowGermDate) {
                  seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 ml-2 shadow-sm flex-shrink-0 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> Sprouted</span>;
@@ -386,7 +438,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-lg bg-stone-100 border border-stone-200 overflow-hidden flex-shrink-0">
-                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
                       </div>
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
@@ -420,7 +472,12 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                      <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
                      <div className="flex items-center gap-1.5">
                        <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">-</button>
-                       <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                       
+                       <div className="flex flex-col items-center">
+                          {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
+                          <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                       </div>
+
                        <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">+</button>
                      </div>
                    </div>

@@ -9,6 +9,8 @@ interface TrayListProps {
   navigateTo: (view: AppView, payload?: any, replace?: boolean) => void;
   handleGoBack: (view: AppView) => void;
   userRole?: string;
+  trayState?: any;
+  setTrayState?: any;
 }
 
 const parseDateString = (dateStr: string) => {
@@ -54,8 +56,9 @@ const processImageWithWatermark = (file: File, watermarkText: string, maxSize: n
   });
 };
 
-export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole }: TrayListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, handleGoBack, userRole, trayState = { searchQuery: '', statusFilter: 'Active' }, setTrayState }: TrayListProps) {
+  const searchQuery = trayState.searchQuery || "";
+  const statusFilter = trayState.statusFilter || "Active";
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeason, setActiveSeason] = useState<string>('');
@@ -69,6 +72,10 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const updateState = (updates: any) => {
+    if (setTrayState) setTrayState((prev: any) => ({ ...prev, ...updates }));
+  };
 
   useEffect(() => {
     const fetchSeasons = async () => {
@@ -119,6 +126,9 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
 
   const filteredTrays = trays.filter(tray => {
     if (activeSeason && tray.season_id && tray.season_id !== activeSeason) return false;
+    
+    const status = tray.status || 'Active';
+    if (statusFilter !== 'All' && status !== statusFilter) return false;
 
     const q = searchQuery.toLowerCase();
     const seedIds = (tray.contents || []).map(c => c.seed_id).filter(Boolean);
@@ -326,10 +336,10 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
         </div>
       )}
 
-      <header className="bg-emerald-800 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900">
+      <header className="bg-emerald-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button onClick={() => navigateTo('dashboard')} className="p-2 bg-emerald-900 rounded-full hover:bg-emerald-700 transition-colors" title="Dashboard">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 001 1m-6 0h6" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
           </button>
           <h1 className="text-xl font-bold ml-1 truncate">Nursery Trays</h1>
         </div>
@@ -352,9 +362,31 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">
-        <div className="relative">
-          <input type="text" placeholder="Search by Tray, Seed Name, or Location..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 outline-none transition-colors" />
-          <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <input 
+                type="text" 
+                placeholder="Search tray or seed name..." 
+                value={searchQuery} 
+                onChange={e => updateState({ searchQuery: e.target.value })} 
+                className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-10 pr-4 shadow-sm focus:border-emerald-500 outline-none transition-colors" 
+              />
+              <svg className="w-5 h-5 text-stone-400 absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </div>
+            
+            <div className="relative w-full sm:w-40 shrink-0">
+               <select 
+                 value={statusFilter} 
+                 onChange={e => updateState({ statusFilter: e.target.value })} 
+                 className="w-full bg-white border border-stone-200 rounded-xl py-3 pl-3 pr-8 shadow-sm focus:border-emerald-500 outline-none text-sm text-stone-600 font-bold appearance-none cursor-pointer"
+               >
+                 <option value="Active">Active Trays</option>
+                 <option value="Emptied">Emptied</option>
+                 <option value="Abandoned">Abandoned</option>
+                 <option value="All">Show All</option>
+               </select>
+               <svg className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </div>
         </div>
 
         <div className="space-y-3">
@@ -401,7 +433,13 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               const today = new Date(); today.setHours(12, 0, 0, 0);
               let statusText = "Est. Sprout: Unknown"; let statusColor = "text-stone-500 bg-stone-100 border-stone-200"; let showSproutIcon = false;
 
-              if (tray.first_germination_date) {
+              const trayStatus = tray.status || 'Active';
+
+              if (trayStatus === 'Emptied') {
+                  statusText = "Emptied"; statusColor = "text-stone-500 bg-stone-100 border-stone-300 opacity-80"; showSproutIcon = false;
+              } else if (trayStatus === 'Abandoned') {
+                  statusText = "Abandoned"; statusColor = "text-red-600 bg-red-50 border-red-200 opacity-80"; showSproutIcon = false;
+              } else if (tray.first_germination_date) {
                 const germDate = parseDateString(tray.first_germination_date);
                 const diffDays = Math.round((today.getTime() - germDate.getTime()) / (1000 * 60 * 60 * 24));
                 if (diffDays === 0) statusText = "Sprouted Today!"; else if (diffDays === 1) statusText = "Sprouted Yesterday"; else statusText = `Sprouted ${diffDays} days ago`;
@@ -441,7 +479,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
               }
 
               return (
-                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className="bg-white p-3 rounded-xl border border-stone-200 shadow-sm flex gap-4 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95 cursor-pointer relative overflow-hidden group">
+                <div key={tray.id} onClick={() => navigateTo('tray_detail', tray)} className={`bg-white p-3 rounded-xl border shadow-sm flex gap-4 cursor-pointer relative overflow-hidden group ${trayStatus !== 'Active' ? 'border-stone-200 opacity-80' : 'border-stone-200 hover:border-emerald-400 hover:shadow-md transition-all active:scale-95'}`}>
                   <button onClick={(e) => triggerPhotoUpload(e, tray.id)} className="absolute top-2 right-2 p-2 bg-stone-100/80 backdrop-blur border border-stone-200 rounded-full text-stone-500 hover:bg-emerald-100 hover:text-emerald-700 hover:border-emerald-300 transition-colors shadow-sm z-10">
                      {isUploading === tray.id ? <svg className="w-4 h-4 animate-spin text-emerald-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
                   </button>
