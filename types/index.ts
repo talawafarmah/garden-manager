@@ -101,8 +101,9 @@ export interface SeedData {
 export interface SeedlingJournalEntry {
   id: string;
   date: string;
-  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE' | 'ALLOCATE' | 'TASTING' | 'HARVEST' | 'OBSERVATION';
+  type: 'UPPOT' | 'FERTILIZE' | 'EVENT' | 'NOTE' | 'ALLOCATE' | 'TASTING' | 'HARVEST' | 'OBSERVATION' | 'PHOTO' | 'ADD';
   note: string;
+  image_path?: string;
 }
 
 export interface InventorySeed {
@@ -139,18 +140,19 @@ export interface InventorySeed {
   returnPayload?: any;
   newCatName?: string;
   newCatPrefix?: string;
-  swipeContextList?: InventorySeed[]; // Added for Wishlist swiping context
+  swipeContextList?: InventorySeed[];
 }
 
 export interface TraySeedRecord {
   cell?: number | string;
+  cell_id?: string;
   seed_id: string;
   sown_count?: number;
   germinated_count?: number;
   planted_count?: number;
-  sown_date?: string;        // Added for individual seed dating
-  germination_date?: string; // Added for individual seed dating
-  planted_date?: string;     // Added for individual seed dating
+  sown_date?: string;        
+  germination_date?: string; 
+  planted_date?: string;     
 }
 
 export interface SeedlingTray {
@@ -168,6 +170,7 @@ export interface SeedlingTray {
   potting_mix?: string;
   location?: string;
   season_id?: string; 
+  status?: string; // <-- ADDED FOR TRAY STATUS
 }
 
 export interface Season {
