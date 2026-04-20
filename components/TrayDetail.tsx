@@ -144,7 +144,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       setIsSaving(false);
   };
 
-  // --- NEW STATS CALCULATIONS ---
   const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
   const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
@@ -302,8 +301,30 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
             </div>
             <div className="p-5 space-y-4">
               <div className="flex items-center justify-between bg-stone-50 p-4 rounded-2xl border border-stone-200">
-                <div><span className="block text-xs font-black text-stone-500 uppercase tracking-widest mb-1">Quantity to Pot Up</span><span className="block text-[10px] text-stone-400">Max unpotted: {potUpState.maxAvailable > 0 ? potUpState.maxAvailable : 0}</span></div>
-                <input type="number" min="1" value={potUpState.count || ''} onChange={(e) => setPotUpState({ ...potUpState, count: Number(e.target.value) })} className="w-20 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-emerald-500 outline-none font-black text-lg bg-white" />
+                <div>
+                   <span className="block text-xs font-black text-stone-500 uppercase tracking-widest mb-1">Quantity to Pot Up</span>
+                   <span className="block text-[10px] text-stone-400">Max unpotted: {potUpState.maxAvailable > 0 ? potUpState.maxAvailable : 0}</span>
+                </div>
+                
+                {/* --- ADDED + AND - BUTTONS TO MODAL --- */}
+                <div className="flex items-center gap-1">
+                   <button 
+                      onClick={() => setPotUpState({ ...potUpState, count: Math.max(1, potUpState.count - 1) })} 
+                      className="w-10 h-10 flex items-center justify-center bg-stone-200 hover:bg-stone-300 rounded-xl text-stone-600 font-black text-xl transition-colors"
+                   >-</button>
+                   <input 
+                      type="number" 
+                      min="1" 
+                      max={potUpState.maxAvailable} 
+                      value={potUpState.count || ''} 
+                      onChange={(e) => setPotUpState({ ...potUpState, count: Number(e.target.value) })} 
+                      className="w-16 text-center border border-stone-300 rounded-xl py-2 shadow-inner focus:border-emerald-500 outline-none font-black text-lg bg-white" 
+                   />
+                   <button 
+                      onClick={() => setPotUpState({ ...potUpState, count: Math.min(potUpState.maxAvailable, potUpState.count + 1) })} 
+                      className="w-10 h-10 flex items-center justify-center bg-stone-200 hover:bg-stone-300 rounded-xl text-stone-600 font-black text-xl transition-colors"
+                   >+</button>
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Pot Size / Location Note</label>
@@ -359,7 +380,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         )}
 
         <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-col gap-4">
-           {/* -- REBUILT SUMMARY HEADER -- */}
            <div className="flex justify-between items-start border-b border-stone-100 pb-4">
               <div>
                  <h2 className="font-black text-xl text-stone-800 leading-tight">{localTray.name || 'Unnamed Tray'}</h2>
@@ -388,7 +408,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
               </div>
            </div>
 
-           {/* -- NEW METADATA GRID -- */}
            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-stone-100">
                <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Location</p>
@@ -441,7 +460,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
 
              let daysLate = 0;
              let isLate = false;
-             // LATE WARNING SKIPPED IF SEED IS ABANDONED
+             
              if (fullSeed?.germination_days && !isFullyGerminated && !seedRecord.abandoned) {
                  const nums = fullSeed.germination_days.match(/\d+/g);
                  if (nums && nums.length > 0) {
@@ -498,9 +517,17 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                       </div>
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
-                        <div className="flex items-center mt-1 flex-wrap gap-y-1">
+                        
+                        {/* --- ABANDON BUTTON MOVED UP HERE --- */}
+                        <div className="flex items-center mt-1 flex-wrap gap-2">
                           <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-500 border border-stone-200 shadow-sm">ID: {seedRecord.seed_id}</span>
                           {seedStatusBadge}
+                          <button 
+                             onClick={(e) => handleToggleAbandon(e, idx)}
+                             className={`text-[9px] font-black uppercase tracking-widest underline ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
+                          >
+                             {seedRecord.abandoned ? 'Restore' : 'Abandon'}
+                          </button>
                         </div>
                       </div>
                    </div>
@@ -512,12 +539,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable && !seedRecord.abandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
                      >
                        🌱 Pot Up
-                     </button>
-                     <button 
-                       onClick={(e) => handleToggleAbandon(e, idx)}
-                       className={`text-[9px] font-black uppercase tracking-widest underline ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
-                     >
-                       {seedRecord.abandoned ? 'Restore Seed' : 'Abandon Seed'}
                      </button>
                    </div>
                  </div>
