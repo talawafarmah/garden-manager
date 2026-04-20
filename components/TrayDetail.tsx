@@ -285,12 +285,15 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   today.setHours(12, 0, 0, 0);
   const traySownDate = new Date((localTray.sown_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
 
-  // --- NEW HELP WRAPPER COMPONENT ---
+  // --- FIXED HELP WRAPPER COMPONENT ---
   const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
-    if (!isHelpMode) return <>{children}</>;
+    // FIX: When help mode is off, we still MUST render the wrapperClass if one is provided to preserve CSS layout!
+    if (!isHelpMode) {
+       return wrapperClass ? <div className={wrapperClass}>{children}</div> : <>{children}</>;
+    }
     
     return (
-      <div className={`relative group cursor-help rounded-xl ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass}`}>
+      <div className={`relative group cursor-help ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass || 'rounded-xl'}`}>
          <div className="absolute inset-0 z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveHelpInfo({ title, text }); }} />
          <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30 h-full w-full">
             {children}
@@ -430,6 +433,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         )}
 
         <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-col gap-4">
+           {/* -- REBUILT SUMMARY HEADER -- */}
            <div className="flex justify-between items-start border-b border-stone-100 pb-4">
               <div>
                  <h2 className="font-black text-xl text-stone-800 leading-tight">{localTray.name || 'Unnamed Tray'}</h2>
@@ -577,7 +581,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-lg bg-stone-100 border border-stone-200 overflow-hidden flex-shrink-0">
-                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
                       </div>
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
