@@ -59,6 +59,10 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- NEW HELP MODE STATE ---
+  const [isHelpMode, setIsHelpMode] = useState(false);
+  const [activeHelpInfo, setActiveHelpInfo] = useState<{title: string, text: string} | null>(null);
+
   useEffect(() => { setLocalTray({ ...tray, status: tray.status || 'Active' }); }, [tray]);
 
   useEffect(() => {
@@ -281,9 +285,42 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   today.setHours(12, 0, 0, 0);
   const traySownDate = new Date((localTray.sown_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
 
+  // --- NEW HELP WRAPPER COMPONENT ---
+  const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
+    if (!isHelpMode) return <>{children}</>;
+    
+    return (
+      <div className={`relative group cursor-help rounded-xl ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass}`}>
+         <div className="absolute inset-0 z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveHelpInfo({ title, text }); }} />
+         <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30 h-full w-full">
+            {children}
+         </div>
+      </div>
+    );
+  };
+
   return (
-    <main onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} className="min-h-screen bg-stone-50 text-stone-900 pb-20 font-sans relative select-none">
+    <main onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} className={`min-h-screen pb-20 font-sans transition-colors duration-300 relative select-none ${isHelpMode ? 'bg-stone-200' : 'bg-stone-50 text-stone-900'}`}>
       
+      {/* HELP INFO MODAL */}
+      {activeHelpInfo && (
+         <div className="fixed inset-0 z-[200] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setActiveHelpInfo(null)}>
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+               <div className="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
+                  <h2 className="font-black text-blue-900 tracking-tight flex items-center gap-2">
+                     <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                     {activeHelpInfo.title}
+                  </h2>
+                  <button onClick={() => setActiveHelpInfo(null)} className="p-1 rounded-full text-blue-400 hover:bg-blue-200 hover:text-blue-800"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+               </div>
+               <div className="p-5">
+                  <p className="text-sm text-stone-600 leading-relaxed">{activeHelpInfo.text}</p>
+                  <button onClick={() => setActiveHelpInfo(null)} className="w-full mt-6 py-3 bg-stone-100 text-stone-700 font-bold rounded-xl hover:bg-stone-200 transition-colors">Got it</button>
+               </div>
+            </div>
+         </div>
+      )}
+
       <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleQuickPhotoUpload} className="hidden" />
 
       {fullScreenImage && (
@@ -305,8 +342,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    <span className="block text-xs font-black text-stone-500 uppercase tracking-widest mb-1">Quantity to Pot Up</span>
                    <span className="block text-[10px] text-stone-400">Max unpotted: {potUpState.maxAvailable > 0 ? potUpState.maxAvailable : 0}</span>
                 </div>
-                
-                {/* --- ADDED + AND - BUTTONS TO MODAL --- */}
                 <div className="flex items-center gap-1">
                    <button 
                       onClick={() => setPotUpState({ ...potUpState, count: Math.max(1, potUpState.count - 1) })} 
@@ -347,25 +382,40 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         </div>
         
         <div className="flex items-center gap-2">
-            <select 
-              value={localTray.status || 'Active'} 
-              onChange={(e) => handleStatusChange(e.target.value)}
-              disabled={isSaving}
-              className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl outline-none appearance-none cursor-pointer shadow-sm border
-                 ${localTray.status === 'Emptied' ? 'bg-stone-200 text-stone-600 border-stone-300' : 
-                   localTray.status === 'Abandoned' ? 'bg-red-100 text-red-700 border-red-200' : 
-                   'bg-emerald-800 text-emerald-100 border-emerald-600 hover:bg-emerald-600'}`}
+            <button onClick={() => setIsHelpMode(!isHelpMode)} className={`p-2 rounded-full font-bold text-sm transition-all flex items-center gap-1 border ${isHelpMode ? 'bg-blue-600 text-white border-blue-400 shadow-inner' : 'bg-emerald-800 text-emerald-100 border-emerald-600 hover:bg-emerald-600'}`}>
+              {isHelpMode ? 'Close' : '❓'}
+            </button>
+
+            <HelpWrapper 
+               title="Tray Status" 
+               text="Change the state of the tray. 'Active' trays show in lists. 'Emptied' means it's done but kept for records. 'Abandoned' means it failed and hides it from overdue alerts."
             >
-              <option value="Active">🟢 Active</option>
-              <option value="Emptied">📥 Emptied</option>
-              <option value="Abandoned">💀 Abandoned</option>
-            </select>
+               <select 
+                 value={localTray.status || 'Active'} 
+                 onChange={(e) => handleStatusChange(e.target.value)}
+                 disabled={isSaving || isHelpMode}
+                 className={`text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-xl outline-none appearance-none cursor-pointer shadow-sm border disabled:opacity-50
+                    ${localTray.status === 'Emptied' ? 'bg-stone-200 text-stone-600 border-stone-300' : 
+                      localTray.status === 'Abandoned' ? 'bg-red-100 text-red-700 border-red-200' : 
+                      'bg-emerald-800 text-emerald-100 border-emerald-600 hover:bg-emerald-600'}`}
+               >
+                 <option value="Active">🟢 Active</option>
+                 <option value="Emptied">📥 Emptied</option>
+                 <option value="Abandoned">💀 Abandoned</option>
+               </select>
+            </HelpWrapper>
             
-            <button onClick={() => navigateTo('tray_edit', localTray)} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm">
+            <button onClick={() => navigateTo('tray_edit', localTray)} disabled={isHelpMode} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors shadow-sm disabled:opacity-50">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
             </button>
         </div>
       </header>
+
+      {isHelpMode && (
+         <div className="bg-blue-600 text-white p-3 text-center text-xs font-bold uppercase tracking-widest sticky top-[72px] z-10 shadow-md">
+            Help Mode Active: Tap any highlighted box to learn more.
+         </div>
+      )}
 
       <div className="max-w-2xl mx-auto p-4 space-y-6">
         
@@ -396,16 +446,25 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Total Sown</p>
                  <p className="text-2xl sm:text-3xl font-black text-stone-800">{totalSown}</p>
               </div>
-              <div className="bg-emerald-50 rounded-2xl p-3 sm:p-4 border border-emerald-100 shadow-inner">
+              <HelpWrapper 
+                 title="Tray Germination Rate" 
+                 text="Shows the exact percentage of individual seeds that have successfully sprouted across the entire tray."
+                 wrapperClass="bg-emerald-50 rounded-2xl p-3 sm:p-4 border border-emerald-100 shadow-inner"
+              >
                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-800 mb-1">Germinated</p>
                  <p className="text-2xl sm:text-3xl font-black text-emerald-600">{totalGerminated}</p>
                  <p className="text-[9px] font-bold text-emerald-700 mt-1">{germRate}% Success</p>
-              </div>
-              <div className="bg-blue-50 rounded-2xl p-3 sm:p-4 border border-blue-100 shadow-inner">
+              </HelpWrapper>
+              
+              <HelpWrapper 
+                 title="Variety Germination Rate" 
+                 text="Shows how many distinct types of seeds (varieties) have at least one successful sprout. This helps you identify if entire crops failed."
+                 wrapperClass="bg-blue-50 rounded-2xl p-3 sm:p-4 border border-blue-100 shadow-inner"
+              >
                  <p className="text-[9px] font-black uppercase tracking-widest text-blue-800 mb-1">Varieties</p>
                  <p className="text-2xl sm:text-3xl font-black text-blue-600">{sproutedVars}/{totalVars}</p>
                  <p className="text-[9px] font-bold text-blue-700 mt-1">{varGermRate}% Sprouted</p>
-              </div>
+              </HelpWrapper>
            </div>
 
            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-stone-100">
@@ -421,17 +480,22 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                   <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Tray Size</p>
                   <p className="font-bold text-stone-700 text-xs">{localTray.cell_count ? `${localTray.cell_count} Cells` : '--'}</p>
                </div>
-               <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Environment</p>
-                  <div className="flex items-center gap-3">
-                     <div className={`flex flex-col items-center ${localTray.humidity_dome ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Humidity Dome">
-                         <span className="text-lg leading-none">💦</span>
-                     </div>
-                     <div className={`flex flex-col items-center ${localTray.grow_light ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Grow Lights">
-                         <span className="text-lg leading-none">💡</span>
-                     </div>
+               <HelpWrapper 
+                  title="Environment Toggles" 
+                  text="Toggle these icons to record if this tray is currently using a humidity dome or sitting under grow lights."
+               >
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Environment</p>
+                    <div className="flex items-center gap-3">
+                       <div className={`flex flex-col items-center ${localTray.humidity_dome ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Humidity Dome">
+                           <span className="text-lg leading-none">💦</span>
+                       </div>
+                       <div className={`flex flex-col items-center ${localTray.grow_light ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Grow Lights">
+                           <span className="text-lg leading-none">💡</span>
+                       </div>
+                    </div>
                   </div>
-               </div>
+               </HelpWrapper>
            </div>
 
            {localTray.notes && (
@@ -513,33 +577,50 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-lg bg-stone-100 border border-stone-200 overflow-hidden flex-shrink-0">
-                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
+                        {fullSeed?.thumbnail ? <img src={fullSeed.thumbnail} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-stone-300"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg></div>}
                       </div>
                       <div className="min-w-0 flex flex-col items-start">
                         <h4 className="font-bold text-stone-800 leading-tight group-hover:text-emerald-700 transition-colors truncate w-full">{varietyName}</h4>
                         
-                        {/* --- ABANDON BUTTON MOVED UP HERE --- */}
                         <div className="flex items-center mt-1 flex-wrap gap-2">
                           <span className="text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-500 border border-stone-200 shadow-sm">ID: {seedRecord.seed_id}</span>
-                          {seedStatusBadge}
-                          <button 
-                             onClick={(e) => handleToggleAbandon(e, idx)}
-                             className={`text-[9px] font-black uppercase tracking-widest underline ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
+                          
+                          <HelpWrapper 
+                             title="Sprout Window" 
+                             text="The system automatically calculates when this seed should sprout based on its genetics. If it misses the window, an overdue warning will flash."
                           >
-                             {seedRecord.abandoned ? 'Restore' : 'Abandon'}
-                          </button>
+                             {seedStatusBadge}
+                          </HelpWrapper>
+
+                          <HelpWrapper 
+                             title="Abandon Seed" 
+                             text="If some seeds in a tray failed but others are fine, click this to hide the failed seeds from overdue alerts and lock their counts."
+                          >
+                             <button 
+                                disabled={isHelpMode}
+                                onClick={(e) => handleToggleAbandon(e, idx)}
+                                className={`text-[9px] font-black uppercase tracking-widest underline disabled:opacity-50 ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
+                             >
+                                {seedRecord.abandoned ? 'Restore' : 'Abandon'}
+                             </button>
+                          </HelpWrapper>
                         </div>
                       </div>
                    </div>
                    
                    <div className="flex flex-col items-end gap-2">
-                     <button 
-                       onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
-                       disabled={!isPottable || seedRecord.abandoned}
-                       className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable && !seedRecord.abandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
+                     <HelpWrapper 
+                        title="Pot Up" 
+                        text="Move germinated seedlings from this tray into the Nursery Ledger as actively growing potted plants."
                      >
-                       🌱 Pot Up
-                     </button>
+                        <button 
+                          onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
+                          disabled={!isPottable || seedRecord.abandoned || isHelpMode}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 disabled:opacity-50 ${isPottable && !seedRecord.abandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
+                        >
+                          🌱 Pot Up
+                        </button>
+                     </HelpWrapper>
                    </div>
                  </div>
                  
@@ -547,23 +628,23 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
                        <span className="font-bold text-stone-800 w-5 text-center text-sm">{seedRecord.sown_count || 0}</span>
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">+</button>
                      </div>
                    </div>
                    
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
                        
                        <div className="flex flex-col items-center">
                           {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
                           <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
                        </div>
 
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
                      </div>
                    </div>
 
@@ -578,15 +659,15 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
-                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
-                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
-                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                  </div>
                </div>

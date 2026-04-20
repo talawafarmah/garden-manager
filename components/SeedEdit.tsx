@@ -40,9 +40,10 @@ const fetchImageAsDataURL = async (url: string): Promise<string> => {
 
 const resizeImage = async (source: string, maxSize: number, quality: number): Promise<string> => {
   let safeSource = source;
+  // If it's an external URL, safely download the raw bytes first so the Canvas doesn't get tainted
   if (source.startsWith('http') && !source.includes('supabase.co')) {
      safeSource = await fetchImageAsDataURL(source);
-     if (!safeSource) return ""; 
+     if (!safeSource) return ""; // Fail gracefully so the caller knows it didn't work
   }
 
   return new Promise((resolve) => {
@@ -488,23 +489,13 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
   const isTomato = editFormData.category?.toLowerCase().includes('tomato') || newCatName.toLowerCase().includes('tomato');
 
   // --- NEW HELP WRAPPER COMPONENT ---
-  const HelpWrapper = ({ children, title, text }: { children: React.ReactNode, title: string, text: string }) => {
+  const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
     if (!isHelpMode) return <>{children}</>;
     
     return (
-      <div 
-         className="relative group cursor-help rounded-xl ring-2 ring-blue-400 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50"
-      >
-         {/* Transparent interceptor shield */}
-         <div 
-            className="absolute inset-0 z-50" 
-            onClick={(e) => { 
-               e.preventDefault(); 
-               e.stopPropagation(); 
-               setActiveHelpInfo({ title, text }); 
-            }} 
-         />
-         <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30">
+      <div className={`relative group cursor-help rounded-xl ring-2 ring-blue-500 ring-dashed overflow-hidden transition-all hover:bg-blue-50/50 ${wrapperClass}`}>
+         <div className="absolute inset-0 z-50" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveHelpInfo({ title, text }); }} />
+         <div className="opacity-60 pointer-events-none transition-opacity group-hover:opacity-30 h-full w-full">
             {children}
          </div>
       </div>
@@ -609,6 +600,11 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+          <button onClick={() => navigateTo('dashboard')} className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors" title="Dashboard">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
           <h1 className="text-xl font-bold text-stone-800 ml-1 truncate max-w-[150px] sm:max-w-none">
             {inventory.some((s: InventorySeed) => s.id === seed.id) ? 'Edit Seed' : 'New Seed'}
           </h1>
@@ -637,14 +633,21 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
       )}
 
       <div className="max-w-md mx-auto p-4 space-y-5">
-        <div className="grid grid-cols-2 gap-3">
-           <button type="button" onClick={() => setIsImageSearchOpen(true)} disabled={isHelpMode} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
-             🌐 Internet Search
-           </button>
-           <button type="button" onClick={handleAutoFill} disabled={isAutoFilling || isHelpMode} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
-             ✨ Magic AutoFill
-           </button>
-        </div>
+        
+        <HelpWrapper 
+            wrapperClass="w-full"
+            title="Automation Tools" 
+            text="🌐 Internet Search lets you find a stock photo for this seed. ✨ Magic AutoFill uses AI to instantly research the seed variety and fill out all the complex botanical details below."
+        >
+            <div className="grid grid-cols-2 gap-3">
+               <button type="button" onClick={() => setIsImageSearchOpen(true)} disabled={isHelpMode} className="py-4 bg-blue-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
+                 🌐 Internet Search
+               </button>
+               <button type="button" onClick={handleAutoFill} disabled={isAutoFilling || isHelpMode} className="py-4 bg-indigo-600 text-white font-black rounded-xl shadow-md text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">
+                 ✨ Magic AutoFill
+               </button>
+            </div>
+        </HelpWrapper>
 
         <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-200">
           <div className="flex justify-between items-center mb-4">
@@ -803,40 +806,46 @@ export default function SeedEdit({ seed, inventory, setInventory, categories, se
             />
           </div>
           
-          <div className="grid grid-cols-1 gap-4 mt-2">
-             <div>
-                <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Seed Parent (Mother ♀)</label>
-                <button 
-                  type="button" 
-                  disabled={isHelpMode}
-                  onClick={() => setParentSearchType('mother')} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
-                >
-                  <span className={editFormData.parent_id_female ? "text-stone-800" : "text-stone-400"}>
-                    {editFormData.parent_id_female 
-                      ? `${inventory.find((s:any) => s.id === editFormData.parent_id_female)?.variety_name} (${editFormData.parent_id_female})` 
-                      : "-- None / Unknown --"}
-                  </span>
-                  <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
+          <HelpWrapper 
+             title="Parent Selection" 
+             text="If you are saving seeds from a cross-pollination experiment, select the Mother (the plant that grew the fruit) and the Father (the plant that provided the pollen). The system will automatically generate a cool 'Genetics Collage' thumbnail combining their photos!"
+             wrapperClass="w-full"
+          >
+             <div className="grid grid-cols-1 gap-4 mt-2">
+                <div>
+                   <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Seed Parent (Mother ♀)</label>
+                   <button 
+                     type="button" 
+                     disabled={isHelpMode}
+                     onClick={() => setParentSearchType('mother')} 
+                     className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
+                   >
+                     <span className={editFormData.parent_id_female ? "text-stone-800" : "text-stone-400"}>
+                       {editFormData.parent_id_female 
+                         ? `${inventory.find((s:any) => s.id === editFormData.parent_id_female)?.variety_name} (${editFormData.parent_id_female})` 
+                         : "-- None / Unknown --"}
+                     </span>
+                     <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                   </button>
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Pollen Parent (Father ♂)</label>
+                   <button 
+                     type="button" 
+                     disabled={isHelpMode}
+                     onClick={() => setParentSearchType('father')} 
+                     className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
+                   >
+                     <span className={editFormData.parent_id_male ? "text-stone-800" : "text-stone-400"}>
+                       {editFormData.parent_id_male 
+                         ? `${inventory.find((s:any) => s.id === editFormData.parent_id_male)?.variety_name} (${editFormData.parent_id_male})` 
+                         : "-- Self-Pollinated / Unknown --"}
+                     </span>
+                     <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                   </button>
+                </div>
              </div>
-             <div>
-                <label className="block text-[10px] font-black text-purple-500 uppercase tracking-widest mb-1.5 ml-1">Pollen Parent (Father ♂)</label>
-                <button 
-                  type="button" 
-                  disabled={isHelpMode}
-                  onClick={() => setParentSearchType('father')} 
-                  className="w-full bg-white border border-purple-200 rounded-xl p-3 text-sm shadow-sm outline-none hover:border-purple-500 flex justify-between items-center font-medium disabled:opacity-50"
-                >
-                  <span className={editFormData.parent_id_male ? "text-stone-800" : "text-stone-400"}>
-                    {editFormData.parent_id_male 
-                      ? `${inventory.find((s:any) => s.id === editFormData.parent_id_male)?.variety_name} (${editFormData.parent_id_male})` 
-                      : "-- Self-Pollinated / Unknown --"}
-                  </span>
-                  <svg className="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
-             </div>
-          </div>
+          </HelpWrapper>
         </section>
 
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 space-y-4">
