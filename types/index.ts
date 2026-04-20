@@ -152,7 +152,8 @@ export interface TraySeedRecord {
   planted_count?: number;
   sown_date?: string;        
   germination_date?: string; 
-  planted_date?: string;     
+  planted_date?: string; 
+  abandoned?: boolean; // <-- ADDED FOR SEED-LEVEL ABANDONMENT
 }
 
 export interface SeedlingTray {
@@ -170,7 +171,7 @@ export interface SeedlingTray {
   potting_mix?: string;
   location?: string;
   season_id?: string; 
-  status?: string; // <-- ADDED FOR TRAY STATUS
+  status?: string; 
 }
 
 export interface Season {

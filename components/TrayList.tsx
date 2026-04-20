@@ -248,6 +248,9 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       const germPercent = totalSown > 0 ? Math.round((totalGerm / totalSown) * 100) : 0;
       const uniqueSeedIds = Array.from(new Set((tray.contents || []).map(c => c.seed_id).filter(Boolean)));
 
+      const totalVars = (tray.contents || []).length;
+      const sproutedVars = (tray.contents || []).filter(c => (c.germinated_count || 0) > 0).length;
+
       const today = new Date(); today.setHours(12, 0, 0, 0);
 
       let maxDaysOverdue = 0;
@@ -259,6 +262,8 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
           if (!c.sown_count) return;
           const isFullyGerm = (c.germinated_count || 0) >= c.sown_count;
           if (!isFullyGerm) {
+              if (c.abandoned) return; // IGNORE ABANDONED SEEDS FOR LATE CALCULATION
+              
               hasUnsprouted = true;
               const s = inventory.find(i => i.id === c.seed_id);
               if (s && s.germination_days) {
@@ -321,7 +326,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
           urgencyScore = 100;
       }
 
-      return { ...tray, germPercent, uniqueSeedIds, urgencyScore, statusText, statusColor, showSproutIcon };
+      return { ...tray, germPercent, uniqueSeedIds, urgencyScore, statusText, statusColor, showSproutIcon, totalVars, sproutedVars };
   });
 
   // --- SORT ENRICHED TRAYS ---
@@ -337,6 +342,7 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
       return new Date(b.sown_date).getTime() - new Date(a.sown_date).getTime();
   });
 
+  // --- RESTORED MISSING FILTER LOGIC FOR DIRECT ADD ---
   const filteredInventoryForDirectAdd = inventory.filter((s: InventorySeed) => {
     if (!seedSearchQuery.trim()) return true;
     const q = seedSearchQuery.toLowerCase();
@@ -571,7 +577,9 @@ export default function TrayList({ trays, inventory, isLoadingDB, navigateTo, ha
                         {tray.showSproutIcon ? <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                         {tray.statusText}
                       </span>
-                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{tray.uniqueSeedIds.length} Var{tray.uniqueSeedIds.length === 1 ? '' : 's'}</span>
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest text-right">
+                         {tray.sproutedVars}/{tray.totalVars} Var{tray.totalVars === 1 ? '' : 's'} Sprouted
+                      </span>
                     </div>
                   </div>
                 </div>

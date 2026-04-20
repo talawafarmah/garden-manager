@@ -144,9 +144,22 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       setIsSaving(false);
   };
 
+  // --- NEW STATS CALCULATIONS ---
   const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
   const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
+  
+  const totalVars = (localTray.contents || []).length;
+  const sproutedVars = (localTray.contents || []).filter(c => (c.germinated_count || 0) > 0).length;
+  const varGermRate = totalVars > 0 ? Math.round((sproutedVars / totalVars) * 100) : 0;
+
+  const handleToggleAbandon = async (e: React.MouseEvent, index: number) => {
+      e.stopPropagation();
+      const updatedContents = [...localTray.contents];
+      updatedContents[index].abandoned = !updatedContents[index].abandoned;
+      setLocalTray({ ...localTray, contents: updatedContents });
+      await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
+  };
 
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
     e.stopPropagation();
@@ -358,15 +371,20 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
               </div>
            </div>
 
-           <div className="grid grid-cols-2 gap-4 text-center">
-              <div className="bg-stone-50 rounded-2xl p-4 border border-stone-100">
-                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Total Sown</p>
-                 <p className="text-3xl font-black text-stone-800">{totalSown}</p>
+           <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="bg-stone-50 rounded-2xl p-3 sm:p-4 border border-stone-100">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Total Sown</p>
+                 <p className="text-2xl sm:text-3xl font-black text-stone-800">{totalSown}</p>
               </div>
-              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 shadow-inner">
-                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800 mb-1">Germinated</p>
-                 <p className="text-3xl font-black text-emerald-600">{totalGerminated}</p>
-                 <p className="text-[10px] font-bold text-emerald-700 mt-1">{germRate}% Success</p>
+              <div className="bg-emerald-50 rounded-2xl p-3 sm:p-4 border border-emerald-100 shadow-inner">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-emerald-800 mb-1">Germinated</p>
+                 <p className="text-2xl sm:text-3xl font-black text-emerald-600">{totalGerminated}</p>
+                 <p className="text-[9px] font-bold text-emerald-700 mt-1">{germRate}% Success</p>
+              </div>
+              <div className="bg-blue-50 rounded-2xl p-3 sm:p-4 border border-blue-100 shadow-inner">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-blue-800 mb-1">Varieties</p>
+                 <p className="text-2xl sm:text-3xl font-black text-blue-600">{sproutedVars}/{totalVars}</p>
+                 <p className="text-[9px] font-bold text-blue-700 mt-1">{varGermRate}% Sprouted</p>
               </div>
            </div>
 
@@ -423,7 +441,8 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
 
              let daysLate = 0;
              let isLate = false;
-             if (fullSeed?.germination_days && !isFullyGerminated) {
+             // LATE WARNING SKIPPED IF SEED IS ABANDONED
+             if (fullSeed?.germination_days && !isFullyGerminated && !seedRecord.abandoned) {
                  const nums = fullSeed.germination_days.match(/\d+/g);
                  if (nums && nums.length > 0) {
                      const parsed = nums.map((n: string) => parseInt(n, 10)).filter((n: number) => n > 0);
@@ -440,7 +459,9 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  }
              }
 
-             if (rowGermDate) {
+             if (seedRecord.abandoned) {
+                 seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-stone-600 bg-stone-200 px-2 py-0.5 rounded border border-stone-300 ml-2 whitespace-nowrap shadow-sm">💀 Abandoned</span>;
+             } else if (rowGermDate) {
                  seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 ml-2 shadow-sm flex-shrink-0 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> Sprouted</span>;
              } else if (rowSownDate && fullSeed?.germination_days) {
                  const nums = fullSeed.germination_days.match(/\d+/g);
@@ -469,7 +490,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
              }
 
              return (
-               <div key={idx} onClick={() => handleSeedClick(seedRecord.seed_id)} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 cursor-pointer hover:border-emerald-400 transition-all active:scale-95 group">
+               <div key={idx} onClick={() => handleSeedClick(seedRecord.seed_id)} className={`bg-white p-4 rounded-xl shadow-sm border border-stone-200 cursor-pointer hover:border-emerald-400 transition-all active:scale-95 group ${seedRecord.abandoned ? 'opacity-60 grayscale-[50%]' : ''}`}>
                  <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-lg bg-stone-100 border border-stone-200 overflow-hidden flex-shrink-0">
@@ -484,73 +505,44 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                       </div>
                    </div>
                    
-                   <button 
-                     onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
-                     disabled={!isPottable}
-                     className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
-                   >
-                     🌱 Pot Up
-                   </button>
+                   <div className="flex flex-col items-end gap-2">
+                     <button 
+                       onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
+                       disabled={!isPottable || seedRecord.abandoned}
+                       className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 ${isPottable && !seedRecord.abandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
+                     >
+                       🌱 Pot Up
+                     </button>
+                     <button 
+                       onClick={(e) => handleToggleAbandon(e, idx)}
+                       className={`text-[9px] font-black uppercase tracking-widest underline ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
+                     >
+                       {seedRecord.abandoned ? 'Restore Seed' : 'Abandon Seed'}
+                     </button>
+                   </div>
                  </div>
                  
-                 <div className="flex items-center justify-between bg-stone-50 p-2.5 rounded-xl border border-stone-100 mb-3" onClick={e => e.stopPropagation()}>
-                     <div>
-                        <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-0.5">Sown</span>
-                        <span className="text-lg font-black text-stone-700">{seedRecord.sown_count}</span>
-                     </div>
-                     
-                     <div className="flex items-center gap-3">
-                        <div className="text-right flex flex-col items-end">
-                           <span className="block text-[9px] font-black uppercase tracking-widest text-emerald-800 mb-0.5">Sprouted</span>
-                           <div className="flex items-center gap-2">
-                              {isLate && (
-                                 <span className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded animate-pulse">
-                                     ⚠️ {daysLate}d Late
-                                 </span>
-                              )}
-                              <span className={`text-2xl font-black leading-none ${isFullyGerminated ? 'text-emerald-600' : 'text-stone-800'}`}>
-                                 {germCount}
-                              </span>
-                           </div>
-                        </div>
-
-                        {localTray.status !== 'Abandoned' && (
-                            <div className="flex bg-white rounded-lg border border-stone-200 shadow-sm shrink-0">
-                              <button 
-                                 onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} 
-                                 disabled={germCount <= 0}
-                                 className="w-9 h-9 flex items-center justify-center hover:bg-stone-100 hover:text-red-500 transition-colors disabled:opacity-30 border-r border-stone-100 font-bold text-lg"
-                              >−</button>
-                              <button 
-                                 onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} 
-                                 disabled={isFullyGerminated}
-                                 className="w-9 h-9 flex items-center justify-center hover:bg-stone-100 hover:text-emerald-600 transition-colors disabled:opacity-30 font-bold text-lg"
-                              >+</button>
-                            </div>
-                        )}
-                     </div>
-                 </div>
-
                  <div className="grid grid-cols-3 text-xs pt-1 mt-1" onClick={e => e.stopPropagation()}>
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
                        <span className="font-bold text-stone-800 w-5 text-center text-sm">{seedRecord.sown_count || 0}</span>
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">+</button>
                      </div>
                    </div>
                    
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">-</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
                        
                        <div className="flex flex-col items-center">
+                          {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
                           <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
                        </div>
 
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
                      </div>
                    </div>
 
@@ -565,15 +557,15 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="grid grid-cols-3 text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
-                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
-                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                     <div>
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
-                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold" />
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={seedRecord.abandoned} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                  </div>
                </div>
