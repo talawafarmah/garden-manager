@@ -144,8 +144,8 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       setIsSaving(false);
   };
 
-  const totalSown = localTray.contents?.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0) || 0;
-  const totalGerminated = localTray.contents?.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0) || 0;
+  const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
+  const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
 
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
@@ -175,7 +175,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
     setIsDuplicating(true);
     const todayObj = new Date();
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-    const duplicatedTray: SeedlingTray = {
+    const duplicatedTray: any = {
       ...localTray, id: crypto.randomUUID(), name: `${localTray.name || 'Tray'} (Copy)`, sown_date: localToday, first_germination_date: "", first_planted_date: "", images: [], status: 'Active',
       contents: localTray.contents.map((item: any) => ({ ...item, sown_count: item.sown_count || 0, germinated_count: 0, planted_count: 0 }))
     };
@@ -309,7 +309,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
           <button onClick={() => handleGoBack('trays')} className="p-2 bg-emerald-800 rounded-full hover:bg-emerald-600 transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-xl font-bold truncate max-w-[150px] sm:max-w-xs">{localTray.name || 'Tray Details'}</h1>
+          <h1 className="text-xl font-bold truncate max-w-[150px] sm:max-w-xs">{localTray.name || localTray.id}</h1>
         </div>
         
         <div className="flex items-center gap-2">
@@ -346,14 +346,15 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         )}
 
         <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-col gap-4">
-           <div className="flex justify-between items-center border-b border-stone-100 pb-4">
+           {/* -- REBUILT SUMMARY HEADER -- */}
+           <div className="flex justify-between items-start border-b border-stone-100 pb-4">
               <div>
-                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Tray ID</p>
-                 <p className="font-mono text-stone-800 font-bold">{localTray.id}</p>
+                 <h2 className="font-black text-xl text-stone-800 leading-tight">{localTray.name || 'Unnamed Tray'}</h2>
+                 <p className="font-mono text-[10px] text-stone-400 mt-1">ID: {localTray.id}</p>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0 ml-4">
                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">Sown Date</p>
-                 <p className="font-bold text-emerald-700">{traySownDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                 <p className="font-bold text-emerald-700">{traySownDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
               </div>
            </div>
 
@@ -368,6 +369,40 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <p className="text-[10px] font-bold text-emerald-700 mt-1">{germRate}% Success</p>
               </div>
            </div>
+
+           {/* -- NEW METADATA GRID -- */}
+           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-stone-100">
+               <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Location</p>
+                  <p className="font-bold text-stone-700 text-xs">{localTray.location || '--'}</p>
+               </div>
+               <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Potting Mix</p>
+                  <p className="font-bold text-stone-700 text-xs">{localTray.potting_mix || '--'}</p>
+               </div>
+               <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Tray Size</p>
+                  <p className="font-bold text-stone-700 text-xs">{localTray.cell_count ? `${localTray.cell_count} Cells` : '--'}</p>
+               </div>
+               <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5">Environment</p>
+                  <div className="flex items-center gap-3">
+                     <div className={`flex flex-col items-center ${localTray.humidity_dome ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Humidity Dome">
+                         <span className="text-lg leading-none">💦</span>
+                     </div>
+                     <div className={`flex flex-col items-center ${localTray.grow_light ? 'opacity-100' : 'opacity-30 grayscale'}`} title="Grow Lights">
+                         <span className="text-lg leading-none">💡</span>
+                     </div>
+                  </div>
+               </div>
+           </div>
+
+           {localTray.notes && (
+               <div className="pt-4 border-t border-stone-100">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Notes</p>
+                  <p className="text-xs text-stone-600 italic whitespace-pre-wrap leading-relaxed">{localTray.notes}</p>
+               </div>
+           )}
         </div>
 
         <div className="space-y-3">
@@ -458,6 +493,44 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    </button>
                  </div>
                  
+                 <div className="flex items-center justify-between bg-stone-50 p-2.5 rounded-xl border border-stone-100 mb-3" onClick={e => e.stopPropagation()}>
+                     <div>
+                        <span className="block text-[9px] font-black uppercase tracking-widest text-stone-400 mb-0.5">Sown</span>
+                        <span className="text-lg font-black text-stone-700">{seedRecord.sown_count}</span>
+                     </div>
+                     
+                     <div className="flex items-center gap-3">
+                        <div className="text-right flex flex-col items-end">
+                           <span className="block text-[9px] font-black uppercase tracking-widest text-emerald-800 mb-0.5">Sprouted</span>
+                           <div className="flex items-center gap-2">
+                              {isLate && (
+                                 <span className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded animate-pulse">
+                                     ⚠️ {daysLate}d Late
+                                 </span>
+                              )}
+                              <span className={`text-2xl font-black leading-none ${isFullyGerminated ? 'text-emerald-600' : 'text-stone-800'}`}>
+                                 {germCount}
+                              </span>
+                           </div>
+                        </div>
+
+                        {localTray.status !== 'Abandoned' && (
+                            <div className="flex bg-white rounded-lg border border-stone-200 shadow-sm shrink-0">
+                              <button 
+                                 onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} 
+                                 disabled={germCount <= 0}
+                                 className="w-9 h-9 flex items-center justify-center hover:bg-stone-100 hover:text-red-500 transition-colors disabled:opacity-30 border-r border-stone-100 font-bold text-lg"
+                              >−</button>
+                              <button 
+                                 onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} 
+                                 disabled={isFullyGerminated}
+                                 className="w-9 h-9 flex items-center justify-center hover:bg-stone-100 hover:text-emerald-600 transition-colors disabled:opacity-30 font-bold text-lg"
+                              >+</button>
+                            </div>
+                        )}
+                     </div>
+                 </div>
+
                  <div className="grid grid-cols-3 text-xs pt-1 mt-1" onClick={e => e.stopPropagation()}>
                    <div className="flex flex-col items-center border-r border-stone-100">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
@@ -474,7 +547,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                        <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black">-</button>
                        
                        <div className="flex flex-col items-center">
-                          {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
                           <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
                        </div>
 
