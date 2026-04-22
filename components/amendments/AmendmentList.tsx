@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon, ArchiveX } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
+import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon, ArchiveX, RefreshCw } from 'lucide-react';
 import { Amendment, AmendmentType } from '@/types/amendments';
 
 interface AmendmentListProps {
@@ -15,9 +16,16 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
   const [formFilter, setFormFilter] = useState<string>('all');
+  
+  // Local state for optimistic updates
+  const [localAmendments, setLocalAmendments] = useState(initialAmendments);
+
+  useEffect(() => {
+    setLocalAmendments(initialAmendments);
+  }, [initialAmendments]);
 
   const filteredAmendments = useMemo(() => {
-    return initialAmendments.filter((amendment: any) => {
+    return localAmendments.filter((amendment: any) => {
       const safeName = amendment.name || '';
       const safeBrand = amendment.brand || '';
       
@@ -31,7 +39,7 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
 
       return matchesSearch && matchesType && matchesForm;
     });
-  }, [initialAmendments, searchTerm, typeFilter, formFilter]);
+  }, [localAmendments, searchTerm, typeFilter, formFilter]);
 
   const getTypeIcon = (type: AmendmentType) => {
     switch(type) {
@@ -41,6 +49,23 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
       case 'mineral': return <Mountain size={14} />;
       case 'microbial': return <Microscope size={14} />;
       default: return <Leaf size={14} />;
+    }
+  };
+
+  const handleToggleEmpty = async (e: React.MouseEvent, amendment: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const newEmptyState = !amendment.is_empty;
+    
+    // Optimistic update
+    setLocalAmendments(prev => prev.map(a => a.id === amendment.id ? { ...a, is_empty: newEmptyState } : a));
+
+    const { error } = await supabase.from('amendments').update({ is_empty: newEmptyState }).eq('id', amendment.id);
+    if (error) {
+      alert("Failed to update status: " + error.message);
+      // Revert if failed
+      setLocalAmendments(prev => prev.map(a => a.id === amendment.id ? { ...a, is_empty: !newEmptyState } : a));
     }
   };
 
@@ -136,72 +161,79 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {filteredAmendments.map((amendment: any) => {
-            // FIXED: Removed the quantity logic. Now it only greys out if explicitly marked empty.
             const isEmpty = amendment.is_empty;
 
             return (
-              <button 
+              <div 
                 key={amendment.id} 
-                onClick={() => navigateTo('amendment_detail', amendment)}
-                className={`text-left bg-white border border-gray-200 rounded-xl p-4 transition-all h-full flex flex-col group relative ${isEmpty ? 'opacity-60 grayscale-[50%]' : 'hover:border-green-400 hover:shadow-md'}`}
+                className={`bg-white border border-gray-200 rounded-xl transition-all h-full flex flex-col group relative overflow-hidden ${isEmpty ? 'bg-gray-50' : 'hover:border-green-400 hover:shadow-md'}`}
               >
-                  {isEmpty && (
-                     <div className="absolute top-2 right-2 bg-stone-100 border border-stone-200 text-stone-500 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm flex items-center gap-1 z-10">
-                        <ArchiveX size={10} /> Empty
-                     </div>
+                  {isEmpty ? (
+                     <button onClick={(e) => handleToggleEmpty(e, amendment)} className="absolute top-2 right-2 bg-stone-100 border border-stone-200 text-stone-500 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm flex items-center gap-1 z-10 hover:bg-white hover:text-emerald-600 transition-colors">
+                        <RefreshCw size={10} /> Restock
+                     </button>
+                  ) : (
+                     <button onClick={(e) => handleToggleEmpty(e, amendment)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-white border border-stone-200 text-stone-400 hover:text-red-500 hover:bg-red-50 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm flex items-center gap-1 z-10 transition-all">
+                        <ArchiveX size={10} /> Mark Empty
+                     </button>
                   )}
 
-                  <div className="flex gap-4 mb-3 w-full items-start">
-                    {amendment.thumbnail ? (
-                      <img 
-                        src={amendment.thumbnail} 
-                        alt={amendment.name} 
-                        className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
-                        <ImageIcon size={20} className="mb-1 opacity-50" />
-                        <span className="text-[8px] font-bold uppercase">No Image</span>
-                      </div>
-                    )}
+                  <div 
+                     onClick={() => navigateTo('amendment_detail', amendment)} 
+                     className={`p-4 flex-1 cursor-pointer flex flex-col ${isEmpty ? 'opacity-50 grayscale-[50%]' : ''}`}
+                  >
+                     <div className="flex gap-4 mb-3 w-full items-start">
+                       {amendment.thumbnail ? (
+                         <img 
+                           src={amendment.thumbnail} 
+                           alt={amendment.name} 
+                           className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
+                         />
+                       ) : (
+                         <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
+                           <ImageIcon size={20} className="mb-1 opacity-50" />
+                           <span className="text-[8px] font-bold uppercase">No Image</span>
+                         </div>
+                       )}
 
-                    <div className="flex-1 pt-1 pr-14">
-                      <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
-                        {amendment.brand}
-                      </span>
-                      <h3 className={`text-base font-bold transition-colors line-clamp-2 leading-tight ${isEmpty ? 'text-gray-700' : 'text-gray-900 group-hover:text-green-700'}`}>
-                        {amendment.name}
-                      </h3>
-                    </div>
+                       <div className="flex-1 pt-1 pr-14">
+                         <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
+                           {amendment.brand}
+                         </span>
+                         <h3 className={`text-base font-bold transition-colors line-clamp-2 leading-tight ${isEmpty ? 'text-gray-700' : 'text-gray-900 group-hover:text-green-700'}`}>
+                           {amendment.name}
+                         </h3>
+                       </div>
+                     </div>
+
+                     <div className="mt-auto flex justify-between items-end">
+                       <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg w-fit">
+                            {getTypeIcon(amendment.type)}
+                            {amendment.type.replace('_', ' ')}
+                          </span>
+                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                            {amendment.physical_form || 'Granular/Dry'}
+                          </span>
+                       </div>
+
+                       <div className="flex gap-1.5">
+                         <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
+                           <span className="text-[9px] text-green-700 font-bold">N</span>
+                           <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
+                         </div>
+                         <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
+                           <span className="text-[9px] text-blue-700 font-bold">P</span>
+                           <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
+                         </div>
+                         <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
+                           <span className="text-[9px] text-orange-600 font-bold">K</span>
+                           <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
+                         </div>
+                       </div>
+                     </div>
                   </div>
-
-                  <div className="mt-auto flex justify-between items-center">
-                    <div className="flex flex-col gap-1">
-                       <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg w-fit">
-                         {getTypeIcon(amendment.type)}
-                         {amendment.type.replace('_', ' ')}
-                       </span>
-                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest ml-1">
-                         {amendment.physical_form || 'Granular/Dry'}
-                       </span>
-                    </div>
-
-                    <div className="flex gap-1.5 items-end">
-                      <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
-                        <span className="text-[9px] text-green-700 font-bold">N</span>
-                        <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
-                      </div>
-                      <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
-                        <span className="text-[9px] text-blue-700 font-bold">P</span>
-                        <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
-                      </div>
-                      <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
-                        <span className="text-[9px] text-orange-600 font-bold">K</span>
-                        <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
-                      </div>
-                    </div>
-                  </div>
-              </button>
+              </div>
             )
           })}
         </div>

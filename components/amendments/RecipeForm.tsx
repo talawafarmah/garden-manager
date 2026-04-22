@@ -7,7 +7,6 @@ import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
 import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check } from 'lucide-react';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
-
 // @ts-ignore
 import 'react-quill-new/dist/quill.snow.css';
 
@@ -15,8 +14,8 @@ interface RecipeFormProps {
   onClose: () => void;
   onSuccess: () => void;
   initialData?: Recipe | null; 
-  amendments?: any[]; // <--- NEW PROP PASSED FROM PARENT
-} 
+  amendments?: any[]; 
+}
 
 // --- ADVANCED KITCHEN MATH ENGINE ---
 const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
@@ -30,7 +29,7 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
       const [num, den] = part.split('/');
       const n = parseFloat(num); const d = parseFloat(den);
       if (!isNaN(n) && !isNaN(d) && d !== 0) { parsedAmount += (n / d); isNumeric = true; }
-    } else { 
+    } else {
       const n = parseFloat(part);
       if (!isNaN(n)) { parsedAmount += n; isNumeric = true; }
     }
@@ -53,21 +52,11 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
 
   if (usVol[unit]) {
     let remainingTsp = total * usVol[unit];
-    
     const measures = [
-       { name: 'Gal', tsp: 768 },
-       { name: 'Qt', tsp: 192 },
-       { name: 'Pt', tsp: 96 },
-       { name: 'Cup', tsp: 48 },
-       { name: '1/2 Cup', tsp: 24 },
-       { name: '1/3 Cup', tsp: 16 },
-       { name: '1/4 Cup', tsp: 12 },
-       { name: '1/8 Cup', tsp: 6 },
-       { name: 'TBSP', tsp: 3 },
-       { name: '1/2 TBSP', tsp: 1.5 },
-       { name: 'tsp', tsp: 1 },
-       { name: '1/2 tsp', tsp: 0.5 },
-       { name: '1/4 tsp', tsp: 0.25 }
+       { name: 'Gal', tsp: 768 }, { name: 'Qt', tsp: 192 }, { name: 'Pt', tsp: 96 },
+       { name: 'Cup', tsp: 48 }, { name: '1/2 Cup', tsp: 24 }, { name: '1/3 Cup', tsp: 16 },
+       { name: '1/4 Cup', tsp: 12 }, { name: '1/8 Cup', tsp: 6 }, { name: 'TBSP', tsp: 3 },
+       { name: '1/2 TBSP', tsp: 1.5 }, { name: 'tsp', tsp: 1 }, { name: '1/2 tsp', tsp: 0.5 }, { name: '1/4 tsp', tsp: 0.25 }
     ];
     
     const resultParts = [];
@@ -87,7 +76,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
           }
        }
     }
-    
     if (resultParts.length === 0) return "A pinch";
     return resultParts.slice(0, 2).join(' + ');
   }
@@ -119,59 +107,89 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   return `${+total.toFixed(2)} ${unitStr}`;
 };
 
-// --- NEW OFFLINE NPK MATH ENGINE ---
+// --- NEW COMBINATORIAL NPK OPTIMIZER ---
 interface NpkIngredient {
-  id: string;
-  name: string;
-  brand: string;
-  n: number;
-  p: number;
-  k: number;
+  id: string; name: string; brand: string; n: number; p: number; k: number;
 }
 
 const calculateOptimalDryMix = (
   ingredients: NpkIngredient[],
-  targetN: number,
-  targetP: number,
-  targetK: number,
-  totalWeightLbs: number
+  targetN: number, targetP: number, targetK: number,
+  totalAmount: number
 ) => {
   if (ingredients.length === 0) return [];
-  
-  // Start with 1 part of each selected ingredient
-  let weights = ingredients.map(() => 1.0); 
-  const learningRate = 0.01; 
-  const iterations = 5000;
+  if (targetN === 0 && targetP === 0 && targetK === 0) return [];
 
-  // Gradient Descent Optimization
-  for (let i = 0; i < iterations; i++) {
-    let sumW = weights.reduce((a, b) => a + b, 0);
-    if (sumW === 0) sumW = 0.0001; // prevent division by zero
+  // Helper: Generates every possible subset combo of size K
+  const getCombos = (arr: any[], k: number): any[][] => {
+    if (k === 1) return arr.map(a => [a]);
+    const combos: any[][] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const smaller = getCombos(arr.slice(i + 1), k - 1);
+      for (const small of smaller) combos.push([arr[i], ...small]);
+    }
+    return combos;
+  };
 
-    let currentN = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].n, 0) / sumW;
-    let currentP = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].p, 0) / sumW;
-    let currentK = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].k, 0) / sumW;
+  // Helper: Evaluates a specific subset of ingredients to see how close it gets
+  const solveSubset = (subset: NpkIngredient[], iterations: number = 500) => {
+    let weights = subset.map(() => 1.0); 
+    const lr = 0.05; 
 
-    let errorN = currentN - targetN;
-    let errorP = currentP - targetP;
-    let errorK = currentK - targetK;
+    for (let i = 0; i < iterations; i++) {
+      let sumW = weights.reduce((a, b) => a + b, 0);
+      if (sumW === 0) sumW = 0.0001; 
 
-    for (let j = 0; j < weights.length; j++) {
-      let gradN = errorN * (ingredients[j].n - currentN) / sumW;
-      let gradP = errorP * (ingredients[j].p - currentP) / sumW;
-      let gradK = errorK * (ingredients[j].k - currentK) / sumW;
+      let cN = weights.reduce((sum, w, idx) => sum + w * subset[idx].n, 0) / sumW;
+      let cP = weights.reduce((sum, w, idx) => sum + w * subset[idx].p, 0) / sumW;
+      let cK = weights.reduce((sum, w, idx) => sum + w * subset[idx].k, 0) / sumW;
 
-      weights[j] -= learningRate * (gradN + gradP + gradK);
-      if (weights[j] < 0) weights[j] = 0; // Can't have negative fertilizer
+      let eN = cN - targetN; let eP = cP - targetP; let eK = cK - targetK;
+
+      for (let j = 0; j < weights.length; j++) {
+        let gN = eN * (subset[j].n - cN) / sumW;
+        let gP = eP * (subset[j].p - cP) / sumW;
+        let gK = eK * (subset[j].k - cK) / sumW;
+        weights[j] -= lr * (gN + gP + gK);
+        if (weights[j] < 0) weights[j] = 0; 
+      }
+    }
+
+    let sumW = weights.reduce((a, b) => a + b, 0) || 1;
+    let cN = weights.reduce((sum, w, idx) => sum + w * subset[idx].n, 0) / sumW;
+    let cP = weights.reduce((sum, w, idx) => sum + w * subset[idx].p, 0) / sumW;
+    let cK = weights.reduce((sum, w, idx) => sum + w * subset[idx].k, 0) / sumW;
+    let error = Math.abs(cN - targetN) + Math.abs(cP - targetP) + Math.abs(cK - targetK);
+    
+    return { weights, error, subset };
+  };
+
+  let bestSolution: any = null;
+  let bestScore = Infinity;
+  const maxK = Math.min(3, ingredients.length); // Try 1, 2, or 3 items max
+
+  for (let k = 1; k <= maxK; k++) {
+    const combos = getCombos(ingredients, k);
+    for (const combo of combos) {
+      const res = solveSubset(combo, 500);
+      // Penalty: Add 0.2 to the error for every additional ingredient used. 
+      // This forces the system to prefer 2 ingredients over 3 if the error is close!
+      const score = res.error + (k * 0.2); 
+      if (score < bestScore) {
+        bestScore = score;
+        bestSolution = res;
+      }
     }
   }
 
-  let finalSumW = weights.reduce((a, b) => a + b, 0) || 1;
-  
-  return ingredients.map((ing, idx) => ({
+  if (!bestSolution) return [];
+  bestSolution = solveSubset(bestSolution.subset, 2000); // Polish the winning combo
+
+  let finalSumW = bestSolution.weights.reduce((a: number, b: number) => a + b, 0) || 1;
+  return bestSolution.subset.map((ing: any, idx: number) => ({
     ...ing,
-    calculated_lbs: Number(((weights[idx] / finalSumW) * totalWeightLbs).toFixed(2))
-  })).filter(ing => ing.calculated_lbs > 0.01); // Filter out unused ingredients
+    calculated_amount: Number(((bestSolution.weights[idx] / finalSumW) * totalAmount).toFixed(2))
+  })).filter((ing: any) => ing.calculated_amount > 0.01); 
 };
 
 
@@ -191,7 +209,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   });
 
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
-    initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: '1', unit: 'cup' }]
+    initialData?.ingredients?.length ? initialData.ingredients : []
   );
 
   // --- NPK OPTIMIZER STATE ---
@@ -199,24 +217,24 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   const [targetN, setTargetN] = useState<number>(4);
   const [targetP, setTargetP] = useState<number>(4);
   const [targetK, setTargetK] = useState<number>(4);
-  const [targetWeight, setTargetWeight] = useState<number>(10);
+  const [targetAmount, setTargetAmount] = useState<number>(10);
+  const [targetUnit, setTargetUnit] = useState<string>('lbs');
 
-  const availableDryIngredients = useMemo(() => {
-    return amendments.filter(a => 
-      !a.is_empty && 
-      (a.physical_form === 'Granular/Dry' || a.physical_form === 'Powder')
-    ).map(a => ({
-      id: a.id,
-      name: a.name,
-      brand: a.brand || '',
-      n: Number(a.n_value) || 0,
-      p: Number(a.p_value) || 0,
-      k: Number(a.k_value) || 0
+  // Filter out ANY empty items, then filter by logical physical form
+  const availableIngredientsForOpt = useMemo(() => {
+    return amendments.filter(a => {
+      if (a.is_empty) return false;
+      if (formData.type === 'dry_mix') return a.physical_form === 'Granular/Dry' || a.physical_form === 'Powder';
+      if (formData.type === 'liquid_tea') return true; // Tea can steep dry or liquid inputs
+      return true;
+    }).map(a => ({
+      id: a.id, name: a.name, brand: a.brand || '',
+      n: Number(a.n_value) || 0, p: Number(a.p_value) || 0, k: Number(a.k_value) || 0
     }));
-  }, [amendments]);
+  }, [amendments, formData.type]);
 
   const [selectedOptIds, setSelectedOptIds] = useState<Set<string>>(
-    new Set(availableDryIngredients.map(a => a.id))
+    new Set(availableIngredientsForOpt.map(a => a.id))
   );
 
   const toggleOptimizerIngredient = (id: string) => {
@@ -227,28 +245,23 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   };
 
   const optimizerResults = useMemo(() => {
-    const activeIngredients = availableDryIngredients.filter(ing => selectedOptIds.has(ing.id));
-    return calculateOptimalDryMix(activeIngredients, targetN, targetP, targetK, targetWeight);
-  }, [availableDryIngredients, selectedOptIds, targetN, targetP, targetK, targetWeight]);
+    const activeIngredients = availableIngredientsForOpt.filter(ing => selectedOptIds.has(ing.id));
+    return calculateOptimalDryMix(activeIngredients, targetN, targetP, targetK, targetAmount);
+  }, [availableIngredientsForOpt, selectedOptIds, targetN, targetP, targetK, targetAmount]);
 
   const applyOptimizerToRecipe = () => {
-      const newIngredients = optimizerResults.map(r => ({
+      const newIngredients = optimizerResults.map((r: any) => ({
           name: r.name,
-          amount: r.calculated_lbs.toString(),
-          unit: 'lb'
+          amount: r.calculated_amount.toString(),
+          unit: targetUnit
       }));
-      
-      setIngredients(newIngredients);
+      setIngredients(newIngredients); // Replaces existing ingredients for a clean recipe
       setFormData(prev => ({
          ...prev, 
-         type: 'dry_mix', 
-         brew_time_hours: 0,
-         base_brew_gallons: targetWeight,
-         dilution_ratio: 1 
+         base_brew_gallons: targetAmount,
       }));
       setShowOptimizer(false);
   };
-
 
   const handleAddIngredient = () => {
     setIngredients([...ingredients, { name: '', amount: '1', unit: 'cup' }]);
@@ -266,10 +279,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      setError("Recipe name is required.");
-      return;
-    }
+    if (!formData.name.trim()) return setError("Recipe name is required.");
+    if (ingredients.filter(i => i.name.trim() !== '').length === 0) return setError("Add at least one ingredient.");
 
     const cleanedIngredients = ingredients.filter(i => i.name.trim() !== '');
 
@@ -281,14 +292,13 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
       type: formData.type,
       description: formData.description.trim(),
       instructions: formData.instructions.trim(),
-      brew_time_hours: formData.brew_time_hours,
+      brew_time_hours: formData.type === 'dry_mix' ? 0 : formData.brew_time_hours,
       base_brew_gallons: formData.base_brew_gallons, 
       dilution_ratio: formData.dilution_ratio,       
       ingredients: cleanedIngredients, 
     };
 
     let submitError;
-
     if (isEditing && initialData?.id) {
       const { error } = await supabase.from('recipes').update(payload).eq('id', initialData.id);
       submitError = error;
@@ -298,12 +308,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
     }
 
     setIsSubmitting(false);
-
-    if (submitError) {
-      setError(submitError.message);
-    } else {
-      onSuccess();
-    }
+    if (submitError) setError(submitError.message);
+    else onSuccess();
   };
 
   const getTypeIcon = (type: RecipeType) => {
@@ -324,10 +330,12 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
     ],
   };
 
-  const achievedWeight = optimizerResults.reduce((sum, r) => sum + r.calculated_lbs, 0) || 1;
-  const achievedN = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.n), 0) / achievedWeight).toFixed(1);
-  const achievedP = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.p), 0) / achievedWeight).toFixed(1);
-  const achievedK = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.k), 0) / achievedWeight).toFixed(1);
+  const achievedWeight = optimizerResults.reduce((sum: number, r: any) => sum + r.calculated_amount, 0) || 1;
+  const achievedN = (optimizerResults.reduce((sum: number, r: any) => sum + (r.calculated_amount * r.n), 0) / achievedWeight).toFixed(1);
+  const achievedP = (optimizerResults.reduce((sum: number, r: any) => sum + (r.calculated_amount * r.p), 0) / achievedWeight).toFixed(1);
+  const achievedK = (optimizerResults.reduce((sum: number, r: any) => sum + (r.calculated_amount * r.k), 0) / achievedWeight).toFixed(1);
+
+  const canShowOptimizer = formData.type === 'dry_mix' || formData.type === 'liquid_tea';
 
   return (
     <div className="animate-in slide-in-from-bottom-4 duration-300 bg-stone-50 min-h-screen pb-24">
@@ -443,27 +451,28 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
           </div>
 
           <div className="space-y-4">
-            <div className="flex justify-between items-end px-1">
-              <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ingredients List</h3>
-              
-              <button 
-                type="button" 
-                onClick={() => setShowOptimizer(!showOptimizer)} 
-                className="text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95"
-              >
-                ✨ Auto-Balance NPK
-              </button>
+            <div className="flex justify-between items-end px-1 border-b border-purple-200/50 pb-2">
+               <h3 className="text-[10px] font-black text-purple-800 uppercase tracking-widest">Ingredients List</h3>
+               {canShowOptimizer && (
+                  <button 
+                    type="button" 
+                    onClick={() => setShowOptimizer(!showOptimizer)} 
+                    className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-200 transition-colors flex items-center gap-1 shadow-sm active:scale-95"
+                  >
+                    ✨ Auto-Balance NPK
+                  </button>
+               )}
             </div>
 
             {/* --- NPK OPTIMIZER WIDGET --- */}
-            {showOptimizer && (
+            {canShowOptimizer && showOptimizer && (
                <div className="bg-white border border-stone-200 rounded-3xl p-5 shadow-sm mb-6 animate-in slide-in-from-top-4 duration-300">
                   <div className="flex justify-between items-center mb-4">
                      <h4 className="font-black text-amber-900 flex items-center gap-2 text-sm uppercase tracking-widest"><Target size={16} /> Target N-P-K</h4>
                      <button type="button" onClick={() => setShowOptimizer(false)} className="p-1 text-stone-400 hover:text-stone-700 rounded-full"><X size={16} /></button>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2 mb-4">
+                  <div className="grid grid-cols-3 gap-2 mb-4">
                     <div>
                       <label className="block text-[9px] font-black text-green-700 uppercase tracking-widest mb-1 text-center">N</label>
                       <input type="number" min="0" value={targetN} onChange={e => setTargetN(Number(e.target.value))} className="w-full text-center bg-green-50 border border-green-200 rounded-xl py-2 font-black text-green-700 outline-none shadow-sm focus:border-green-400" />
@@ -476,19 +485,30 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                       <label className="block text-[9px] font-black text-orange-700 uppercase tracking-widest mb-1 text-center">K</label>
                       <input type="number" min="0" value={targetK} onChange={e => setTargetK(Number(e.target.value))} className="w-full text-center bg-orange-50 border border-orange-200 rounded-xl py-2 font-black text-orange-700 outline-none shadow-sm focus:border-orange-400" />
                     </div>
-                    <div>
-                      <label className="block text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1 text-center">LBS</label>
-                      <input type="number" min="1" value={targetWeight} onChange={e => setTargetWeight(Number(e.target.value))} className="w-full text-center bg-stone-100 border border-stone-300 rounded-xl py-2 font-black text-stone-800 outline-none shadow-inner focus:border-emerald-500" />
-                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                     <label className="block text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1 text-center">Target Yield</label>
+                     <div className="flex items-center gap-2 bg-stone-100 border border-stone-200 p-2 rounded-xl shadow-inner max-w-[200px] mx-auto focus-within:border-emerald-500">
+                        <input type="number" min="1" value={targetAmount} onChange={e => setTargetAmount(Number(e.target.value))} className="w-full text-right bg-transparent py-1 font-black text-stone-800 outline-none" />
+                        <select value={targetUnit} onChange={e => setTargetUnit(e.target.value)} className="bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs font-bold text-stone-600 outline-none cursor-pointer">
+                           <option value="lbs">lbs</option>
+                           <option value="kg">kg</option>
+                           <option value="g">g</option>
+                           <option value="oz">oz</option>
+                           <option value="gal">gal</option>
+                           <option value="L">liters</option>
+                        </select>
+                     </div>
                   </div>
 
                   <div className="bg-stone-50 rounded-2xl border border-stone-200 p-4 mb-4">
-                     <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Select Shed Inventory to Use</p>
+                     <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Inventory to Use</p>
                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 scrollbar-hide">
-                        {availableDryIngredients.length === 0 ? (
-                           <p className="text-xs text-stone-400 text-center py-2 italic">No dry amendments in shed.</p>
+                        {availableIngredientsForOpt.length === 0 ? (
+                           <p className="text-xs text-stone-400 text-center py-2 italic">No available amendments in shed.</p>
                         ) : (
-                           availableDryIngredients.map(ing => (
+                           availableIngredientsForOpt.map(ing => (
                               <label key={ing.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOptIds.has(ing.id) ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-transparent opacity-60'}`}>
                                  <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${selectedOptIds.has(ing.id) ? 'bg-emerald-500 border-emerald-600' : 'bg-white border-stone-300'}`}>
                                     {selectedOptIds.has(ing.id) && <Check size={14} className="text-white" />}
@@ -560,6 +580,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                            <optgroup label="Weight">
                              <option value="oz">oz</option>
                              <option value="lb">lb</option>
+                             <option value="lbs">lbs</option>
                              <option value="g">gram</option>
                              <option value="kg">kg</option>
                            </optgroup>
