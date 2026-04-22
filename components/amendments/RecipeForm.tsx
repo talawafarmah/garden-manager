@@ -1,19 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
-import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check } from 'lucide-react';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
+
+// @ts-ignore
 import 'react-quill-new/dist/quill.snow.css';
 
 interface RecipeFormProps {
   onClose: () => void;
   onSuccess: () => void;
   initialData?: Recipe | null; 
-}
+  amendments?: any[]; // <--- NEW PROP PASSED FROM PARENT
+} 
 
 // --- ADVANCED KITCHEN MATH ENGINE ---
 const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
@@ -27,7 +30,7 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
       const [num, den] = part.split('/');
       const n = parseFloat(num); const d = parseFloat(den);
       if (!isNaN(n) && !isNaN(d) && d !== 0) { parsedAmount += (n / d); isNumeric = true; }
-    } else {
+    } else { 
       const n = parseFloat(part);
       if (!isNaN(n)) { parsedAmount += n; isNumeric = true; }
     }
@@ -38,7 +41,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   let total = parsedAmount * multiplier;
   let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); 
 
-  // US Volume Hierarchy (Base: Teaspoon)
   const usVol: Record<string, number> = {
     'tsp': 1, 'teaspoon': 1,
     'tbsp': 3, 'tablespoon': 3,
@@ -52,7 +54,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   if (usVol[unit]) {
     let remainingTsp = total * usVol[unit];
     
-    // Kitchen Standard Measures
     const measures = [
        { name: 'Gal', tsp: 768 },
        { name: 'Qt', tsp: 192 },
@@ -71,14 +72,13 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
     
     const resultParts = [];
     for (const m of measures) {
-       // Check if remaining fits this measure (with tiny float tolerance)
        if (remainingTsp >= m.tsp - 0.05) { 
           let count = Math.floor(remainingTsp / m.tsp);
-          if (remainingTsp / m.tsp - count > 0.95) count += 1; // Round up edge cases
+          if (remainingTsp / m.tsp - count > 0.95) count += 1; 
 
           if (count > 0) {
               if (m.name.includes('/')) {
-                 resultParts.push(m.name); // E.g., "1/2 Cup" instead of "1 1/2 Cup"
+                 resultParts.push(m.name);
                  remainingTsp -= m.tsp;
               } else {
                  resultParts.push(`${count} ${m.name}`);
@@ -89,11 +89,9 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
     }
     
     if (resultParts.length === 0) return "A pinch";
-    // Return max 2 units for readability (e.g., "2 Cup + 1 TBSP")
     return resultParts.slice(0, 2).join(' + ');
   }
 
-  // Metric Volume (Base: ml)
   const metricVol: Record<string, number> = { 'ml': 1, 'milliliter': 1, 'l': 1000, 'liter': 1000 };
   if (metricVol[unit]) {
     let totalMl = total * metricVol[unit];
@@ -101,7 +99,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
     return `${+(totalMl).toFixed(0)} ml`;
   }
 
-  // US Weight (Base: oz)
   const usWeight: Record<string, number> = { 'lb': 16, 'pound': 16 };
   if (usWeight[unit]) {
     let totalOz = total * usWeight[unit];
@@ -112,7 +109,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
     return `${lbs} lb`;
   }
   
-  // Grams / Kg
   const metricWeight: Record<string, number> = { 'g': 1, 'gram': 1, 'kg': 1000, 'kilogram': 1000 };
   if (metricWeight[unit]) {
       let totalG = total * metricWeight[unit];
@@ -123,8 +119,63 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   return `${+total.toFixed(2)} ${unitStr}`;
 };
 
+// --- NEW OFFLINE NPK MATH ENGINE ---
+interface NpkIngredient {
+  id: string;
+  name: string;
+  brand: string;
+  n: number;
+  p: number;
+  k: number;
+}
 
-export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFormProps) {
+const calculateOptimalDryMix = (
+  ingredients: NpkIngredient[],
+  targetN: number,
+  targetP: number,
+  targetK: number,
+  totalWeightLbs: number
+) => {
+  if (ingredients.length === 0) return [];
+  
+  // Start with 1 part of each selected ingredient
+  let weights = ingredients.map(() => 1.0); 
+  const learningRate = 0.01; 
+  const iterations = 5000;
+
+  // Gradient Descent Optimization
+  for (let i = 0; i < iterations; i++) {
+    let sumW = weights.reduce((a, b) => a + b, 0);
+    if (sumW === 0) sumW = 0.0001; // prevent division by zero
+
+    let currentN = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].n, 0) / sumW;
+    let currentP = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].p, 0) / sumW;
+    let currentK = weights.reduce((sum, w, idx) => sum + w * ingredients[idx].k, 0) / sumW;
+
+    let errorN = currentN - targetN;
+    let errorP = currentP - targetP;
+    let errorK = currentK - targetK;
+
+    for (let j = 0; j < weights.length; j++) {
+      let gradN = errorN * (ingredients[j].n - currentN) / sumW;
+      let gradP = errorP * (ingredients[j].p - currentP) / sumW;
+      let gradK = errorK * (ingredients[j].k - currentK) / sumW;
+
+      weights[j] -= learningRate * (gradN + gradP + gradK);
+      if (weights[j] < 0) weights[j] = 0; // Can't have negative fertilizer
+    }
+  }
+
+  let finalSumW = weights.reduce((a, b) => a + b, 0) || 1;
+  
+  return ingredients.map((ing, idx) => ({
+    ...ing,
+    calculated_lbs: Number(((weights[idx] / finalSumW) * totalWeightLbs).toFixed(2))
+  })).filter(ing => ing.calculated_lbs > 0.01); // Filter out unused ingredients
+};
+
+
+export default function RecipeForm({ onClose, onSuccess, initialData, amendments = [] }: RecipeFormProps) {
   const isEditing = !!initialData;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +193,62 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
     initialData?.ingredients?.length ? initialData.ingredients : [{ name: '', amount: '1', unit: 'cup' }]
   );
+
+  // --- NPK OPTIMIZER STATE ---
+  const [showOptimizer, setShowOptimizer] = useState(false);
+  const [targetN, setTargetN] = useState<number>(4);
+  const [targetP, setTargetP] = useState<number>(4);
+  const [targetK, setTargetK] = useState<number>(4);
+  const [targetWeight, setTargetWeight] = useState<number>(10);
+
+  const availableDryIngredients = useMemo(() => {
+    return amendments.filter(a => 
+      !a.is_empty && 
+      (a.physical_form === 'Granular/Dry' || a.physical_form === 'Powder')
+    ).map(a => ({
+      id: a.id,
+      name: a.name,
+      brand: a.brand || '',
+      n: Number(a.n_value) || 0,
+      p: Number(a.p_value) || 0,
+      k: Number(a.k_value) || 0
+    }));
+  }, [amendments]);
+
+  const [selectedOptIds, setSelectedOptIds] = useState<Set<string>>(
+    new Set(availableDryIngredients.map(a => a.id))
+  );
+
+  const toggleOptimizerIngredient = (id: string) => {
+    const next = new Set(selectedOptIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedOptIds(next);
+  };
+
+  const optimizerResults = useMemo(() => {
+    const activeIngredients = availableDryIngredients.filter(ing => selectedOptIds.has(ing.id));
+    return calculateOptimalDryMix(activeIngredients, targetN, targetP, targetK, targetWeight);
+  }, [availableDryIngredients, selectedOptIds, targetN, targetP, targetK, targetWeight]);
+
+  const applyOptimizerToRecipe = () => {
+      const newIngredients = optimizerResults.map(r => ({
+          name: r.name,
+          amount: r.calculated_lbs.toString(),
+          unit: 'lb'
+      }));
+      
+      setIngredients(newIngredients);
+      setFormData(prev => ({
+         ...prev, 
+         type: 'dry_mix', 
+         brew_time_hours: 0,
+         base_brew_gallons: targetWeight,
+         dilution_ratio: 1 
+      }));
+      setShowOptimizer(false);
+  };
+
 
   const handleAddIngredient = () => {
     setIngredients([...ingredients, { name: '', amount: '1', unit: 'cup' }]);
@@ -217,14 +324,19 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
     ],
   };
 
+  const achievedWeight = optimizerResults.reduce((sum, r) => sum + r.calculated_lbs, 0) || 1;
+  const achievedN = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.n), 0) / achievedWeight).toFixed(1);
+  const achievedP = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.p), 0) / achievedWeight).toFixed(1);
+  const achievedK = (optimizerResults.reduce((sum, r) => sum + (r.calculated_lbs * r.k), 0) / achievedWeight).toFixed(1);
+
   return (
-    <div className="animate-in slide-in-from-bottom-4 duration-300 bg-white min-h-screen pb-24">
-      <header className="bg-white border-b border-stone-200 p-4 sticky top-0 z-10 flex items-center justify-between">
+    <div className="animate-in slide-in-from-bottom-4 duration-300 bg-stone-50 min-h-screen pb-24">
+      <header className="bg-white border-b border-stone-200 p-4 sticky top-0 z-20 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <button onClick={onClose} className="p-2 -ml-2 text-stone-400 hover:bg-stone-100 hover:text-stone-800 rounded-full transition-colors">
             <ArrowLeft size={24} />
           </button>
-          <h2 className="text-lg font-black text-stone-800">{isEditing ? 'Edit Recipe' : 'New Master Recipe'}</h2>
+          <h2 className="text-lg font-black text-stone-800">{isEditing ? 'Edit Master Recipe' : 'New Master Recipe'}</h2>
         </div>
       </header>
 
@@ -239,7 +351,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
           
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Recipe Identity</h3>
-            <div className="bg-stone-50 p-4 rounded-3xl border border-stone-100 shadow-sm space-y-4">
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-sm space-y-4">
               <div>
                 <label className="block text-[10px] font-black text-stone-500 uppercase mb-1.5">Recipe Name</label>
                 <input
@@ -248,7 +360,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g., Fungal Compost Tea"
-                  className="w-full bg-white border border-stone-200 rounded-xl p-3 font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
                 />
               </div>
 
@@ -259,9 +371,9 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                     <select
                       value={formData.type}
                       onChange={e => setFormData({ ...formData, type: e.target.value as RecipeType })}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm appearance-none pl-10"
+                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm appearance-none pl-10"
                     >
-                      <option value="liquid_tea">Liquid Tea</option>
+                      <option value="liquid_tea">Liquid Brew / Tea</option>
                       <option value="dry_mix">Dry Mix</option>
                       <option value="extract">Botanical Extract</option>
                       <option value="ferment">Ferment (JADAM)</option>
@@ -272,19 +384,21 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-black text-stone-500 uppercase mb-1.5">Brew/Cook Time</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.brew_time_hours}
-                      onChange={e => setFormData({ ...formData, brew_time_hours: Number(e.target.value) })}
-                      className="w-full bg-white border border-stone-200 rounded-xl p-3 font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
-                    />
-                    <span className="absolute right-4 top-3.5 text-xs font-black text-stone-400 uppercase tracking-widest pointer-events-none">Hours</span>
-                  </div>
-                </div>
+                {formData.type !== 'dry_mix' && (
+                   <div className="animate-in fade-in zoom-in-95">
+                     <label className="block text-[10px] font-black text-stone-500 uppercase mb-1.5">Brew/Cook Time</label>
+                     <div className="relative flex bg-stone-50 border border-stone-200 rounded-xl overflow-hidden shadow-sm focus-within:border-purple-500">
+                       <input
+                         type="number"
+                         min="0"
+                         value={formData.brew_time_hours}
+                         onChange={e => setFormData({ ...formData, brew_time_hours: Number(e.target.value) })}
+                         className="w-full p-3 font-bold text-stone-800 outline-none bg-transparent"
+                       />
+                       <span className="bg-stone-100 px-4 py-3 text-xs font-bold text-stone-500 border-l border-stone-200 flex items-center pointer-events-none">Hours</span>
+                     </div>
+                   </div>
+                )}
               </div>
 
               <div className="quill-container">
@@ -305,25 +419,24 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
 
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Smart Scaling Rules</h3>
-            <div className="bg-purple-50 p-4 rounded-3xl border border-purple-100 shadow-sm space-y-4">
+            <div className="bg-purple-50 p-4 sm:p-5 rounded-3xl border border-purple-100 shadow-sm space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Base Yield Volume</label>
+                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Base Yield {formData.type === 'dry_mix' ? 'Weight' : 'Volume'}</label>
                   <div className="flex items-center gap-2 bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
                     <input type="number" min="0.1" step="0.1" value={formData.base_brew_gallons || ''} onChange={e => setFormData({...formData, base_brew_gallons: Number(e.target.value)})} className="w-full text-center font-bold text-purple-900 outline-none" />
-                    <span className="text-purple-400 font-bold text-xs pr-2">Gallons</span>
+                    <span className="text-purple-400 font-bold text-xs pr-2">{formData.type === 'dry_mix' ? 'Lbs' : 'Gallons'}</span>
                   </div>
-                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">What volume does this ingredient list make naturally?</p>
+                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">What amount does this ingredient list make naturally?</p>
                 </div>
                 
                 <div>
                   <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Dilution Ratio</label>
                   <div className="flex items-center bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
-                    {/* FIX: Prevented wrapping and spacing issue here */}
                     <span className="text-purple-400 font-black text-sm pl-3 pr-1 whitespace-nowrap">1 :</span>
                     <input type="number" min="1" value={formData.dilution_ratio || ''} onChange={e => setFormData({...formData, dilution_ratio: Number(e.target.value)})} className="w-full text-left font-bold text-purple-900 outline-none" />
                   </div>
-                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">e.g., '10' means 1 part concentrate to 10 parts water.</p>
+                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">e.g., '10' means 1 part {formData.type === 'dry_mix' ? 'mix' : 'concentrate'} to 10 parts {formData.type === 'dry_mix' ? 'soil' : 'water'}.</p>
                 </div>
               </div>
             </div>
@@ -332,78 +445,144 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
           <div className="space-y-4">
             <div className="flex justify-between items-end px-1">
               <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ingredients List</h3>
+              
+              <button 
+                type="button" 
+                onClick={() => setShowOptimizer(!showOptimizer)} 
+                className="text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95"
+              >
+                ✨ Auto-Balance NPK
+              </button>
             </div>
-            
-            <div className="bg-purple-50 p-4 rounded-3xl border border-purple-100 shadow-sm space-y-3">
-              {ingredients.map((ing, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="flex-1 grid grid-cols-12 gap-2 bg-white p-2 rounded-xl border border-purple-200 shadow-sm">
-                    <div className="col-span-6">
-                      <input
-                        type="text"
-                        placeholder="Ingredient (e.g. Kelp)"
-                        value={ing.name}
-                        onChange={e => handleUpdateIngredient(idx, 'name', e.target.value)}
-                        className="w-full bg-transparent text-sm font-bold text-stone-800 outline-none px-2 py-1"
-                      />
+
+            {/* --- NPK OPTIMIZER WIDGET --- */}
+            {showOptimizer && (
+               <div className="bg-white border border-stone-200 rounded-3xl p-5 shadow-sm mb-6 animate-in slide-in-from-top-4 duration-300">
+                  <div className="flex justify-between items-center mb-4">
+                     <h4 className="font-black text-amber-900 flex items-center gap-2 text-sm uppercase tracking-widest"><Target size={16} /> Target N-P-K</h4>
+                     <button type="button" onClick={() => setShowOptimizer(false)} className="p-1 text-stone-400 hover:text-stone-700 rounded-full"><X size={16} /></button>
+                  </div>
+                  
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    <div>
+                      <label className="block text-[9px] font-black text-green-700 uppercase tracking-widest mb-1 text-center">N</label>
+                      <input type="number" min="0" value={targetN} onChange={e => setTargetN(Number(e.target.value))} className="w-full text-center bg-green-50 border border-green-200 rounded-xl py-2 font-black text-green-700 outline-none shadow-sm focus:border-green-400" />
                     </div>
-                    <div className="col-span-3 border-l border-purple-100 pl-2">
-                      <input
-                        type="text"
-                        placeholder="Qty"
-                        value={ing.amount}
-                        onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
-                        className="w-full bg-transparent text-sm font-black text-purple-700 text-center outline-none py-1"
-                      />
+                    <div>
+                      <label className="block text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1 text-center">P</label>
+                      <input type="number" min="0" value={targetP} onChange={e => setTargetP(Number(e.target.value))} className="w-full text-center bg-blue-50 border border-blue-200 rounded-xl py-2 font-black text-blue-700 outline-none shadow-sm focus:border-blue-400" />
                     </div>
-                    <div className="col-span-3 border-l border-purple-100 pl-2 flex items-center">
-                      {/* FIX: Forced Dropdown for standard units */}
-                      <select
-                        value={ing.unit}
-                        onChange={e => handleUpdateIngredient(idx, 'unit', e.target.value)}
-                        className="w-full bg-transparent text-[10px] font-black text-stone-500 uppercase tracking-wider text-center outline-none py-1 appearance-none cursor-pointer"
-                      >
-                        <optgroup label="Volume (US)">
-                          <option value="tsp">tsp</option>
-                          <option value="tbsp">tbsp</option>
-                          <option value="fl oz">fl oz</option>
-                          <option value="cup">cup</option>
-                          <option value="pt">pint</option>
-                          <option value="qt">quart</option>
-                          <option value="gal">gallon</option>
-                        </optgroup>
-                        <optgroup label="Volume (Metric)">
-                          <option value="ml">ml</option>
-                          <option value="l">liter</option>
-                        </optgroup>
-                        <optgroup label="Weight">
-                          <option value="oz">oz</option>
-                          <option value="lb">lb</option>
-                          <option value="g">gram</option>
-                          <option value="kg">kg</option>
-                        </optgroup>
-                        <optgroup label="Other">
-                          <option value="part">part</option>
-                          <option value="scoop">scoop</option>
-                          <option value="handful">handful</option>
-                        </optgroup>
-                      </select>
+                    <div>
+                      <label className="block text-[9px] font-black text-orange-700 uppercase tracking-widest mb-1 text-center">K</label>
+                      <input type="number" min="0" value={targetK} onChange={e => setTargetK(Number(e.target.value))} className="w-full text-center bg-orange-50 border border-orange-200 rounded-xl py-2 font-black text-orange-700 outline-none shadow-sm focus:border-orange-400" />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1 text-center">LBS</label>
+                      <input type="number" min="1" value={targetWeight} onChange={e => setTargetWeight(Number(e.target.value))} className="w-full text-center bg-stone-100 border border-stone-300 rounded-xl py-2 font-black text-stone-800 outline-none shadow-inner focus:border-emerald-500" />
                     </div>
                   </div>
-                  <button 
-                    type="button" 
-                    onClick={() => handleRemoveIngredient(idx)}
-                    className="w-10 h-10 flex flex-shrink-0 items-center justify-center bg-white border border-red-100 text-red-400 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
+
+                  <div className="bg-stone-50 rounded-2xl border border-stone-200 p-4 mb-4">
+                     <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">Select Shed Inventory to Use</p>
+                     <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 scrollbar-hide">
+                        {availableDryIngredients.length === 0 ? (
+                           <p className="text-xs text-stone-400 text-center py-2 italic">No dry amendments in shed.</p>
+                        ) : (
+                           availableDryIngredients.map(ing => (
+                              <label key={ing.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOptIds.has(ing.id) ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-transparent opacity-60'}`}>
+                                 <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${selectedOptIds.has(ing.id) ? 'bg-emerald-500 border-emerald-600' : 'bg-white border-stone-300'}`}>
+                                    {selectedOptIds.has(ing.id) && <Check size={14} className="text-white" />}
+                                 </div>
+                                 <div className="flex-1 min-w-0">
+                                     <span className="text-sm font-bold text-stone-800 block truncate">{ing.name}</span>
+                                     <span className="text-[9px] text-stone-400 uppercase tracking-widest block truncate">{ing.brand}</span>
+                                 </div>
+                                 <span className="text-[10px] font-mono font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded border border-stone-200 shrink-0">{ing.n}-{ing.p}-{ing.k}</span>
+                              </label>
+                           ))
+                        )}
+                     </div>
+                  </div>
+
+                  <div className="bg-amber-100/50 border border-amber-200 rounded-2xl p-4 text-center">
+                     <p className="text-[9px] font-black uppercase tracking-widest text-amber-700 mb-1">Estimated Result</p>
+                     <p className="text-3xl font-black text-amber-900">{achievedN} - {achievedP} - {achievedK}</p>
+                     
+                     <button type="button" onClick={applyOptimizerToRecipe} className="w-full mt-4 bg-amber-500 text-white font-black uppercase tracking-widest py-3.5 rounded-xl shadow-md active:scale-95 transition-transform text-xs hover:bg-amber-600">
+                        Apply to Recipe
+                     </button>
+                  </div>
+               </div>
+            )}
+            
+            <div className="bg-stone-50 p-4 rounded-3xl border border-stone-200 shadow-inner space-y-3">
+              {ingredients.length === 0 ? (
+                 <div className="text-center py-8 text-stone-400 text-sm italic">No ingredients added yet.</div>
+              ) : (
+                 ingredients.map((ing, idx) => (
+                   <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded-2xl border border-stone-200 relative group animate-in slide-in-from-left-2 shadow-sm">
+                     <div className="flex-1 space-y-2">
+                       <input
+                         type="text"
+                         placeholder="Ingredient Name (e.g. Kelp Meal)"
+                         value={ing.name}
+                         onChange={e => handleUpdateIngredient(idx, 'name', e.target.value)}
+                         className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
+                       />
+                       
+                       <div className="flex gap-2">
+                         <input
+                           type="text"
+                           placeholder="Qty"
+                           value={ing.amount}
+                           onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
+                           className="w-24 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-black text-purple-700 text-center outline-none focus:border-purple-500 shadow-sm"
+                         />
+                         
+                         <select
+                           value={ing.unit}
+                           onChange={e => handleUpdateIngredient(idx, 'unit', e.target.value)}
+                           className="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs font-black text-stone-500 uppercase tracking-wider outline-none focus:border-purple-500 shadow-sm appearance-none cursor-pointer"
+                         >
+                           <optgroup label="Volume (US)">
+                             <option value="tsp">tsp</option>
+                             <option value="tbsp">tbsp</option>
+                             <option value="fl oz">fl oz</option>
+                             <option value="cup">cup</option>
+                             <option value="pt">pint</option>
+                             <option value="qt">quart</option>
+                             <option value="gal">gallon</option>
+                           </optgroup>
+                           <optgroup label="Volume (Metric)">
+                             <option value="ml">ml</option>
+                             <option value="l">liter</option>
+                           </optgroup>
+                           <optgroup label="Weight">
+                             <option value="oz">oz</option>
+                             <option value="lb">lb</option>
+                             <option value="g">gram</option>
+                             <option value="kg">kg</option>
+                           </optgroup>
+                           <optgroup label="Other">
+                             <option value="part">part</option>
+                             <option value="scoop">scoop</option>
+                             <option value="handful">handful</option>
+                           </optgroup>
+                         </select>
+                       </div>
+                     </div>
+                     
+                     <button type="button" onClick={() => handleRemoveIngredient(idx)} className="w-10 h-10 flex flex-shrink-0 items-center justify-center bg-stone-50 border border-stone-200 text-stone-400 rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors mt-1">
+                       <Trash2 size={16} />
+                     </button>
+                   </div>
+                 ))
+              )}
 
               <button 
                 type="button" 
                 onClick={handleAddIngredient}
-                className="w-full py-3 bg-purple-100/50 text-purple-700 text-xs font-black uppercase tracking-widest rounded-xl border border-purple-200 border-dashed hover:bg-purple-100 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 bg-white text-stone-500 text-xs font-black uppercase tracking-widest rounded-2xl border-2 border-stone-200 border-dashed hover:bg-stone-100 hover:border-stone-300 transition-colors flex items-center justify-center gap-2"
               >
                 <Plus size={16} /> Add Ingredient
               </button>
@@ -411,8 +590,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
           </div>
 
           <div className="space-y-4 quill-container">
-            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Brewing Instructions</h3>
-            <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+            <h3 className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">Brewing / Mixing Instructions</h3>
+            <div className="bg-white rounded-3xl overflow-hidden border border-stone-200 shadow-sm">
                <ReactQuill 
                   theme="snow"
                   value={formData.instructions}
@@ -443,8 +622,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
           border: none !important;
           border-bottom: 1px solid #e5e7eb !important;
           background-color: #fafaf9;
-          border-top-left-radius: 0.75rem;
-          border-top-right-radius: 0.75rem;
+          padding: 12px !important;
         }
         .quill-container .ql-container {
           border: none !important;
@@ -455,6 +633,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData }: RecipeFo
           min-height: 100%;
           color: #292524 !important; 
           font-weight: 500;
+          padding: 16px !important;
         }
         .quill-container .ql-editor.ql-blank::before {
           color: #a8a29e !important; 

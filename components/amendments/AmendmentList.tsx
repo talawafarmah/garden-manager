@@ -4,9 +4,17 @@ import React, { useState, useMemo } from 'react';
 import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon, ArchiveX } from 'lucide-react';
 import { Amendment, AmendmentType } from '@/types/amendments';
 
-export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: any) {
+interface AmendmentListProps {
+  initialAmendments: Amendment[];
+  navigateTo: (view: any, payload?: any) => void; 
+  handleGoBack: (fallbackView: any) => void;      
+  isEmbedded?: boolean; 
+}
+
+export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: AmendmentListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
+  const [formFilter, setFormFilter] = useState<string>('all');
 
   const filteredAmendments = useMemo(() => {
     return initialAmendments.filter((amendment: any) => {
@@ -18,10 +26,12 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
         safeBrand.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesType = typeFilter === 'all' || amendment.type === typeFilter;
+      const itemForm = amendment.physical_form || 'Granular/Dry';
+      const matchesForm = formFilter === 'all' || itemForm === formFilter;
 
-      return matchesSearch && matchesType;
+      return matchesSearch && matchesType && matchesForm;
     });
-  }, [initialAmendments, searchTerm, typeFilter]);
+  }, [initialAmendments, searchTerm, typeFilter, formFilter]);
 
   const getTypeIcon = (type: AmendmentType) => {
     switch(type) {
@@ -58,34 +68,52 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
       )}
 
       <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4 ${!isEmbedded ? 'sticky top-0 z-10' : ''}`}>
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-green-500 focus:border-green-500 bg-gray-50 text-gray-900 font-medium outline-none"
+              placeholder="Search by brand or product name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 bg-gray-50 text-gray-900 font-medium outline-none"
-            placeholder="Search by brand or product name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          
+          <div className="relative w-full sm:w-48 shrink-0">
+             <select 
+               value={formFilter} 
+               onChange={e => setFormFilter(e.target.value)} 
+               className="w-full bg-gray-50 border border-gray-300 rounded-xl py-2.5 pl-3 pr-8 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm text-gray-700 font-bold appearance-none cursor-pointer"
+             >
+               <option value="all">All Forms</option>
+               <option value="Granular/Dry">Granular / Dry</option>
+               <option value="Powder">Fine Powder</option>
+               <option value="Water-Soluble">Water Soluble</option>
+               <option value="Liquid">Liquid</option>
+             </select>
+             <svg className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </div>
         </div>
 
         <div className="flex overflow-x-auto pb-2 -mx-1 px-1 gap-2 scrollbar-hide">
           <button
             onClick={() => setTypeFilter('all')}
             className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${
-              typeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+              typeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            All Inventory
+            All Source Types
           </button>
           {['organic', 'synthetic', 'compost', 'mineral', 'microbial'].map((type) => (
             <button
               key={type}
               onClick={() => setTypeFilter(type as AmendmentType)}
               className={`whitespace-nowrap flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold capitalize transition-colors ${
-                typeFilter === type ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800'
+                typeFilter === type ? 'bg-green-700 text-white' : 'bg-green-50 text-green-800 hover:bg-green-100'
               }`}
             >
               {getTypeIcon(type as AmendmentType)}
@@ -96,11 +124,11 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
       </div>
 
       {filteredAmendments.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed">
-          <p className="text-gray-500 font-medium mb-4">No amendments found.</p>
+        <div className="text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed shadow-sm">
+          <p className="text-gray-500 font-medium mb-4">No amendments found matching your filters.</p>
           <button 
             onClick={() => navigateTo('amendment_new')}
-            className="inline-flex items-center text-green-700 font-bold hover:text-green-800 transition-colors"
+            className="inline-flex items-center text-green-700 font-bold hover:text-green-800 transition-colors bg-green-50 px-4 py-2 rounded-lg"
           >
             <Plus size={18} className="mr-1" /> Add New Amendment
           </button>
@@ -108,7 +136,8 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {filteredAmendments.map((amendment: any) => {
-            const isEmpty = amendment.is_empty || amendment.qty_in_stock <= 0;
+            // FIXED: Removed the quantity logic. Now it only greys out if explicitly marked empty.
+            const isEmpty = amendment.is_empty;
 
             return (
               <button 
@@ -147,12 +176,17 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
                   </div>
 
                   <div className="mt-auto flex justify-between items-center">
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg">
-                      {getTypeIcon(amendment.type)}
-                      {amendment.physical_form || amendment.type}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                       <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg w-fit">
+                         {getTypeIcon(amendment.type)}
+                         {amendment.type.replace('_', ' ')}
+                       </span>
+                       <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                         {amendment.physical_form || 'Granular/Dry'}
+                       </span>
+                    </div>
 
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 items-end">
                       <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
                         <span className="text-[9px] text-green-700 font-bold">N</span>
                         <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
