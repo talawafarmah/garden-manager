@@ -1,22 +1,15 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import { Search, Plus, Leaf, Beaker, Sprout, Mountain, Microscope, ArrowLeft, Image as ImageIcon, ArchiveX } from 'lucide-react';
 import { Amendment, AmendmentType } from '@/types/amendments';
 
-interface AmendmentListProps {
-  initialAmendments: Amendment[];
-  navigateTo: (view: any, payload?: any) => void; 
-  handleGoBack: (fallbackView: any) => void;      
-  isEmbedded?: boolean; // NEW: Tells the list to hide its own header
-}
-
-export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: AmendmentListProps) {
+export default function AmendmentList({ initialAmendments, navigateTo, handleGoBack, isEmbedded = false }: any) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<AmendmentType | 'all'>('all');
 
   const filteredAmendments = useMemo(() => {
-    return initialAmendments.filter((amendment) => {
+    return initialAmendments.filter((amendment: any) => {
       const safeName = amendment.name || '';
       const safeBrand = amendment.brand || '';
       
@@ -44,7 +37,6 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
   return (
     <div className={`space-y-6 ${!isEmbedded ? 'pb-20' : ''}`}>
       
-      {/* Hide this header if rendered inside Apothecary tabs */}
       {!isEmbedded && (
         <div className="flex justify-between items-center px-1">
           <div className="flex items-center gap-2">
@@ -52,7 +44,7 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
               <ArrowLeft size={24} className="text-gray-700" />
             </button>
             <button onClick={() => navigateTo('dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-700" title="Dashboard">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
             </button>
           </div>
           <h1 className="text-xl font-bold text-gray-900 pr-2">Digital Shed</h1>
@@ -115,59 +107,69 @@ export default function AmendmentList({ initialAmendments, navigateTo, handleGoB
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filteredAmendments.map((amendment) => (
-            <button 
-              key={amendment.id} 
-              onClick={() => navigateTo('amendment_detail', amendment)}
-              className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-green-400 hover:shadow-md transition-all h-full flex flex-col group"
-            >
-                <div className="flex gap-4 mb-3 w-full items-start">
-                  {amendment.thumbnail ? (
-                    <img 
-                      src={amendment.thumbnail} 
-                      alt={amendment.name} 
-                      className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
-                      <ImageIcon size={20} className="mb-1 opacity-50" />
-                      <span className="text-[8px] font-bold uppercase">No Image</span>
-                    </div>
+          {filteredAmendments.map((amendment: any) => {
+            const isEmpty = amendment.is_empty || amendment.qty_in_stock <= 0;
+
+            return (
+              <button 
+                key={amendment.id} 
+                onClick={() => navigateTo('amendment_detail', amendment)}
+                className={`text-left bg-white border border-gray-200 rounded-xl p-4 transition-all h-full flex flex-col group relative ${isEmpty ? 'opacity-60 grayscale-[50%]' : 'hover:border-green-400 hover:shadow-md'}`}
+              >
+                  {isEmpty && (
+                     <div className="absolute top-2 right-2 bg-stone-100 border border-stone-200 text-stone-500 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-sm flex items-center gap-1 z-10">
+                        <ArchiveX size={10} /> Empty
+                     </div>
                   )}
 
-                  <div className="flex-1 pt-1">
-                    <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
-                      {amendment.brand}
+                  <div className="flex gap-4 mb-3 w-full items-start">
+                    {amendment.thumbnail ? (
+                      <img 
+                        src={amendment.thumbnail} 
+                        alt={amendment.name} 
+                        className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0 shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl bg-gray-50 flex flex-col items-center justify-center border border-gray-200 flex-shrink-0 text-gray-400">
+                        <ImageIcon size={20} className="mb-1 opacity-50" />
+                        <span className="text-[8px] font-bold uppercase">No Image</span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 pt-1 pr-14">
+                      <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest block mb-1">
+                        {amendment.brand}
+                      </span>
+                      <h3 className={`text-base font-bold transition-colors line-clamp-2 leading-tight ${isEmpty ? 'text-gray-700' : 'text-gray-900 group-hover:text-green-700'}`}>
+                        {amendment.name}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex justify-between items-center">
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg">
+                      {getTypeIcon(amendment.type)}
+                      {amendment.physical_form || amendment.type}
                     </span>
-                    <h3 className="text-base font-bold text-gray-900 group-hover:text-green-700 transition-colors line-clamp-2 leading-tight">
-                      {amendment.name}
-                    </h3>
-                  </div>
-                </div>
 
-                <div className="mt-auto flex justify-between items-center">
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-gray-50 text-gray-600 border border-gray-100 rounded-lg">
-                    {getTypeIcon(amendment.type)}
-                    {amendment.type}
-                  </span>
-
-                  <div className="flex gap-1.5">
-                    <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-green-700 font-bold">N</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
-                    </div>
-                    <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-blue-700 font-bold">P</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
-                    </div>
-                    <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
-                      <span className="text-[9px] text-orange-600 font-bold">K</span>
-                      <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
+                    <div className="flex gap-1.5">
+                      <div className="bg-green-50/80 border border-green-100 px-2 py-1 rounded flex items-center gap-1">
+                        <span className="text-[9px] text-green-700 font-bold">N</span>
+                        <span className="font-bold text-xs text-gray-900">{amendment.n_value}</span>
+                      </div>
+                      <div className="bg-blue-50/80 border border-blue-100 px-2 py-1 rounded flex items-center gap-1">
+                        <span className="text-[9px] text-blue-700 font-bold">P</span>
+                        <span className="font-bold text-xs text-gray-900">{amendment.p_value}</span>
+                      </div>
+                      <div className="bg-orange-50/80 border border-orange-100 px-2 py-1 rounded flex items-center gap-1">
+                        <span className="text-[9px] text-orange-600 font-bold">K</span>
+                        <span className="font-bold text-xs text-gray-900">{amendment.k_value}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

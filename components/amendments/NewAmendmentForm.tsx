@@ -3,14 +3,8 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Amendment, AmendmentType } from '@/types/amendments';
-import { Camera, AlertCircle, ArrowLeft, Loader2, ListPlus } from 'lucide-react';
+import { Camera, AlertCircle, ArrowLeft, Loader2, ListPlus, ArchiveX } from 'lucide-react';
 import ProductCapture from './ProductCapture';
-
-interface NewAmendmentFormProps {
-  navigateTo: (view: any, payload?: any) => void;
-  handleGoBack: (fallbackView: any) => void;
-  initialData?: Amendment | null; 
-}
 
 const generateThumbnail = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -47,7 +41,7 @@ const generateThumbnail = (file: File): Promise<string> => {
   });
 };
 
-export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData }: NewAmendmentFormProps) {
+export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData }: any) {
   const isEditing = !!initialData;
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,8 +51,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [extractedSchedules, setExtractedSchedules] = useState<any[]>([]);
-
-  // Add ref for manual image upload
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [previewUrls, setPreviewUrls] = useState<string[]>(
@@ -71,6 +63,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
     brand: initialData?.brand || '',
     name: initialData?.name || '',
     type: initialData?.type || 'organic' as AmendmentType,
+    physical_form: initialData?.physical_form || 'Granular/Dry',
+    qty_in_stock: initialData?.qty_in_stock !== undefined ? String(initialData.qty_in_stock) : '',
+    unit: initialData?.unit || 'lbs',
+    is_empty: initialData?.is_empty || false,
     n_value: initialData?.n_value !== undefined ? String(initialData.n_value) : '',
     p_value: initialData?.p_value !== undefined ? String(initialData.p_value) : '',
     k_value: initialData?.k_value !== undefined ? String(initialData.k_value) : '',
@@ -81,11 +77,11 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target;
+    const finalValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+    setFormData((prev) => ({ ...prev, [name]: finalValue }));
   };
 
-  // Handle a user just taking a normal photo without AI analysis
   const handleManualImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -158,7 +154,6 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       try {
         finalThumbnail = await generateThumbnail(pendingImages[0]); 
         const newImageUrls = [];
-
         const targetBucket = 'talawa_media';
         const obfuscatedFolder = 'amend_x8q9p2'; 
 
@@ -166,22 +161,15 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
           const fileExt = file.name.split('.').pop() || 'jpg';
           const filePath = `${obfuscatedFolder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           
-          const { error: uploadError } = await supabase.storage
-            .from(targetBucket)
-            .upload(filePath, file);
-
+          const { error: uploadError } = await supabase.storage.from(targetBucket).upload(filePath, file);
           if (uploadError) throw uploadError;
 
-          const { data: publicUrlData } = supabase.storage
-            .from(targetBucket)
-            .getPublicUrl(filePath);
-            
+          const { data: publicUrlData } = supabase.storage.from(targetBucket).getPublicUrl(filePath);
           newImageUrls.push(publicUrlData.publicUrl);
         }
 
         finalImages = isEditing ? [...finalImages, ...newImageUrls] : newImageUrls; 
         finalImageUrl = finalImages[0]; 
-        
       } catch (err: any) {
         setError("Image processing failed: " + err.message);
         setIsSubmitting(false);
@@ -193,6 +181,10 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       brand: formData.brand,
       name: formData.name,
       type: formData.type,
+      physical_form: formData.physical_form,
+      qty_in_stock: parseFloat(formData.qty_in_stock) || 0,
+      unit: formData.unit,
+      is_empty: formData.is_empty,
       n_value: parseFloat(formData.n_value) || 0,
       p_value: parseFloat(formData.p_value) || 0,
       k_value: parseFloat(formData.k_value) || 0,
@@ -237,10 +229,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
         notes: sched.notes || ''
       }));
 
-      const { error: scheduleError } = await supabase.from('feeding_schedules').insert(schedulesPayload);
-      if (scheduleError) {
-        console.error("Failed to save extracted schedules:", scheduleError);
-      }
+      await supabase.from('feeding_schedules').insert(schedulesPayload);
     }
 
     setIsSubmitting(false);
@@ -248,7 +237,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
   };
 
   return (
-    <div className="bg-white min-h-screen pb-24">
+    <div className={`bg-white min-h-screen pb-24 ${formData.is_empty ? 'opacity-90' : ''}`}>
       {showScanner && (
         <ProductCapture 
           onAnalysisSuccess={handleAnalysisSuccess} 
@@ -257,20 +246,13 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
       )}
 
       <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
-        <button 
-          onClick={() => handleGoBack('amendments')} 
-          className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
-        >
+        <button onClick={() => handleGoBack('amendments')} className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
           <ArrowLeft size={24} className="text-gray-700" />
         </button>
         <h2 className="text-lg font-bold text-gray-900">
           {isEditing ? 'Edit Amendment' : 'Add Amendment'}
         </h2>
-        <button
-          type="button"
-          onClick={() => setShowScanner(true)}
-          className="flex items-center gap-2 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95 transition-transform"
-        >
+        <button type="button" onClick={() => setShowScanner(true)} className="flex items-center gap-2 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95 transition-transform">
           <Camera size={16} />
           <span>Analyze AI</span>
         </button>
@@ -302,39 +284,23 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
            </div>
         )}
 
-        {/* Hidden input to securely capture a photo from the phone camera */}
-        <input 
-          type="file" 
-          accept="image/*" 
-          capture="environment" 
-          ref={fileInputRef}
-          onChange={handleManualImageUpload} 
-          className="hidden" 
-        />
+        <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleManualImageUpload} className="hidden" />
 
         {previewUrls.length > 0 ? (
           <div className="mb-6 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {previewUrls.map((url, idx) => (
               <div key={idx} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-green-500 shadow-md flex-shrink-0">
-                <img src={url} alt={`Thumbnail Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                <img src={url} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
               </div>
             ))}
-            <button 
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:text-green-600 hover:border-green-500 transition-colors flex-shrink-0 bg-gray-50 active:scale-95"
-            >
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:text-green-600 hover:border-green-500 bg-gray-50 active:scale-95">
               <Camera size={24} className="mb-1" />
-              <span className="text-[9px] font-bold uppercase tracking-widest text-center">Add<br/>Photo</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-center">Add Photo</span>
             </button>
           </div>
         ) : (
           <div className="mb-6">
-            <button 
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-6 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-500 hover:text-green-600 hover:border-green-500 transition-colors bg-gray-50 active:scale-95 shadow-sm"
-            >
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full py-6 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-500 hover:text-green-600 hover:border-green-500 bg-gray-50 active:scale-95">
               <Camera size={28} className="mb-2" />
               <span className="text-xs font-bold uppercase tracking-widest">Take Product Photo</span>
             </button>
@@ -344,118 +310,97 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
         <form onSubmit={handleSubmit} className="space-y-8">
           
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Identity</h3>
-            <div className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex justify-between items-end px-1">
+               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Identity & Stock</h3>
+               <label className="flex items-center gap-2 cursor-pointer">
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${formData.is_empty ? 'text-red-500' : 'text-gray-400'}`}>Mark as Empty</span>
+                  <input type="checkbox" name="is_empty" checked={formData.is_empty} onChange={handleChange} className="w-5 h-5 accent-red-500 rounded border-gray-300" />
+               </label>
+            </div>
+            
+            <div className={`space-y-4 bg-gray-50 p-4 rounded-2xl border shadow-sm ${formData.is_empty ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Brand</label>
-                <input
-                  type="text"
-                  name="brand"
-                  required
-                  value={formData.brand}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                />
+                <input type="text" name="brand" required value={formData.brand} onChange={handleChange} className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none" />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Product Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                />
+                <input type="text" name="name" required value={formData.name} onChange={handleChange} className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Category</label>
+                   <select name="type" value={formData.type} onChange={handleChange} className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none appearance-none">
+                     <option value="organic">Organic</option>
+                     <option value="synthetic">Synthetic</option>
+                     <option value="compost">Compost / Casting</option>
+                     <option value="mineral">Mineral / Rock Dust</option>
+                     <option value="microbial">Microbial</option>
+                   </select>
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Physical Form</label>
+                   <select name="physical_form" value={formData.physical_form} onChange={handleChange} className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none appearance-none">
+                     <option value="Granular/Dry">Granular / Dry</option>
+                     <option value="Powder">Fine Powder</option>
+                     <option value="Water-Soluble">Water Soluble</option>
+                     <option value="Liquid">Liquid Concentrate</option>
+                   </select>
+                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Source Type</label>
-                <select
-                  name="type"
-                  value={formData.type}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold focus:ring-2 focus:ring-green-500 outline-none appearance-none"
-                >
-                  <option value="organic">Organic</option>
-                  <option value="synthetic">Synthetic</option>
-                  <option value="compost">Compost / Casting</option>
-                  <option value="mineral">Mineral / Rock Dust</option>
-                  <option value="microbial">Microbial / Inoculant</option>
-                </select>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 px-1">Current Stock / Size</label>
+                <div className="flex bg-white border border-gray-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-green-500">
+                  <input type="number" step="0.1" name="qty_in_stock" value={formData.qty_in_stock} onChange={handleChange} className="flex-1 px-4 py-3 text-gray-900 font-bold outline-none" placeholder="e.g. 5" />
+                  <select name="unit" value={formData.unit} onChange={handleChange} className="bg-gray-100 border-l border-gray-300 px-4 text-gray-700 font-bold outline-none appearance-none cursor-pointer">
+                    <option value="lbs">lbs</option>
+                    <option value="oz">oz</option>
+                    <option value="g">grams</option>
+                    <option value="kg">kg</option>
+                    <option value="gal">gallons</option>
+                    <option value="ml">ml</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Guaranteed Analysis (%)</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Guaranteed Analysis</h3>
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-green-50/50 p-3 rounded-2xl border border-green-200">
+              <div className="bg-green-50/50 p-3 rounded-2xl border border-green-200 relative">
                 <label className="block text-[10px] font-bold text-green-700 uppercase mb-2 text-center">Nitrogen (N)</label>
-                <input
-                  type="number"
-                  name="n_value"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.n_value}
-                  onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-green-500"
-                />
+                <input type="number" name="n_value" inputMode="decimal" step="0.01" value={formData.n_value} onChange={handleChange} className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-green-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-green-500" />
+                <span className="absolute right-5 bottom-4 text-green-400 font-bold">%</span>
               </div>
-              <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-200">
+              <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-200 relative">
                 <label className="block text-[10px] font-bold text-blue-700 uppercase mb-2 text-center">Phos (P)</label>
-                <input
-                  type="number"
-                  name="p_value"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.p_value}
-                  onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-blue-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="number" name="p_value" inputMode="decimal" step="0.01" value={formData.p_value} onChange={handleChange} className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-blue-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="absolute right-5 bottom-4 text-blue-400 font-bold">%</span>
               </div>
-              <div className="bg-orange-50/50 p-3 rounded-2xl border border-orange-200">
+              <div className="bg-orange-50/50 p-3 rounded-2xl border border-orange-200 relative">
                 <label className="block text-[10px] font-bold text-orange-700 uppercase mb-2 text-center">Potash (K)</label>
-                <input
-                  type="number"
-                  name="k_value"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.k_value}
-                  onChange={handleChange}
-                  className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-orange-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                <input type="number" name="k_value" inputMode="decimal" step="0.01" value={formData.k_value} onChange={handleChange} className="w-full text-center font-extrabold text-xl text-gray-900 bg-white border border-orange-300 rounded-xl py-2 outline-none focus:ring-2 focus:ring-orange-500" />
+                <span className="absolute right-5 bottom-4 text-orange-400 font-bold">%</span>
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Secondary Nutrients (%)</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Secondary Nutrients</h3>
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
-              <div>
+              <div className="relative">
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Calcium (Ca)</label>
-                <input
-                  type="number"
-                  name="calcium"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.calcium}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500"
-                />
+                <input type="number" name="calcium" inputMode="decimal" step="0.01" value={formData.calcium} onChange={handleChange} className="w-full pl-4 pr-8 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500" />
+                <span className="absolute right-3 bottom-2.5 text-gray-400 font-bold">%</span>
               </div>
-              <div>
+              <div className="relative">
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Magnesium (Mg)</label>
-                <input
-                  type="number"
-                  name="magnesium"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.magnesium}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500"
-                />
+                <input type="number" name="magnesium" inputMode="decimal" step="0.01" value={formData.magnesium} onChange={handleChange} className="w-full pl-4 pr-8 py-2 bg-white border border-gray-300 rounded-xl text-gray-900 font-bold outline-none focus:ring-2 focus:ring-green-500" />
+                <span className="absolute right-3 bottom-2.5 text-gray-400 font-bold">%</span>
               </div>
             </div>
           </div>
@@ -464,13 +409,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Sourcing</h3>
             <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-sm">
               <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2">Derived From (Ingredients)</label>
-              <textarea
-                name="derived_from"
-                rows={3}
-                value={formData.derived_from}
-                onChange={handleChange}
-                className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-900 font-medium leading-relaxed"
-              ></textarea>
+              <textarea name="derived_from" rows={3} value={formData.derived_from} onChange={handleChange} className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-900 font-medium leading-relaxed"></textarea>
             </div>
           </div>
 
@@ -480,10 +419,7 @@ export default function NewAmendmentForm({ navigateTo, handleGoBack, initialData
             className="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-4 rounded-2xl shadow-xl shadow-green-900/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isSubmitting ? (
-              <>
-                <Loader2 size={20} className="animate-spin" />
-                <span>{isEditing ? 'Updating...' : 'Storing in Shed...'}</span>
-              </>
+              <><Loader2 size={20} className="animate-spin" /><span>{isEditing ? 'Updating...' : 'Storing in Shed...'}</span></>
             ) : (
               <span>{isEditing ? 'Update Amendment' : 'Save Amendment'}</span>
             )}
