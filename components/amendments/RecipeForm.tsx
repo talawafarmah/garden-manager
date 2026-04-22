@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
-import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check, Calculator } from 'lucide-react';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
 // @ts-ignore
@@ -107,6 +107,22 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
   return `${+total.toFixed(2)} ${unitStr}`;
 };
 
+// --- ROUGH VOLUME TO LBS CONVERTER FOR NPK MATH ---
+const getIngredientPounds = (amount: number, unit: string) => {
+  const u = unit.toLowerCase();
+  if (u === 'lb' || u === 'lbs') return amount;
+  if (u === 'oz') return amount / 16;
+  if (u === 'kg') return amount * 2.20462;
+  if (u === 'g' || u === 'gram') return amount * 0.00220462;
+  if (u === 'cup' || u === 'cups') return amount * 0.3; 
+  if (u === 'tbsp') return (amount * 0.3) / 16;
+  if (u === 'tsp') return (amount * 0.3) / 48;
+  if (u === 'gal' || u === 'gallon') return amount * 8; 
+  if (u === 'ml') return amount * 0.0022;
+  if (u === 'l' || u === 'liter') return amount * 2.2;
+  return amount; 
+};
+
 // --- NEW COMBINATORIAL NPK OPTIMIZER ---
 interface NpkIngredient {
   id: string; name: string; brand: string; n: number; p: number; k: number;
@@ -120,7 +136,6 @@ const calculateOptimalDryMix = (
   if (ingredients.length === 0) return [];
   if (targetN === 0 && targetP === 0 && targetK === 0) return [];
 
-  // Helper: Generates every possible subset combo of size K
   const getCombos = (arr: any[], k: number): any[][] => {
     if (k === 1) return arr.map(a => [a]);
     const combos: any[][] = [];
@@ -131,7 +146,6 @@ const calculateOptimalDryMix = (
     return combos;
   };
 
-  // Helper: Evaluates a specific subset of ingredients to see how close it gets
   const solveSubset = (subset: NpkIngredient[], iterations: number = 500) => {
     let weights = subset.map(() => 1.0); 
     const lr = 0.05; 
@@ -166,14 +180,12 @@ const calculateOptimalDryMix = (
 
   let bestSolution: any = null;
   let bestScore = Infinity;
-  const maxK = Math.min(3, ingredients.length); // Try 1, 2, or 3 items max
+  const maxK = Math.min(3, ingredients.length); 
 
   for (let k = 1; k <= maxK; k++) {
     const combos = getCombos(ingredients, k);
     for (const combo of combos) {
       const res = solveSubset(combo, 500);
-      // Penalty: Add 0.2 to the error for every additional ingredient used. 
-      // This forces the system to prefer 2 ingredients over 3 if the error is close!
       const score = res.error + (k * 0.2); 
       if (score < bestScore) {
         bestScore = score;
@@ -183,7 +195,7 @@ const calculateOptimalDryMix = (
   }
 
   if (!bestSolution) return [];
-  bestSolution = solveSubset(bestSolution.subset, 2000); // Polish the winning combo
+  bestSolution = solveSubset(bestSolution.subset, 2000); 
 
   let finalSumW = bestSolution.weights.reduce((a: number, b: number) => a + b, 0) || 1;
   return bestSolution.subset.map((ing: any, idx: number) => ({
@@ -208,7 +220,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
     dilution_ratio: initialData?.dilution_ratio || 1,      
   });
 
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
+  const [ingredients, setIngredients] = useState<any[]>(
     initialData?.ingredients?.length ? initialData.ingredients : []
   );
 
@@ -220,12 +232,10 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   const [targetAmount, setTargetAmount] = useState<number>(10);
   const [targetUnit, setTargetUnit] = useState<string>('lbs');
 
-  // Filter out ANY empty items, then filter by logical physical form
   const availableIngredientsForOpt = useMemo(() => {
     return amendments.filter(a => {
       if (a.is_empty) return false;
       if (formData.type === 'dry_mix') return a.physical_form === 'Granular/Dry' || a.physical_form === 'Powder';
-      if (formData.type === 'liquid_tea') return true; // Tea can steep dry or liquid inputs
       return true;
     }).map(a => ({
       id: a.id, name: a.name, brand: a.brand || '',
@@ -251,11 +261,12 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
 
   const applyOptimizerToRecipe = () => {
       const newIngredients = optimizerResults.map((r: any) => ({
+          amendment_id: r.id, 
           name: r.name,
           amount: r.calculated_amount.toString(),
           unit: targetUnit
       }));
-      setIngredients(newIngredients); // Replaces existing ingredients for a clean recipe
+      setIngredients(newIngredients); 
       setFormData(prev => ({
          ...prev, 
          base_brew_gallons: targetAmount,
@@ -263,11 +274,35 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
       setShowOptimizer(false);
   };
 
+  // --- CURRENT RECIPE LIVE NPK CALCULATION ---
+  const currentRecipeNPK = useMemo(() => {
+     let totalLbs = 0;
+     let totalN = 0, totalP = 0, totalK = 0;
+
+     ingredients.forEach(ing => {
+        const am = amendments.find(a => a.id === ing.amendment_id || a.name === ing.name);
+        if (am) {
+           const lbs = getIngredientPounds(Number(ing.amount) || 0, ing.unit || 'lbs');
+           totalLbs += lbs;
+           totalN += lbs * (Number(am.n_value) || 0);
+           totalP += lbs * (Number(am.p_value) || 0);
+           totalK += lbs * (Number(am.k_value) || 0);
+        }
+     });
+
+     if (totalLbs === 0) return { n: '0.0', p: '0.0', k: '0.0' };
+     return {
+        n: (totalN / totalLbs).toFixed(1),
+        p: (totalP / totalLbs).toFixed(1),
+        k: (totalK / totalLbs).toFixed(1),
+     };
+  }, [ingredients, amendments]);
+
   const handleAddIngredient = () => {
-    setIngredients([...ingredients, { name: '', amount: '1', unit: 'cup' }]);
+    setIngredients([...ingredients, { amendment_id: '', name: '', amount: '1', unit: 'cup' }]);
   };
 
-  const handleUpdateIngredient = (index: number, field: keyof RecipeIngredient, value: string | number) => {
+  const handleUpdateIngredient = (index: number, field: string, value: string | number) => {
     const newIngredients = [...ingredients];
     newIngredients[index] = { ...newIngredients[index], [field]: value };
     setIngredients(newIngredients);
@@ -509,7 +544,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                            <p className="text-xs text-stone-400 text-center py-2 italic">No available amendments in shed.</p>
                         ) : (
                            availableIngredientsForOpt.map(ing => (
-                              <label key={ing.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOptIds.has(ing.id) ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-transparent opacity-60'}`}>
+                              // FIXED BUG: Added onClick to toggle the checkboxes properly!
+                              <label key={ing.id} onClick={(e) => { e.preventDefault(); toggleOptimizerIngredient(ing.id); }} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOptIds.has(ing.id) ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-transparent opacity-60'}`}>
                                  <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${selectedOptIds.has(ing.id) ? 'bg-emerald-500 border-emerald-600' : 'bg-white border-stone-300'}`}>
                                     {selectedOptIds.has(ing.id) && <Check size={14} className="text-white" />}
                                  </div>
@@ -536,68 +572,106 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
             )}
             
             <div className="bg-stone-50 p-4 rounded-3xl border border-stone-200 shadow-inner space-y-3">
+              
+              {/* --- LIVE RECIPE NPK DISPLAY --- */}
+              <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-stone-200 shadow-sm mb-4">
+                 <div className="flex items-center gap-2">
+                    <Calculator size={16} className="text-purple-600" />
+                    <span className="text-xs font-black text-stone-600 uppercase tracking-widest">Recipe NPK</span>
+                 </div>
+                 <div className="text-sm font-black text-purple-700 bg-purple-50 px-3 py-1 rounded-lg border border-purple-100">
+                    {currentRecipeNPK.n} - {currentRecipeNPK.p} - {currentRecipeNPK.k}
+                 </div>
+              </div>
+
               {ingredients.length === 0 ? (
                  <div className="text-center py-8 text-stone-400 text-sm italic">No ingredients added yet.</div>
               ) : (
-                 ingredients.map((ing, idx) => (
-                   <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded-2xl border border-stone-200 relative group animate-in slide-in-from-left-2 shadow-sm">
-                     <div className="flex-1 space-y-2">
-                       <input
-                         type="text"
-                         placeholder="Ingredient Name (e.g. Kelp Meal)"
-                         value={ing.name}
-                         onChange={e => handleUpdateIngredient(idx, 'name', e.target.value)}
-                         className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
-                       />
-                       
-                       <div className="flex gap-2">
-                         <input
-                           type="text"
-                           placeholder="Qty"
-                           value={ing.amount}
-                           onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
-                           className="w-24 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-black text-purple-700 text-center outline-none focus:border-purple-500 shadow-sm"
-                         />
+                 ingredients.map((ing, idx) => {
+                   // Find the matching amendment to display its NPK
+                   const matchedAmendment = amendments.find(a => a.id === ing.amendment_id || a.name === ing.name);
+
+                   return (
+                     <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded-2xl border border-stone-200 relative group animate-in slide-in-from-left-2 shadow-sm">
+                       <div className="flex-1 space-y-2">
                          
-                         <select
-                           value={ing.unit}
-                           onChange={e => handleUpdateIngredient(idx, 'unit', e.target.value)}
-                           className="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs font-black text-stone-500 uppercase tracking-wider outline-none focus:border-purple-500 shadow-sm appearance-none cursor-pointer"
+                         {/* RESTORED SELECT DROPDOWN */}
+                         <select 
+                           required
+                           value={ing.amendment_id || ''} 
+                           onChange={(e) => {
+                             const selectedAm = amendments.find(a => a.id === e.target.value);
+                             const newIngs = [...ingredients];
+                             newIngs[idx] = { ...newIngs[idx], amendment_id: e.target.value, name: selectedAm?.name || '' };
+                             setIngredients(newIngs);
+                           }} 
+                           className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm appearance-none"
                          >
-                           <optgroup label="Volume (US)">
-                             <option value="tsp">tsp</option>
-                             <option value="tbsp">tbsp</option>
-                             <option value="fl oz">fl oz</option>
-                             <option value="cup">cup</option>
-                             <option value="pt">pint</option>
-                             <option value="qt">quart</option>
-                             <option value="gal">gallon</option>
-                           </optgroup>
-                           <optgroup label="Volume (Metric)">
-                             <option value="ml">ml</option>
-                             <option value="l">liter</option>
-                           </optgroup>
-                           <optgroup label="Weight">
-                             <option value="oz">oz</option>
-                             <option value="lb">lb</option>
-                             <option value="lbs">lbs</option>
-                             <option value="g">gram</option>
-                             <option value="kg">kg</option>
-                           </optgroup>
-                           <optgroup label="Other">
-                             <option value="part">part</option>
-                             <option value="scoop">scoop</option>
-                             <option value="handful">handful</option>
-                           </optgroup>
+                           <option value="" disabled>Select Amendment...</option>
+                           {amendments.map(a => (
+                             <option key={a.id} value={a.id}>{a.brand ? `${a.brand} - ` : ''}{a.name}</option>
+                           ))}
                          </select>
+                         
+                         {/* DISPLAY INDIVIDUAL INGREDIENT NPK */}
+                         {matchedAmendment && (
+                            <div className="flex gap-1.5 ml-1 mb-2">
+                              <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">N: {matchedAmendment.n_value || 0}</span>
+                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">P: {matchedAmendment.p_value || 0}</span>
+                              <span className="text-[9px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">K: {matchedAmendment.k_value || 0}</span>
+                            </div>
+                         )}
+
+                         <div className="flex gap-2">
+                           <input
+                             type="number"
+                             step="0.01"
+                             placeholder="Qty"
+                             value={ing.amount}
+                             onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
+                             className="w-24 bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-black text-purple-700 text-center outline-none focus:border-purple-500 shadow-sm"
+                           />
+                           
+                           <select
+                             value={ing.unit}
+                             onChange={e => handleUpdateIngredient(idx, 'unit', e.target.value)}
+                             className="flex-1 bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs font-black text-stone-500 uppercase tracking-wider outline-none focus:border-purple-500 shadow-sm appearance-none cursor-pointer"
+                           >
+                             <optgroup label="Volume (US)">
+                               <option value="tsp">tsp</option>
+                               <option value="tbsp">tbsp</option>
+                               <option value="fl oz">fl oz</option>
+                               <option value="cup">cup</option>
+                               <option value="pt">pint</option>
+                               <option value="qt">quart</option>
+                               <option value="gal">gallon</option>
+                             </optgroup>
+                             <optgroup label="Volume (Metric)">
+                               <option value="ml">ml</option>
+                               <option value="l">liter</option>
+                             </optgroup>
+                             <optgroup label="Weight">
+                               <option value="oz">oz</option>
+                               <option value="lb">lb</option>
+                               <option value="lbs">lbs</option>
+                               <option value="g">gram</option>
+                               <option value="kg">kg</option>
+                             </optgroup>
+                             <optgroup label="Other">
+                               <option value="part">part</option>
+                               <option value="scoop">scoop</option>
+                               <option value="handful">handful</option>
+                             </optgroup>
+                           </select>
+                         </div>
                        </div>
+                       
+                       <button type="button" onClick={() => handleRemoveIngredient(idx)} className="w-10 h-10 flex flex-shrink-0 items-center justify-center bg-stone-50 border border-stone-200 text-stone-400 rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors mt-1">
+                         <Trash2 size={16} />
+                       </button>
                      </div>
-                     
-                     <button type="button" onClick={() => handleRemoveIngredient(idx)} className="w-10 h-10 flex flex-shrink-0 items-center justify-center bg-stone-50 border border-stone-200 text-stone-400 rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors mt-1">
-                       <Trash2 size={16} />
-                     </button>
-                   </div>
-                 ))
+                   );
+                 })
               )}
 
               <button 
