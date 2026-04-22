@@ -42,13 +42,14 @@ export default async function AmendmentsShedPage() {
     <main className="min-h-screen bg-gray-50 pb-20 pt-6 px-4 max-w-3xl mx-auto">
       <AmendmentList 
         initialAmendments={amendments} 
-        // These shims allow the component to function even on a direct route
-        navigateTo={(view, payload) => {
+        // FIXED: Added TypeScript types (view: any, payload?: any)
+        navigateTo={(view: any, payload?: any) => {
           if (view === 'amendment_new') window.location.href = '/amendments/new';
-          if (view === 'amendment_detail') window.location.href = `/amendments/${payload.id}`;
+          if (view === 'amendment_detail') window.location.href = `/amendments/${payload?.id}`;
           if (view === 'dashboard') window.location.href = '/';
         }}
-        handleGoBack={(fallback) => {
+        // FIXED: Added TypeScript type (fallback: any)
+        handleGoBack={(fallback: any) => {
           window.history.back();
         }}
       />
