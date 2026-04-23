@@ -59,7 +59,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- NEW HELP MODE STATE ---
   const [isHelpMode, setIsHelpMode] = useState(false);
   const [activeHelpInfo, setActiveHelpInfo] = useState<{title: string, text: string} | null>(null);
 
@@ -148,12 +147,12 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
       setIsSaving(false);
   };
 
-  const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (item.sown_count || 0), 0);
-  const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (item.germinated_count || 0), 0);
+  const totalSown = localTray.contents.reduce((sum: number, item: any) => sum + (Number(item.sown_count) || 0), 0);
+  const totalGerminated = localTray.contents.reduce((sum: number, item: any) => sum + (Number(item.germinated_count) || 0), 0);
   const germRate = totalSown > 0 ? Math.round((totalGerminated / totalSown) * 100) : 0;
   
   const totalVars = (localTray.contents || []).length;
-  const sproutedVars = (localTray.contents || []).filter(c => (c.germinated_count || 0) > 0).length;
+  const sproutedVars = (localTray.contents || []).filter(c => (Number(c.germinated_count) || 0) > 0).length;
   const varGermRate = totalVars > 0 ? Math.round((sproutedVars / totalVars) * 100) : 0;
 
   const handleToggleAbandon = async (e: React.MouseEvent, index: number) => {
@@ -167,8 +166,8 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   const handleQuickUpdate = async (e: React.MouseEvent, index: number, field: string, delta: number) => {
     e.stopPropagation();
     const updatedContents = [...localTray.contents];
-    const currentVal = updatedContents[index][field as keyof typeof updatedContents[0]] || 0;
-    const newVal = Math.max(0, (currentVal as number) + delta);
+    const currentVal = Number(updatedContents[index][field as keyof typeof updatedContents[0]]) || 0;
+    const newVal = Math.max(0, currentVal + delta);
     (updatedContents[index][field as keyof typeof updatedContents[0]] as any) = newVal;
     if (delta > 0) {
       const todayObj = new Date();
@@ -193,7 +192,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
     const localToday = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     const duplicatedTray: any = {
       ...localTray, id: crypto.randomUUID(), name: `${localTray.name || 'Tray'} (Copy)`, sown_date: localToday, first_germination_date: "", first_planted_date: "", images: [], status: 'Active',
-      contents: localTray.contents.map((item: any) => ({ ...item, sown_count: item.sown_count || 0, germinated_count: 0, planted_count: 0 }))
+      contents: localTray.contents.map((item: any) => ({ ...item, sown_count: Number(item.sown_count) || 0, germinated_count: 0, planted_count: 0 }))
     };
     navigateTo('tray_edit', duplicatedTray);
     setIsDuplicating(false);
@@ -206,9 +205,21 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   };
 
   const openPotUpModal = (e: React.MouseEvent, seedRecord: any, varietyName: string) => {
+    e.preventDefault();
     e.stopPropagation();
-    const max = (seedRecord.germinated_count || 0) - (seedRecord.planted_count || 0);
-    setPotUpState({ isOpen: true, seedId: seedRecord.seed_id, varietyName, count: max > 0 ? max : 0, note: '', maxAvailable: max });
+    // Force strict numbers to ensure isPottable mathematical logic works safely
+    const gCount = Number(seedRecord.germinated_count) || 0;
+    const pCount = Number(seedRecord.planted_count) || 0;
+    const max = gCount - pCount;
+    
+    setPotUpState({ 
+        isOpen: true, 
+        seedId: seedRecord.seed_id, 
+        varietyName, 
+        count: max > 0 ? max : 0, 
+        note: '', 
+        maxAvailable: max 
+    });
   };
 
   const handlePotUpSubmit = async () => {
@@ -249,7 +260,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
         }]);
       }
 
-      const updatedContents = localTray.contents.map((c: any) => c.seed_id === potUpState.seedId ? { ...c, planted_count: (c.planted_count || 0) + potUpState.count } : c);
+      const updatedContents = localTray.contents.map((c: any) => c.seed_id === potUpState.seedId ? { ...c, planted_count: (Number(c.planted_count) || 0) + potUpState.count } : c);
       await supabase.from('seedling_trays').update({ contents: updatedContents }).eq('id', localTray.id);
       setLocalTray({ ...localTray, contents: updatedContents });
       setPotUpState(null);
@@ -257,7 +268,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   };
 
   const topSeeds = [...(localTray.contents || [])]
-    .sort((a, b) => (b.sown_count || 0) - (a.sown_count || 0))
+    .sort((a, b) => (Number(b.sown_count) || 0) - (Number(a.sown_count) || 0))
     .map(c => inventory.find((s: InventorySeed) => s.id === c.seed_id))
     .filter(s => s && s.thumbnail)
     .slice(0, 4);
@@ -285,7 +296,6 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
   today.setHours(12, 0, 0, 0);
   const traySownDate = new Date((localTray.sown_date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
 
-  // --- FIXED HELP WRAPPER COMPONENT ---
   const HelpWrapper = ({ children, title, text, wrapperClass = "" }: { children: React.ReactNode, title: string, text: string, wrapperClass?: string }) => {
     if (!isHelpMode) {
        return wrapperClass ? <div className={wrapperClass}>{children}</div> : <>{children}</>;
@@ -517,18 +527,24 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
           {(localTray.contents || []).map((seedRecord: any, idx: number) => {
              const fullSeed = inventory?.find((s: InventorySeed) => s.id === seedRecord.seed_id);
              const varietyName = fullSeed?.variety_name || seedRecord.seed_id;
-             const isPottable = (seedRecord.germinated_count || 0) - (seedRecord.planted_count || 0) > 0;
-             const germCount = seedRecord.germinated_count || 0;
-             const isFullyGerminated = germCount >= (seedRecord.sown_count || 0);
+             
+             // FORCED NUMBER CASTING TO PREVENT JSON TYPE BUGS
+             const germCount = Number(seedRecord.germinated_count) || 0;
+             const plantedCount = Number(seedRecord.planted_count) || 0;
+             const sownCount = Number(seedRecord.sown_count) || 0;
+             
+             const isPottable = (germCount - plantedCount) > 0;
+             const isFullyGerminated = germCount >= sownCount;
+             const isAbandoned = seedRecord.abandoned === true || String(seedRecord.abandoned) === 'true';
 
              let seedStatusBadge = null;
              const rowSownDate = seedRecord.sown_date || localTray.sown_date;
-             const rowGermDate = seedRecord.germination_date || seedRecord.germinated_count > 0;
+             const rowGermDate = seedRecord.germination_date || germCount > 0;
 
              let daysLate = 0;
              let isLate = false;
              
-             if (fullSeed?.germination_days && !isFullyGerminated && !seedRecord.abandoned) {
+             if (fullSeed?.germination_days && !isFullyGerminated && !isAbandoned) {
                  const nums = fullSeed.germination_days.match(/\d+/g);
                  if (nums && nums.length > 0) {
                      const parsed = nums.map((n: string) => parseInt(n, 10)).filter((n: number) => n > 0);
@@ -545,7 +561,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  }
              }
 
-             if (seedRecord.abandoned) {
+             if (isAbandoned) {
                  seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-stone-600 bg-stone-200 px-2 py-0.5 rounded border border-stone-300 ml-2 whitespace-nowrap shadow-sm">💀 Abandoned</span>;
              } else if (rowGermDate) {
                  seedStatusBadge = <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 ml-2 shadow-sm flex-shrink-0 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> Sprouted</span>;
@@ -576,7 +592,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
              }
 
              return (
-               <div key={idx} onClick={() => handleSeedClick(seedRecord.seed_id)} className={`bg-white p-4 rounded-xl shadow-sm border border-stone-200 cursor-pointer hover:border-emerald-400 transition-all active:scale-95 group ${seedRecord.abandoned ? 'opacity-60 grayscale-[50%]' : ''}`}>
+               <div key={idx} onClick={() => handleSeedClick(seedRecord.seed_id)} className={`bg-white p-4 rounded-xl shadow-sm border border-stone-200 cursor-pointer hover:border-emerald-400 transition-all active:scale-95 group ${isAbandoned ? 'opacity-60 grayscale-[50%]' : ''}`}>
                  <div className="flex justify-between items-start mb-3 border-b border-stone-100 pb-3">
                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-lg bg-stone-100 border border-stone-200 overflow-hidden flex-shrink-0">
@@ -600,11 +616,12 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                              text="If some seeds in a tray failed but others are fine, click this to hide the failed seeds from overdue alerts and lock their counts."
                           >
                              <button 
+                                type="button"
                                 disabled={isHelpMode}
-                                onClick={(e) => handleToggleAbandon(e, idx)}
-                                className={`text-[9px] font-black uppercase tracking-widest underline disabled:opacity-50 ${seedRecord.abandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
+                                onClick={(e) => { e.preventDefault(); handleToggleAbandon(e, idx); }}
+                                className={`text-[9px] font-black uppercase tracking-widest underline disabled:opacity-50 ${isAbandoned ? 'text-stone-500 hover:text-stone-800' : 'text-stone-400 hover:text-red-600'}`}
                              >
-                                {seedRecord.abandoned ? 'Restore' : 'Abandon'}
+                                {isAbandoned ? 'Restore' : 'Abandon'}
                              </button>
                           </HelpWrapper>
                         </div>
@@ -617,9 +634,16 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                         text="Move germinated seedlings from this tray into the Nursery Ledger as actively growing potted plants."
                      >
                         <button 
-                          onClick={(e) => openPotUpModal(e, seedRecord, varietyName)}
-                          disabled={!isPottable || seedRecord.abandoned || isHelpMode}
-                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 disabled:opacity-50 ${isPottable && !seedRecord.abandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
+                          type="button"
+                          onClick={(e) => {
+                             e.preventDefault();
+                             e.stopPropagation();
+                             if (isPottable && !isAbandoned && !isHelpMode) {
+                                openPotUpModal(e, seedRecord, varietyName);
+                             }
+                          }}
+                          disabled={!isPottable || isAbandoned || isHelpMode}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ml-2 disabled:opacity-50 disabled:cursor-not-allowed ${isPottable && !isAbandoned ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm hover:bg-emerald-200 cursor-pointer' : 'bg-stone-50 text-stone-400 border-stone-200 opacity-50'}`}
                         >
                           🌱 Pot Up
                         </button>
@@ -631,9 +655,9 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    <div className="flex-1 flex flex-col items-center border-r border-stone-100 pr-2">
                      <span className="text-[9px] uppercase tracking-widest text-stone-400 mb-1.5">Sown</span>
                      <div className="flex items-center gap-1.5">
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
-                       <span className="font-bold text-stone-800 w-5 text-center text-sm">{seedRecord.sown_count || 0}</span>
-                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">+</button>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', -1)} disabled={isAbandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">-</button>
+                       <span className="font-bold text-stone-800 w-5 text-center text-sm">{sownCount}</span>
+                       <button onClick={(e) => handleQuickUpdate(e, idx, 'sown_count', 1)} disabled={isAbandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-stone-100 rounded-md text-stone-500 hover:bg-stone-200 font-black disabled:opacity-50">+</button>
                      </div>
                    </div>
                    
@@ -644,21 +668,21 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                    >
                        <span className="text-[9px] uppercase tracking-widest text-emerald-600 mb-1.5">Sprouted</span>
                        <div className="flex items-center gap-1.5">
-                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
+                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', -1)} disabled={isAbandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">-</button>
                          
                          <div className="flex flex-col items-center">
                             {isLate && <span className="text-[8px] font-black text-red-600 animate-pulse leading-none mb-0.5">⚠️ {daysLate}d Late</span>}
-                            <span className="font-bold text-emerald-600 w-5 text-center text-sm">{seedRecord.germinated_count || 0}</span>
+                            <span className="font-bold text-emerald-600 w-5 text-center text-sm">{germCount}</span>
                          </div>
 
-                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || seedRecord.abandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
+                         <button onClick={(e) => handleQuickUpdate(e, idx, 'germinated_count', 1)} disabled={isFullyGerminated || isAbandoned || isHelpMode} className="w-6 h-6 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-100 font-black disabled:opacity-50">+</button>
                        </div>
                    </HelpWrapper>
 
                    <div className="flex-1 flex flex-col items-center">
                      <span className="text-[9px] uppercase tracking-widest text-blue-600 mb-1.5">Potted</span>
                      <div className="flex items-center h-6">
-                       <span className="font-black text-blue-600 text-lg">{seedRecord.planted_count || 0}</span>
+                       <span className="font-black text-blue-600 text-lg">{plantedCount}</span>
                      </div>
                    </div>
                  </div>
@@ -666,7 +690,7 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                  <div className="flex text-xs pt-3 mt-3 border-t border-stone-100 gap-2" onClick={e => e.stopPropagation()}>
                     <div className="flex-1">
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sown Date</label>
-                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.sown_date || ''} onChange={e => handleQuickDateUpdate(idx, 'sown_date', e.target.value)} disabled={isAbandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                     
                     <HelpWrapper 
@@ -675,12 +699,12 @@ export default function TrayDetail({ tray, inventory, trays, navigateTo, handleG
                       wrapperClass="flex-1"
                     >
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Sprout Date</label>
-                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.germination_date || ''} onChange={e => handleQuickDateUpdate(idx, 'germination_date', e.target.value)} disabled={isAbandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </HelpWrapper>
                     
                     <div className="flex-1">
                        <label className="block text-[8px] font-black uppercase tracking-widest text-stone-400 mb-0.5 text-center">Potted Date</label>
-                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={seedRecord.abandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
+                       <input type="date" value={seedRecord.planted_date || ''} onChange={e => handleQuickDateUpdate(idx, 'planted_date', e.target.value)} disabled={isAbandoned || isHelpMode} className="w-full text-[10px] p-1.5 bg-stone-50 border border-stone-200 rounded outline-none focus:border-emerald-500 text-center font-bold disabled:opacity-50" />
                     </div>
                  </div>
                </div>
