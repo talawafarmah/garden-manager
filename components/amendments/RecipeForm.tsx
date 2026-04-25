@@ -108,18 +108,21 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
 };
 
 // --- ROUGH VOLUME TO LBS CONVERTER FOR NPK MATH ---
+// NPK calculations must be done by weight. This converts volume inputs 
+// using a standard agricultural density approximation (1 cup dry ≈ 0.3 lbs).
 const getIngredientPounds = (amount: number, unit: string) => {
   const u = unit.toLowerCase();
   if (u === 'lb' || u === 'lbs') return amount;
   if (u === 'oz') return amount / 16;
   if (u === 'kg') return amount * 2.20462;
-  if (u === 'g' || u === 'gram') return amount * 0.00220462;
+  if (u === 'g' || u === 'gram' || u === 'grams') return amount * 0.00220462;
   if (u === 'cup' || u === 'cups') return amount * 0.3; 
-  if (u === 'tbsp') return (amount * 0.3) / 16;
-  if (u === 'tsp') return (amount * 0.3) / 48;
-  if (u === 'gal' || u === 'gallon') return amount * 8; 
-  if (u === 'ml') return amount * 0.0022;
-  if (u === 'l' || u === 'liter') return amount * 2.2;
+  if (u === 'tbsp' || u === 'tablespoon') return (amount * 0.3) / 16;
+  if (u === 'tsp' || u === 'teaspoon') return (amount * 0.3) / 48;
+  if (u === 'gal' || u === 'gallon' || u === 'gallons') return amount * 8; 
+  if (u === 'ml' || u === 'milliliter') return amount * 0.0022;
+  if (u === 'l' || u === 'liter' || u === 'liters') return amount * 2.2;
+  if (u === 'part' || u === 'parts') return amount; 
   return amount; 
 };
 
@@ -230,7 +233,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   const [targetP, setTargetP] = useState<number>(4);
   const [targetK, setTargetK] = useState<number>(4);
   const [targetAmount, setTargetAmount] = useState<number>(10);
-  const [targetUnit, setTargetUnit] = useState<string>('lbs');
+  const [targetUnit, setTargetUnit] = useState<string>('cups');
 
   const availableIngredientsForOpt = useMemo(() => {
     return amendments.filter(a => {
@@ -465,7 +468,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
             <div className="bg-purple-50 p-4 sm:p-5 rounded-3xl border border-purple-100 shadow-sm space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Base Yield {formData.type === 'dry_mix' ? 'Weight' : 'Volume'}</label>
+                  <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Base Yield Amount</label>
                   <div className="flex items-center gap-2 bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
                     <input type="number" min="0.1" step="0.1" value={formData.base_brew_gallons || ''} onChange={e => setFormData({...formData, base_brew_gallons: Number(e.target.value)})} className="w-full text-center font-bold text-purple-900 outline-none" />
                     <span className="text-purple-400 font-bold text-xs pr-2">{formData.type === 'dry_mix' ? 'Lbs' : 'Gallons'}</span>
@@ -526,13 +529,25 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                      <label className="block text-[9px] font-black text-stone-600 uppercase tracking-widest mb-1 text-center">Target Yield</label>
                      <div className="flex items-center gap-2 bg-stone-100 border border-stone-200 p-2 rounded-xl shadow-inner max-w-[200px] mx-auto focus-within:border-emerald-500">
                         <input type="number" min="1" value={targetAmount} onChange={e => setTargetAmount(Number(e.target.value))} className="w-full text-right bg-transparent py-1 font-black text-stone-800 outline-none" />
-                        <select value={targetUnit} onChange={e => setTargetUnit(e.target.value)} className="bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs font-bold text-stone-600 outline-none cursor-pointer">
-                           <option value="lbs">lbs</option>
-                           <option value="kg">kg</option>
-                           <option value="g">g</option>
-                           <option value="oz">oz</option>
-                           <option value="gal">gal</option>
-                           <option value="L">liters</option>
+                        <select value={targetUnit} onChange={e => setTargetUnit(e.target.value)} className="bg-white border border-stone-300 rounded-lg px-2 py-1 text-xs font-bold text-stone-600 outline-none cursor-pointer appearance-none">
+                           <optgroup label="Volume">
+                             <option value="cups">Cups</option>
+                             <option value="tbsp">Tbsp</option>
+                             <option value="tsp">Tsp</option>
+                             <option value="gal">Gallons</option>
+                             <option value="L">Liters</option>
+                             <option value="ml">ml</option>
+                           </optgroup>
+                           <optgroup label="Weight">
+                             <option value="lbs">lbs</option>
+                             <option value="kg">kg</option>
+                             <option value="g">g</option>
+                             <option value="oz">oz</option>
+                           </optgroup>
+                           <optgroup label="Other">
+                             <option value="parts">Parts</option>
+                             <option value="scoop">Scoops</option>
+                           </optgroup>
                         </select>
                      </div>
                   </div>
@@ -544,7 +559,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                            <p className="text-xs text-stone-400 text-center py-2 italic">No available amendments in shed.</p>
                         ) : (
                            availableIngredientsForOpt.map(ing => (
-                              // FIXED BUG: Added onClick to toggle the checkboxes properly!
                               <label key={ing.id} onClick={(e) => { e.preventDefault(); toggleOptimizerIngredient(ing.id); }} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOptIds.has(ing.id) ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-transparent opacity-60'}`}>
                                  <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${selectedOptIds.has(ing.id) ? 'bg-emerald-500 border-emerald-600' : 'bg-white border-stone-300'}`}>
                                     {selectedOptIds.has(ing.id) && <Check size={14} className="text-white" />}
@@ -588,14 +602,12 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                  <div className="text-center py-8 text-stone-400 text-sm italic">No ingredients added yet.</div>
               ) : (
                  ingredients.map((ing, idx) => {
-                   // Find the matching amendment to display its NPK
                    const matchedAmendment = amendments.find(a => a.id === ing.amendment_id || a.name === ing.name);
 
                    return (
                      <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded-2xl border border-stone-200 relative group animate-in slide-in-from-left-2 shadow-sm">
                        <div className="flex-1 space-y-2">
                          
-                         {/* RESTORED SELECT DROPDOWN */}
                          <select 
                            required
                            value={ing.amendment_id || ''} 
@@ -613,7 +625,6 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                            ))}
                          </select>
                          
-                         {/* DISPLAY INDIVIDUAL INGREDIENT NPK */}
                          {matchedAmendment && (
                             <div className="flex gap-1.5 ml-1 mb-2">
                               <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">N: {matchedAmendment.n_value || 0}</span>
@@ -641,26 +652,25 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                                <option value="tsp">tsp</option>
                                <option value="tbsp">tbsp</option>
                                <option value="fl oz">fl oz</option>
-                               <option value="cup">cup</option>
+                               <option value="cups">cups</option>
                                <option value="pt">pint</option>
                                <option value="qt">quart</option>
                                <option value="gal">gallon</option>
                              </optgroup>
                              <optgroup label="Volume (Metric)">
                                <option value="ml">ml</option>
-                               <option value="l">liter</option>
+                               <option value="L">liter</option>
                              </optgroup>
                              <optgroup label="Weight">
                                <option value="oz">oz</option>
-                               <option value="lb">lb</option>
                                <option value="lbs">lbs</option>
                                <option value="g">gram</option>
                                <option value="kg">kg</option>
                              </optgroup>
                              <optgroup label="Other">
-                               <option value="part">part</option>
-                               <option value="scoop">scoop</option>
-                               <option value="handful">handful</option>
+                               <option value="parts">parts</option>
+                               <option value="scoop">scoops</option>
+                               <option value="handful">handfuls</option>
                              </optgroup>
                            </select>
                          </div>
