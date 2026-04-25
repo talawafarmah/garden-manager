@@ -13,56 +13,62 @@ interface ApothecaryProps {
   amendments: any[]; 
 }
 
-// --- ADVANCED KITCHEN MATH ENGINE ---
-const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
+// --- SMART AMOUNT PARSER (Handles fractions like "1/2") ---
+const parseAmount = (amountStr: string | number) => {
+  if (typeof amountStr === 'number') return amountStr;
   let parsedAmount = 0;
-  let isNumeric = false;
   const str = String(amountStr).trim();
-  
   const parts = str.split(' ').filter(Boolean);
   for (const part of parts) {
     if (part.includes('/')) {
       const [num, den] = part.split('/');
       const n = parseFloat(num); const d = parseFloat(den);
-      if (!isNaN(n) && !isNaN(d) && d !== 0) { parsedAmount += (n / d); isNumeric = true; }
+      if (!isNaN(n) && !isNaN(d) && d !== 0) parsedAmount += (n / d);
     } else {
       const n = parseFloat(part);
-      if (!isNaN(n)) { parsedAmount += n; isNumeric = true; }
+      if (!isNaN(n)) parsedAmount += n;
     }
   }
+  return parsedAmount;
+};
 
-  if (!isNumeric) return `${amountStr} ${unitStr}`; 
+// --- ROUGH VOLUME TO LBS CONVERTER FOR NPK MATH ---
+const getIngredientPounds = (amount: number, unit: string) => {
+  const u = (unit || '').toLowerCase();
+  if (u === 'lb' || u === 'lbs') return amount;
+  if (u === 'oz') return amount / 16;
+  if (u === 'kg') return amount * 2.20462;
+  if (u === 'g' || u === 'gram' || u === 'grams') return amount * 0.00220462;
+  if (u === 'cup' || u === 'cups') return amount * 0.3; 
+  if (u === 'tbsp' || u === 'tablespoon') return (amount * 0.3) / 16;
+  if (u === 'tsp' || u === 'teaspoon') return (amount * 0.3) / 48;
+  if (u === 'gal' || u === 'gallon' || u === 'gallons') return amount * 8; 
+  if (u === 'ml' || u === 'milliliter') return amount * 0.0022;
+  if (u === 'l' || u === 'liter' || u === 'liters') return amount * 2.2;
+  if (u === 'part' || u === 'parts') return amount; 
+  return amount; 
+};
+
+// --- ADVANCED KITCHEN MATH ENGINE ---
+const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
+  let parsedAmount = parseAmount(amountStr);
+  if (parsedAmount === 0 && amountStr !== '0' && amountStr !== 0) return `${amountStr} ${unitStr}`; 
 
   let total = parsedAmount * multiplier;
   let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); 
 
   const usVol: Record<string, number> = {
-    'tsp': 1, 'teaspoon': 1,
-    'tbsp': 3, 'tablespoon': 3,
-    'fl oz': 6, 'fluid ounce': 6, 'oz': 6, 'ounce': 6, 
-    'c': 48, 'cup': 48,
-    'pt': 96, 'pint': 96,
-    'qt': 192, 'quart': 192,
-    'gal': 768, 'gallon': 768
+    'tsp': 1, 'teaspoon': 1, 'tbsp': 3, 'tablespoon': 3, 'fl oz': 6, 'fluid ounce': 6, 'oz': 6, 'ounce': 6, 
+    'c': 48, 'cup': 48, 'pt': 96, 'pint': 96, 'qt': 192, 'quart': 192, 'gal': 768, 'gallon': 768
   };
 
   if (usVol[unit]) {
     let remainingTsp = total * usVol[unit];
-    
     const measures = [
-       { name: 'Gal', tsp: 768 },
-       { name: 'Qt', tsp: 192 },
-       { name: 'Pt', tsp: 96 },
-       { name: 'Cup', tsp: 48 },
-       { name: '1/2 Cup', tsp: 24 },
-       { name: '1/3 Cup', tsp: 16 },
-       { name: '1/4 Cup', tsp: 12 },
-       { name: '1/8 Cup', tsp: 6 },
-       { name: 'TBSP', tsp: 3 },
-       { name: '1/2 TBSP', tsp: 1.5 },
-       { name: 'tsp', tsp: 1 },
-       { name: '1/2 tsp', tsp: 0.5 },
-       { name: '1/4 tsp', tsp: 0.25 }
+       { name: 'Gal', tsp: 768 }, { name: 'Qt', tsp: 192 }, { name: 'Pt', tsp: 96 },
+       { name: 'Cup', tsp: 48 }, { name: '1/2 Cup', tsp: 24 }, { name: '1/3 Cup', tsp: 16 },
+       { name: '1/4 Cup', tsp: 12 }, { name: '1/8 Cup', tsp: 6 }, { name: 'TBSP', tsp: 3 },
+       { name: '1/2 TBSP', tsp: 1.5 }, { name: 'tsp', tsp: 1 }, { name: '1/2 tsp', tsp: 0.5 }, { name: '1/4 tsp', tsp: 0.25 }
     ];
     
     const resultParts = [];
@@ -82,7 +88,6 @@ const formatSmartIngredient = (amountStr: string | number, unitStr: string, mult
           }
        }
     }
-    
     if (resultParts.length === 0) return "A pinch";
     return resultParts.slice(0, 2).join(' + ');
   }
@@ -255,6 +260,32 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
         if (selectedRecipe?.id === id) setSelectedRecipe(null);
       }
     }
+  };
+
+  // Helper to calculate NPK dynamically
+  const calculateRecipeNPK = (recipe: Recipe) => {
+    let totalLbs = 0;
+    let totalN = 0, totalP = 0, totalK = 0;
+
+    (recipe.ingredients || []).forEach((ing: any) => {
+       const am = amendments.find((a: any) => a.id === ing.amendment_id || a.name === ing.name);
+       if (am) {
+          const parsedAmt = parseAmount(ing.amount);
+          const lbs = getIngredientPounds(parsedAmt, ing.unit || 'lbs');
+          totalLbs += lbs;
+          totalN += lbs * (Number(am.n_value) || 0);
+          totalP += lbs * (Number(am.p_value) || 0);
+          totalK += lbs * (Number(am.k_value) || 0);
+       }
+    });
+
+    if (totalLbs === 0) return { n: "0.0", p: "0.0", k: "0.0", hasNPK: false };
+    return {
+       n: (totalN / totalLbs).toFixed(1),
+       p: (totalP / totalLbs).toFixed(1),
+       k: (totalK / totalLbs).toFixed(1),
+       hasNPK: (totalN > 0 || totalP > 0 || totalK > 0)
+    };
   };
 
   if (showRecipeForm) {
@@ -458,6 +489,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
               <div className="grid grid-cols-1 gap-4">
                 {recipes.map(recipe => {
                   const styles = getTypeStyles(recipe.type);
+                  const npk = calculateRecipeNPK(recipe);
+
                   return (
                     <div 
                       key={recipe.id} 
@@ -485,7 +518,7 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         </h3>
                       </div>
 
-                      <div className="flex gap-2 mb-3">
+                      <div className="flex flex-wrap gap-2 mb-3">
                         <span className={`${styles.bg} ${styles.text} ${styles.border} text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded border flex items-center gap-1`}>
                           {styles.icon} {styles.label}
                         </span>
@@ -494,6 +527,14 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                             <Clock size={12} /> {recipe.brew_time_hours} Hours
                           </span>
                         ) : null}
+
+                        {npk.hasNPK && (
+                           <div className="flex gap-1 ml-1">
+                              <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 flex items-center shadow-sm">N: {npk.n}</span>
+                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 flex items-center shadow-sm">P: {npk.p}</span>
+                              <span className="text-[9px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 flex items-center shadow-sm">K: {npk.k}</span>
+                           </div>
+                        )}
                       </div>
                       
                       {recipe.description && recipe.description !== '<p><br></p>' && (
@@ -630,6 +671,8 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
       {/* --- FULL RECIPE VIEW MODAL WITH SCALER --- */}
       {selectedRecipe && (() => {
          const styles = getTypeStyles(selectedRecipe.type);
+         const npk = calculateRecipeNPK(selectedRecipe);
+
          return (
           <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
             <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
@@ -644,6 +687,14 @@ export default function Apothecary({ navigateTo, handleGoBack, amendments }: Apo
                         <Clock size={12} /> {selectedRecipe.brew_time_hours}h
                       </span>
                     ) : null}
+                    
+                    {npk.hasNPK && (
+                       <div className="flex gap-1 ml-1 border-l border-purple-700 pl-2">
+                          <span className="text-[9px] font-bold text-green-300 bg-green-900/30 px-1.5 py-0.5 rounded border border-green-800 flex items-center shadow-sm">N: {npk.n}</span>
+                          <span className="text-[9px] font-bold text-blue-300 bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-800 flex items-center shadow-sm">P: {npk.p}</span>
+                          <span className="text-[9px] font-bold text-orange-300 bg-orange-900/30 px-1.5 py-0.5 rounded border border-orange-800 flex items-center shadow-sm">K: {npk.k}</span>
+                       </div>
+                    )}
                   </div>
                   <h2 className="text-xl sm:text-2xl font-black leading-tight truncate">
                     {selectedRecipe.name}
