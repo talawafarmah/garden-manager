@@ -15,7 +15,8 @@ export type AppView =
   | 'admin_demand'
   | 'grow_planner'
   | 'farm_map'
-  | 'apothecary';
+  | 'apothecary'
+  | 'printable_catalog';
 
 export interface GardenArea {
   id: string;
@@ -135,6 +136,10 @@ export interface InventorySeed {
   generation?: string;
   custom_nursery_weeks?: number; 
   journal?: SeedlingJournalEntry[];
+  
+  // --- ADDED PROPERTIES ---
+  status?: string;
+  wishlist?: boolean;
 
   returnTo?: AppView;
   returnPayload?: any;
@@ -153,7 +158,7 @@ export interface TraySeedRecord {
   sown_date?: string;        
   germination_date?: string; 
   planted_date?: string; 
-  abandoned?: boolean; // <-- ADDED FOR SEED-LEVEL ABANDONMENT
+  abandoned?: boolean;
 }
 
 export interface SeedlingTray {

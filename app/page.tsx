@@ -15,6 +15,7 @@ import TrayDetail from '../components/TrayDetail';
 import TrayEdit from '../components/TrayEdit';
 import SeedlingsList from '../components/SeedlingsList';
 import TempImageMigration from '../components/TempImageMigration';
+import PrintableSeedCatalog from '../components/PrintableSeedCatalog';
 
 
 // AMENDMENT MODULE COMPONENTS
@@ -36,7 +37,8 @@ const VALID_VIEWS = [
   'dashboard', 'vault', 'seed_detail', 'seed_edit', 'scanner', 'importer',
   'trays', 'tray_detail', 'tray_edit', 'seedlings',
   'admin_hub', 'admin_categories', 'admin_seasons', 'admin_demand', 'grow_planner',
-  'farm_map', 'apothecary', 'amendments', 'amendment_detail', 'amendment_new'
+  'farm_map', 'apothecary', 'amendments', 'amendment_detail', 'amendment_new',
+  'printable_catalog'
 ];
 
 export default function App() {
@@ -229,6 +231,14 @@ export default function App() {
           navigateTo={navigateTo} 
           handleGoBack={handleGoBack} 
           amendments={amendments} 
+        />
+      );
+    case 'printable_catalog':
+      return (
+        <PrintableSeedCatalog 
+          inventory={inventory} 
+          trays={trays} 
+          handleGoBack={handleGoBack} 
         />
       );
     

@@ -1,10 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Updated to match your garden app's stone/emerald color palette */
+  --background: #fafaf9; /* stone-50 */
+  --foreground: #1c1917; /* stone-900 */
 }
 
+/* VS Code flags @theme as an error because it's Tailwind v4 specific. 
+   It compiles perfectly in Next.js. Ignore the IDE warning. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -13,14 +16,27 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root { 
+    --background: #1c1917;
+    --foreground: #fafaf9;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  
+  /* Critical PWA Mobile Optimizations */
+  -webkit-tap-highlight-color: transparent; /* Removes blue flash when tapping on mobile */
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar for clean mobile UI in horizontally scrolling elements (like the Digital Shed type filters) */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
