@@ -73,10 +73,10 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
       }
     });
 
-    // Filter inventory and sort by Seed ID
+    // Filter inventory and apply NATURAL SORTING (Alphanumeric) by Seed ID
     return inventory
       .filter(s => activeSeedIds.has(s.id))
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
   }, [inventory, trays, ledgerSeedIds]);
 
   // 3. Group the filtered seeds by their Botanical Category
@@ -209,7 +209,6 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
                         </div>
 
                         {/* Seed Details */}
-                        {/* REMOVED 'truncate', ADDED 'break-words' and natural text wrapping */}
                         <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
                           <h3 className="font-black text-sm text-stone-900 print:text-black leading-tight break-words">
                             <span className="text-emerald-700 print:text-black font-mono tracking-tight mr-1.5">{seed.id} -</span>
