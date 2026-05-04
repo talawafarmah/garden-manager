@@ -2,7 +2,7 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, Printer, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Printer, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { InventorySeed, SeedlingTray } from '../types';
 
 interface PrintableSeedCatalogProps {
@@ -13,19 +13,62 @@ interface PrintableSeedCatalogProps {
 
 export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }: PrintableSeedCatalogProps) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [ledgerSeedIds, setLedgerSeedIds] = useState<Set<string>>(new Set());
+  const [isLoadingLedgers, setIsLoadingLedgers] = useState(true);
 
-  // 1. Mathematically extract only the seeds relevant to this season/wishlist
+  // 1. Fetch actively growing seedlings from the database for the current season
+  useEffect(() => {
+    const fetchActiveSeasonLedgers = async () => {
+      try {
+        // Find the most recent/active season
+        const { data: seasonData } = await supabase
+          .from('seasons')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (seasonData) {
+          // Fetch all seedlings attached to this season
+          const { data: seedlings } = await supabase
+            .from('season_seedlings')
+            .select('seed_id')
+            .eq('season_id', seasonData.id);
+
+          if (seedlings) {
+            setLedgerSeedIds(new Set(seedlings.map(s => s.seed_id)));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch season ledgers:", err);
+      } finally {
+        setIsLoadingLedgers(false);
+      }
+    };
+
+    fetchActiveSeasonLedgers();
+  }, []);
+
+  // 2. Mathematically extract ONLY the seeds used THIS season
   const activeSeeds = useMemo(() => {
     const activeSeedIds = new Set<string>();
 
-    // Add seeds currently sown in active trays
+    // A. Add seeds currently sown in active trays
     trays?.forEach(t => {
-      t.contents?.forEach((c: any) => activeSeedIds.add(c.seed_id));
+      // Ignore trays that were explicitly abandoned
+      if (t.status !== 'Abandoned') {
+        t.contents?.forEach((c: any) => {
+          if (!c.abandoned) activeSeedIds.add(c.seed_id);
+        });
+      }
     });
 
-    // Add seeds currently in stock / wishlist
+    // B. Add seeds currently growing in the Nursery (Season Seedlings Ledger)
+    ledgerSeedIds.forEach(id => activeSeedIds.add(id));
+
+    // C. Add seeds explicitly marked for the Wishlist
     inventory?.forEach(s => {
-      if (!s.out_of_stock) {
+      if (s.status === 'Wishlist' || s.wishlist === true) {
         activeSeedIds.add(s.id);
       }
     });
@@ -34,9 +77,9 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
     return inventory
       .filter(s => activeSeedIds.has(s.id))
       .sort((a, b) => a.id.localeCompare(b.id));
-  }, [inventory, trays]);
+  }, [inventory, trays, ledgerSeedIds]);
 
-  // 2. Group the filtered seeds by their Botanical Category
+  // 3. Group the filtered seeds by their Botanical Category
   const groupedSeeds = useMemo(() => {
     const groups: Record<string, InventorySeed[]> = {};
     activeSeeds.forEach(seed => {
@@ -47,7 +90,7 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
     return groups;
   }, [activeSeeds]);
 
-  // 3. Resolve secure Supabase image URLs so the printer can actually load the images
+  // 4. Resolve secure Supabase image URLs so the printer can load the images
   useEffect(() => {
     const fetchSignedUrls = async () => {
       const pathsToSign: string[] = [];
@@ -93,7 +136,7 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
       <header className="bg-stone-900 text-white p-4 shadow-md sticky top-0 z-20 print:hidden flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => handleGoBack('dashboard')} 
+            onClick={() => handleGoBack('vault')} 
             className="p-2 bg-stone-800 rounded-full hover:bg-stone-700 transition-colors"
           >
             <ArrowLeft size={20} />
@@ -102,7 +145,8 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
         </div>
         <button 
           onClick={handlePrint}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-black uppercase tracking-widest text-xs shadow-md active:scale-95 transition-transform"
+          disabled={isLoadingLedgers || activeSeeds.length === 0}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-black uppercase tracking-widest text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Printer size={16} /> Print Document
         </button>
@@ -119,9 +163,18 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
           </p>
         </div>
 
-        {Object.keys(groupedSeeds).length === 0 ? (
-          <div className="text-center py-20 text-stone-500 print:hidden">
-            No active seeds found in trays or inventory.
+        {isLoadingLedgers ? (
+          <div className="flex flex-col items-center justify-center py-20 text-emerald-600 print:hidden">
+            <Loader2 size={32} className="animate-spin mb-4" />
+            <p className="font-bold text-sm uppercase tracking-widest text-stone-500">Compiling Season Data...</p>
+          </div>
+        ) : Object.keys(groupedSeeds).length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-2xl border border-stone-200 shadow-sm print:hidden">
+            <div className="text-4xl mb-4">📋</div>
+            <h3 className="font-black text-stone-800 mb-1">No Active Seeds Found</h3>
+            <p className="text-sm text-stone-500 max-w-sm mx-auto">
+              This catalog only prints seeds that are currently sown in trays, growing in the nursery, or explicitly marked on your wishlist.
+            </p>
           </div>
         ) : (
           <div className="space-y-8">
