@@ -209,12 +209,13 @@ export default function PrintableSeedCatalog({ inventory, trays, handleGoBack }:
                         </div>
 
                         {/* Seed Details */}
-                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                          <h3 className="font-black text-sm text-stone-900 print:text-black leading-tight truncate" title={`${seed.id} - ${seed.variety_name}`}>
+                        {/* REMOVED 'truncate', ADDED 'break-words' and natural text wrapping */}
+                        <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
+                          <h3 className="font-black text-sm text-stone-900 print:text-black leading-tight break-words">
                             <span className="text-emerald-700 print:text-black font-mono tracking-tight mr-1.5">{seed.id} -</span>
                             {seed.variety_name}
                           </h3>
-                          <p className="text-[10px] font-bold text-stone-500 print:text-gray-600 uppercase tracking-widest mt-1 truncate">
+                          <p className="text-[10px] font-bold text-stone-500 print:text-gray-600 uppercase tracking-widest mt-1 break-words leading-snug">
                             {seed.status || 'Stored'} • {seed.germination_days || '--'} Days
                           </p>
                         </div>
