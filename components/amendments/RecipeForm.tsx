@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '../../lib/supabase';
 import { RecipeType, RecipeIngredient, Recipe } from '@/types/amendments';
-import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check, Calculator } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2, Beaker, Flame, LeafyGreen, Sprout, Target, X, Check, Calculator, Search } from 'lucide-react';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as React.ComponentType<any>;
 // @ts-ignore
@@ -17,101 +17,28 @@ interface RecipeFormProps {
   amendments?: any[]; 
 }
 
-// --- ADVANCED KITCHEN MATH ENGINE ---
-const formatSmartIngredient = (amountStr: string | number, unitStr: string, multiplier: number) => {
+// --- SMART AMOUNT PARSER (Handles fractions like "1/2") ---
+const parseAmount = (amountStr: string | number) => {
+  if (typeof amountStr === 'number') return amountStr;
   let parsedAmount = 0;
-  let isNumeric = false;
   const str = String(amountStr).trim();
-  
   const parts = str.split(' ').filter(Boolean);
   for (const part of parts) {
     if (part.includes('/')) {
       const [num, den] = part.split('/');
       const n = parseFloat(num); const d = parseFloat(den);
-      if (!isNaN(n) && !isNaN(d) && d !== 0) { parsedAmount += (n / d); isNumeric = true; }
+      if (!isNaN(n) && !isNaN(d) && d !== 0) parsedAmount += (n / d);
     } else {
       const n = parseFloat(part);
-      if (!isNaN(n)) { parsedAmount += n; isNumeric = true; }
+      if (!isNaN(n)) parsedAmount += n;
     }
   }
-
-  if (!isNumeric) return `${amountStr} ${unitStr}`; 
-
-  let total = parsedAmount * multiplier;
-  let unit = (unitStr || '').toLowerCase().trim().replace(/s$/, ''); 
-
-  const usVol: Record<string, number> = {
-    'tsp': 1, 'teaspoon': 1,
-    'tbsp': 3, 'tablespoon': 3,
-    'fl oz': 6, 'fluid ounce': 6, 'oz': 6, 'ounce': 6, 
-    'c': 48, 'cup': 48,
-    'pt': 96, 'pint': 96,
-    'qt': 192, 'quart': 192,
-    'gal': 768, 'gallon': 768
-  };
-
-  if (usVol[unit]) {
-    let remainingTsp = total * usVol[unit];
-    const measures = [
-       { name: 'Gal', tsp: 768 }, { name: 'Qt', tsp: 192 }, { name: 'Pt', tsp: 96 },
-       { name: 'Cup', tsp: 48 }, { name: '1/2 Cup', tsp: 24 }, { name: '1/3 Cup', tsp: 16 },
-       { name: '1/4 Cup', tsp: 12 }, { name: '1/8 Cup', tsp: 6 }, { name: 'TBSP', tsp: 3 },
-       { name: '1/2 TBSP', tsp: 1.5 }, { name: 'tsp', tsp: 1 }, { name: '1/2 tsp', tsp: 0.5 }, { name: '1/4 tsp', tsp: 0.25 }
-    ];
-    
-    const resultParts = [];
-    for (const m of measures) {
-       if (remainingTsp >= m.tsp - 0.05) { 
-          let count = Math.floor(remainingTsp / m.tsp);
-          if (remainingTsp / m.tsp - count > 0.95) count += 1; 
-
-          if (count > 0) {
-              if (m.name.includes('/')) {
-                 resultParts.push(m.name);
-                 remainingTsp -= m.tsp;
-              } else {
-                 resultParts.push(`${count} ${m.name}`);
-                 remainingTsp -= count * m.tsp;
-              }
-          }
-       }
-    }
-    if (resultParts.length === 0) return "A pinch";
-    return resultParts.slice(0, 2).join(' + ');
-  }
-
-  const metricVol: Record<string, number> = { 'ml': 1, 'milliliter': 1, 'l': 1000, 'liter': 1000 };
-  if (metricVol[unit]) {
-    let totalMl = total * metricVol[unit];
-    if (totalMl >= 1000) return `${+(totalMl / 1000).toFixed(2)} L`;
-    return `${+(totalMl).toFixed(0)} ml`;
-  }
-
-  const usWeight: Record<string, number> = { 'lb': 16, 'pound': 16 };
-  if (usWeight[unit]) {
-    let totalOz = total * usWeight[unit];
-    if (totalOz < 16) return `${+totalOz.toFixed(1)} oz`;
-    let lbs = Math.floor(totalOz / 16);
-    let ozLeft = +(totalOz % 16).toFixed(1);
-    if (ozLeft > 0) return `${lbs} lb + ${ozLeft} oz`;
-    return `${lbs} lb`;
-  }
-  
-  const metricWeight: Record<string, number> = { 'g': 1, 'gram': 1, 'kg': 1000, 'kilogram': 1000 };
-  if (metricWeight[unit]) {
-      let totalG = total * metricWeight[unit];
-      if (totalG >= 1000) return `${+(totalG / 1000).toFixed(2)} kg`;
-      return `${+(totalG).toFixed(0)} g`;
-  }
-
-  return `${+total.toFixed(2)} ${unitStr}`;
+  return parsedAmount;
 };
 
 // --- ROUGH VOLUME TO LBS CONVERTER FOR NPK MATH ---
-// NPK calculations must be done by weight. This converts volume inputs 
-// using a standard agricultural density approximation (1 cup dry ≈ 0.3 lbs).
 const getIngredientPounds = (amount: number, unit: string) => {
-  const u = unit.toLowerCase();
+  const u = (unit || '').toLowerCase();
   if (u === 'lb' || u === 'lbs') return amount;
   if (u === 'oz') return amount / 16;
   if (u === 'kg') return amount * 2.20462;
@@ -227,6 +154,20 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
     initialData?.ingredients?.length ? initialData.ingredients : []
   );
 
+  // --- INGREDIENT PICKER MODAL STATE ---
+  const [pickingForIndex, setPickingForIndex] = useState<number | null>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
+
+  const filteredAmendmentsForPicker = useMemo(() => {
+    if (!pickerSearch.trim()) return amendments;
+    const query = pickerSearch.toLowerCase();
+    return amendments.filter(a => 
+      a.name.toLowerCase().includes(query) || 
+      (a.brand && a.brand.toLowerCase().includes(query)) ||
+      (a.category && a.category.toLowerCase().includes(query))
+    );
+  }, [amendments, pickerSearch]);
+
   // --- NPK OPTIMIZER STATE ---
   const [showOptimizer, setShowOptimizer] = useState(false);
   const [targetN, setTargetN] = useState<number>(4);
@@ -277,7 +218,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
       setShowOptimizer(false);
   };
 
-  // --- CURRENT RECIPE LIVE NPK CALCULATION ---
+  // --- CURRENT RECIPE LIVE NPK CALCULATION WITH FRACTION PARSING ---
   const currentRecipeNPK = useMemo(() => {
      let totalLbs = 0;
      let totalN = 0, totalP = 0, totalK = 0;
@@ -285,7 +226,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
      ingredients.forEach(ing => {
         const am = amendments.find(a => a.id === ing.amendment_id || a.name === ing.name);
         if (am) {
-           const lbs = getIngredientPounds(Number(ing.amount) || 0, ing.unit || 'lbs');
+           const parsedAmt = parseAmount(ing.amount);
+           const lbs = getIngredientPounds(parsedAmt, ing.unit || 'lbs');
            totalLbs += lbs;
            totalN += lbs * (Number(am.n_value) || 0);
            totalP += lbs * (Number(am.p_value) || 0);
@@ -376,7 +318,81 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
   const canShowOptimizer = formData.type === 'dry_mix' || formData.type === 'liquid_tea';
 
   return (
-    <div className="animate-in slide-in-from-bottom-4 duration-300 bg-stone-50 min-h-screen pb-24">
+    <div className="animate-in slide-in-from-bottom-4 duration-300 bg-stone-50 min-h-screen pb-24 relative">
+      
+      {/* --- INGREDIENT SEARCH & PICKER MODAL --- */}
+      {pickingForIndex !== null && (
+        <div className="fixed inset-0 z-[100] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+             
+             {/* Modal Header & Search */}
+             <div className="p-4 border-b border-stone-200 bg-stone-50 shrink-0">
+               <div className="flex justify-between items-center mb-3">
+                 <h3 className="font-black text-stone-800 flex items-center gap-2">
+                    <Search size={18} className="text-purple-600" /> Select Amendment
+                 </h3>
+                 <button 
+                    type="button" 
+                    onClick={() => { setPickingForIndex(null); setPickerSearch(''); }} 
+                    className="p-1 rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-800 transition-colors"
+                 >
+                    <X size={20}/>
+                 </button>
+               </div>
+               <div className="relative">
+                 <input 
+                   type="text" 
+                   placeholder="Search by name, brand, or NPK..." 
+                   value={pickerSearch} 
+                   onChange={e => setPickerSearch(e.target.value)}
+                   className="w-full bg-white border border-stone-300 rounded-xl py-3 pl-10 pr-4 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm"
+                   autoFocus
+                 />
+                 <Search size={16} className="absolute left-3 top-3.5 text-stone-400" />
+               </div>
+             </div>
+             
+             {/* Filtered List */}
+             <div className="overflow-y-auto p-2 space-y-1 bg-white flex-1">
+                {filteredAmendmentsForPicker.map(am => (
+                  <button
+                    key={am.id}
+                    type="button"
+                    onClick={() => {
+                       handleUpdateIngredient(pickingForIndex, 'amendment_id', am.id);
+                       handleUpdateIngredient(pickingForIndex, 'name', am.name);
+                       setPickingForIndex(null);
+                       setPickerSearch('');
+                    }}
+                    className="w-full text-left p-3 rounded-xl hover:bg-purple-50 focus:bg-purple-50 transition-colors flex items-center justify-between group border border-transparent hover:border-purple-200"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <div className="font-bold text-sm text-stone-800 group-hover:text-purple-900 truncate">
+                        {am.name}
+                      </div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-stone-400 truncate mt-0.5">
+                        {am.brand || am.category || 'Unbranded'}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 shadow-sm">N: {am.n_value || 0}</span>
+                      <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 shadow-sm">P: {am.p_value || 0}</span>
+                      <span className="text-[9px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 shadow-sm">K: {am.k_value || 0}</span>
+                    </div>
+                  </button>
+                ))}
+                
+                {filteredAmendmentsForPicker.length === 0 && (
+                  <div className="text-center py-10">
+                     <p className="text-stone-400 font-bold text-sm">No amendments found.</p>
+                     <p className="text-stone-400 text-xs mt-1">Try a different search term.</p>
+                  </div>
+                )}
+             </div>
+          </div>
+        </div>
+      )}
+
       <header className="bg-white border-b border-stone-200 p-4 sticky top-0 z-20 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <button onClick={onClose} className="p-2 -ml-2 text-stone-400 hover:bg-stone-100 hover:text-stone-800 rounded-full transition-colors">
@@ -608,35 +624,27 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                      <div key={idx} className="flex gap-2 items-start bg-white p-3 rounded-2xl border border-stone-200 relative group animate-in slide-in-from-left-2 shadow-sm">
                        <div className="flex-1 space-y-2">
                          
-                         <select 
-                           required
-                           value={ing.amendment_id || ''} 
-                           onChange={(e) => {
-                             const selectedAm = amendments.find(a => a.id === e.target.value);
-                             const newIngs = [...ingredients];
-                             newIngs[idx] = { ...newIngs[idx], amendment_id: e.target.value, name: selectedAm?.name || '' };
-                             setIngredients(newIngs);
-                           }} 
-                           className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm font-bold text-stone-800 outline-none focus:border-purple-500 shadow-sm appearance-none"
+                         {/* --- NEW SEARCHABLE PICKER BUTTON --- */}
+                         <button
+                           type="button"
+                           onClick={() => setPickingForIndex(idx)}
+                           className={`w-full flex items-center justify-between bg-stone-50 border border-stone-200 rounded-xl p-3 text-sm outline-none focus:border-purple-500 shadow-sm transition-colors ${matchedAmendment ? 'text-stone-800 font-bold hover:bg-stone-100' : 'text-stone-400 font-medium italic hover:bg-white'}`}
                          >
-                           <option value="" disabled>Select Amendment...</option>
-                           {amendments.map(a => (
-                             <option key={a.id} value={a.id}>{a.brand ? `${a.brand} - ` : ''}{a.name}</option>
-                           ))}
-                         </select>
+                           <span className="truncate pr-2">{matchedAmendment ? matchedAmendment.name : "Tap to select amendment..."}</span>
+                           <Search size={16} className="text-stone-400 shrink-0" />
+                         </button>
                          
                          {matchedAmendment && (
                             <div className="flex gap-1.5 ml-1 mb-2">
-                              <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">N: {matchedAmendment.n_value || 0}</span>
-                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">P: {matchedAmendment.p_value || 0}</span>
-                              <span className="text-[9px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">K: {matchedAmendment.k_value || 0}</span>
+                              <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 shadow-sm">N: {matchedAmendment.n_value || 0}</span>
+                              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 shadow-sm">P: {matchedAmendment.p_value || 0}</span>
+                              <span className="text-[9px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 shadow-sm">K: {matchedAmendment.k_value || 0}</span>
                             </div>
                          )}
 
                          <div className="flex gap-2">
                            <input
-                             type="number"
-                             step="0.01"
+                             type="text"
                              placeholder="Qty"
                              value={ing.amount}
                              onChange={e => handleUpdateIngredient(idx, 'amount', e.target.value)}
