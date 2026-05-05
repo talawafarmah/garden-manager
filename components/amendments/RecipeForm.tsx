@@ -147,7 +147,8 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
     instructions: initialData?.instructions || '',
     brew_time_hours: initialData?.brew_time_hours || 24,
     base_brew_gallons: initialData?.base_brew_gallons || 5,
-    dilution_ratio: initialData?.dilution_ratio || 1,      
+    // Fix: Use nullish coalescing (??) so that if 0 is loaded, it doesn't fall back to 1
+    dilution_ratio: initialData?.dilution_ratio ?? 1,      
   });
 
   const [ingredients, setIngredients] = useState<any[]>(
@@ -496,9 +497,10 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
                   <label className="block text-[10px] font-black text-purple-500 uppercase mb-1.5">Dilution Ratio</label>
                   <div className="flex items-center bg-white border border-purple-200 rounded-xl p-2 shadow-sm">
                     <span className="text-purple-400 font-black text-sm pl-3 pr-1 whitespace-nowrap">1 :</span>
-                    <input type="number" min="1" value={formData.dilution_ratio || ''} onChange={e => setFormData({...formData, dilution_ratio: Number(e.target.value)})} className="w-full text-left font-bold text-purple-900 outline-none" />
+                    {/* Fix: Min set to 0, using ?? to allow explicit '0' value to render */}
+                    <input type="number" min="0" value={formData.dilution_ratio ?? ''} onChange={e => setFormData({...formData, dilution_ratio: Number(e.target.value)})} className="w-full text-left font-bold text-purple-900 outline-none" />
                   </div>
-                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">e.g., '10' means 1 part {formData.type === 'dry_mix' ? 'mix' : 'concentrate'} to 10 parts {formData.type === 'dry_mix' ? 'soil' : 'water'}.</p>
+                  <p className="text-[9px] text-purple-400 mt-1.5 leading-tight">e.g., '10' means 1 part {formData.type === 'dry_mix' ? 'mix' : 'concentrate'} to 10 parts {formData.type === 'dry_mix' ? 'soil' : 'water'}. Use '0' for undiluted.</p>
                 </div>
               </div>
             </div>
@@ -606,7 +608,7 @@ export default function RecipeForm({ onClose, onSuccess, initialData, amendments
               {/* --- LIVE RECIPE NPK DISPLAY --- */}
               <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-stone-200 shadow-sm mb-4">
                  <div className="flex items-center gap-2">
-                    <Calculator size={16} className="text-purple-600" />
+                     <Calculator size={16} className="text-purple-600" />
                     <span className="text-xs font-black text-stone-600 uppercase tracking-widest">Recipe NPK</span>
                  </div>
                  <div className="text-sm font-black text-purple-700 bg-purple-50 px-3 py-1 rounded-lg border border-purple-100">
